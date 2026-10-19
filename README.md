@@ -22,7 +22,7 @@ A lightweight, security-focused Linux operating system built around instant, tam
   ```
 - Separate system and home snapshots, built on Btrfs, with fast rewinds.
 - Snapshots protected from the running system, verified at boot, and restorable from the boot menu.
-- Disposable sandboxes for untrusted software and malware analysis (`worm sandbox`).
+- Blackholes: disposable sandboxes for untrusted software and malware analysis (`bh` / `blackhole`).
 - An nftables firewall that denies inbound traffic by default (`worm fw`).
 - Tor built in, Tor Browser with signature-verified installation, and an optional system-wide anonymous mode.
 - Hardened defaults: full-disk encryption, MAC address randomization, encrypted DNS, a hardened kernel and no telemetry.
