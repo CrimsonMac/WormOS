@@ -1,0 +1,29 @@
+name=wormhole-keyrings
+version=2026.10
+description="Archive signing keys of the distributions wh can install from"
+# debian-archive-keyring was taken through apt on a Debian 13 host (checked
+# against Debian's signed index). kali-archive-keyring contains the 2025
+# key (827C8569F2518CC677FECA1AED65462EC8D5E4C5) that signs kali-rolling,
+# checked against archive.kali.org/archive-key.asc and the live index.
+source=(https://deb.debian.org/debian/pool/main/d/debian-archive-keyring/debian-archive-keyring_2025.1_all.deb
+	http://http.kali.org/kali/pool/main/k/kali-archive-keyring/kali-archive-keyring_2025.3_all.deb)
+sha256=(9ea7778e443144ca490668737a8ab22dd3e748bb99e805e22ec055abeb3c7fac
+	16e36bff31c149afc2c78ac9281fa5dd18e52dbfc7fd41674b29a4b1686d877e)
+
+# extract DEB FILE: print FILE from a .deb's data archive.
+extract() {
+	local tmp=$srcdir/tmp
+	rm -rf "$tmp"
+	mkdir -p "$tmp"
+	(cd "$tmp" && $AR x "$1" && tar -xOf data.tar.* "./$2")
+}
+
+package() {
+	local dir=$pkgdir/usr/share/wh/keyrings
+	mkdir -p "$dir"
+	extract "$SOURCES/debian-archive-keyring_2025.1_all.deb" \
+		usr/share/keyrings/debian-archive-keyring.pgp > "$dir/debian.pgp"
+	extract "$SOURCES/kali-archive-keyring_2025.3_all.deb" \
+		usr/share/keyrings/kali-archive-keyring.pgp > "$dir/kali.pgp"
+	chmod 644 "$dir"/*.pgp
+}
