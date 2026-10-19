@@ -518,11 +518,15 @@ static int cmd_auto(int argc, char **argv)
 
 static int cmd_boot(int argc, char **argv)
 {
-	(void)argc;
-	(void)argv;
+	int rewind = 0;
+
 	if (!top_given)
 		die("boot is run by the initramfs");
-	return boot_tasks();
+	if (argc == 3 && strcmp(argv[1], "--rewind") == 0)
+		rewind = parse_id_arg(argv[2]);
+	else if (argc != 1)
+		die("usage: snap --top DIR boot [--rewind ID]");
+	return boot_tasks(rewind);
 }
 
 static const struct command {

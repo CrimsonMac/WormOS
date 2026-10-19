@@ -63,11 +63,18 @@ set timeout=3
 set default=0
 
 search --no-floppy --fs-uuid --set=root $FS_UUID
+set wormos_cmdline="$KERNEL_CMDLINE"
+export wormos_cmdline
 
 menuentry "WormOS" {
-	linux /@/boot/vmlinuz $KERNEL_CMDLINE
+	linux /@/boot/vmlinuz \$wormos_cmdline
 	initrd /@/boot/initramfs.img
 }
+
+# Entries for recent snapshots, maintained by snap.
+if [ -f /@snapshots/grub.cfg ]; then
+	source /@snapshots/grub.cfg
+fi
 EOF
 
 mkfs.fat -F 32 -n WORMOS-EFI -C "$TMP/esp.img" $((ESP_MB * 1024)) > /dev/null

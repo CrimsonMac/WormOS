@@ -13,6 +13,8 @@
  *     rw                                  mount the root read-write
  *     init=PATH                           init to start (default /sbin/init)
  *     wormos.rescue                       open a shell before mounting the root
+ *     wormos.rewind=ID                    rewind the system to snapshot ID first
+ *                                         (used by the boot menu entries)
  */
 
 #define _GNU_SOURCE
@@ -53,6 +55,7 @@
 static char opt_root[256];
 static char opt_rootflags[512] = "subvol=@";
 static char opt_init[PATH_MAX] = "/sbin/init";
+static char opt_rewind[16];
 static int opt_rw;
 static int opt_rescue;
 
@@ -139,6 +142,9 @@ static void parse_cmdline(void)
 			opt_rw = 0;
 		else if (strcmp(tok, "wormos.rescue") == 0)
 			opt_rescue = 1;
+		else if (strncmp(tok, "wormos.rewind=", 14) == 0 &&
+			 strspn(tok + 14, "0123456789") == strlen(tok + 14))
+			snprintf(opt_rewind, sizeof(opt_rewind), "%s", tok + 14);
 	}
 	if (!opt_root[0])
 		fatal("no root= on the kernel command line");
@@ -251,7 +257,11 @@ static void run_snapshot_hooks(const char *dev)
 
 	pid = fork();
 	if (pid == 0) {
-		execl(SNAP_TOOL, "snap", "--top", TOPDIR, "boot", (char *)NULL);
+		if (opt_rewind[0])
+			execl(SNAP_TOOL, "snap", "--top", TOPDIR, "boot",
+			      "--rewind", opt_rewind, (char *)NULL);
+		else
+			execl(SNAP_TOOL, "snap", "--top", TOPDIR, "boot", (char *)NULL);
 		_exit(127);
 	}
 	if (pid < 0 || waitpid(pid, &status, 0) < 0)

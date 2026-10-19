@@ -98,7 +98,10 @@ int diff_trees(const char *a, const char *b, const char *prefix);
 /* restore.c */
 int restore_path(int id, const char *path);
 
+/* menu.c */
+void menu_update(void);
+
 /* boot.c */
-int boot_tasks(void);
+int boot_tasks(int rewind_id);
 
 #endif

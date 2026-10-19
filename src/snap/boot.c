@@ -1,6 +1,7 @@
 /*
  * Boot-time tasks, run by the initramfs before the system root is mounted:
- * clean up interrupted operations and apply a pending rewind.
+ * clean up interrupted operations and apply a pending rewind, or one chosen
+ * in the boot menu.
  *
  * The target snapshot is verified against its checksums first. A rewind
  * then snapshots the current state, so it can itself be undone.
@@ -92,7 +93,11 @@ static int apply_rewind(int id, int scope)
 	return ret;
 }
 
-int boot_tasks(void)
+/*
+ * rewind_id is a rewind chosen in the boot menu (0 if none). It replaces any
+ * rewind requested from the running system.
+ */
+int boot_tasks(int rewind_id)
 {
 	int id, scope, r;
 
@@ -101,6 +106,10 @@ int boot_tasks(void)
 	delete_old(SUBVOL_SYSTEM);
 	delete_old(SUBVOL_HOME);
 
+	if (rewind_id) {
+		pending_clear();
+		return apply_rewind(rewind_id, SCOPE_SYSTEM) < 0 ? 1 : 0;
+	}
 	r = pending_read(&id, &scope);
 	if (r == 0)
 		return 0;

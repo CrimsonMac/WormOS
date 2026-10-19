@@ -6,6 +6,7 @@
  *         last-id        highest ID handed out, so IDs are never reused
  *         config         settings (auto = on|off)
  *         pending        a rewind to apply at the next boot: "<id> <scope>"
+ *         grub.cfg       boot menu entries (see menu.c)
  *         <id>/
  *             info       metadata, key = value
  *             system     read-only snapshot of @    (when in scope)
@@ -257,7 +258,10 @@ int store_write_info(const struct snapshot *s)
 	char dir[PATH_MAX];
 
 	store_entry_path(dir, sizeof(dir), s->id, 0);
-	return write_info(dir, s);
+	if (write_info(dir, s) < 0)
+		return -1;
+	menu_update();
+	return 0;
 }
 
 static int next_id(void)
@@ -346,6 +350,7 @@ int store_create(int scope, const char *type, const char *comment)
 	}
 	snprintf(buf, sizeof(buf), "%d\n", id);
 	write_store_file(STORE_LASTID, buf);
+	menu_update();
 	sync();
 	return id;
 
@@ -401,7 +406,10 @@ int store_delete(int id)
 	char dir[PATH_MAX];
 
 	store_entry_path(dir, sizeof(dir), id, 0);
-	return delete_dir(dir);
+	if (delete_dir(dir) < 0)
+		return -1;
+	menu_update();
+	return 0;
 }
 
 /* Remove snapshots that were interrupted half way. */

@@ -2,9 +2,9 @@
 """Boot the WormOS image in QEMU and check the running system.
 
 Logs in on the serial console and runs a set of checks. It then takes a
-snapshot, changes the system, rewinds (which reboots the machine) and checks
-the change is gone, before powering off. The full console output is written
-to build/boot.log.
+snapshot, changes the system, rewinds and checks the change is gone. Last,
+it reboots and picks a snapshot from the "Rewind to a snapshot" boot menu.
+The full console output is written to build/boot.log.
 
 Usage: tests/boot-test.py [--timeout SECONDS]
 """
@@ -57,6 +57,16 @@ REWIND_CHECKS = [
     ("previous state saved", "snap list", r"^\s+2\s.*auto\s+Before rewind to 1$"),
     ("saved state has the change", "snap diff 1 2", r"^\+ /etc/probe$"),
     ("root still read-only", "grep ' / ' /proc/mounts", r"\sro[,\s]"),
+    ("change the system again",
+     "mount -o remount,rw / && echo y > /etc/probe2 && mount -o remount,ro / && echo ok",
+     r"^ok$"),
+]
+
+# After rewinding to snapshot 2 ("Before rewind to 1") from the boot menu.
+MENU_CHECKS = [
+    ("snapshot 2 state is back", "cat /etc/probe", r"^x$"),
+    ("later change is gone", "ls /etc/probe2 2>&1", r"No such file"),
+    ("menu rewind saved previous state", "snap list", r"^\s+3\s.*auto\s+Before rewind to 2$"),
 ]
 
 
@@ -121,7 +131,8 @@ def main():
                             stderr=subprocess.STDOUT)
     failures = 0
     passed = 0
-    total = len(CHECKS) + len(SNAPSHOT_CHECKS) + len(REWIND_CHECKS) + 1
+    total = (len(CHECKS) + len(SNAPSHOT_CHECKS) + len(REWIND_CHECKS) +
+             len(MENU_CHECKS) + 2)
     start = time.time()
 
     def check(name, ok, out=""):
@@ -157,6 +168,23 @@ def main():
             con.send("root\n")
             con.expect("# ", 60)
             run_checks(con, REWIND_CHECKS)
+
+            # Reboot and pick the newest snapshot from the boot menu: down to
+            # the submenu, enter it, take its first entry.
+            con.send("reboot\n")
+            con.expect("Rewind to a snapshot", args.timeout)
+            con.send("\x1b[B")
+            time.sleep(0.5)
+            con.send("\r")
+            con.expect("Snapshot 2", 60)
+            time.sleep(0.5)
+            con.send("\r")
+            out = con.expect("login:", args.timeout)
+            check("boot menu rewind applied", "rewound system to snapshot 2" in out,
+                  out[-500:])
+            con.send("root\n")
+            con.expect("# ", 60)
+            run_checks(con, MENU_CHECKS)
 
             con.send("poweroff\n")
             con.expect("Power down", 120)
