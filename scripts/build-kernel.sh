@@ -12,6 +12,9 @@ if [ ! -f "$WORK/linux/Makefile" ]; then
 	unpack "$SOURCES/$LINUX.tar.xz" "$WORK/linux"
 fi
 
+# Keep the build machine's user and host name out of the kernel.
+export KBUILD_BUILD_USER=wormos KBUILD_BUILD_HOST=wormos
+
 kmake() {
 	make -C "$WORK/linux" O="$KOBJ" ARCH=$ARCH CROSS_COMPILE="$TARGET-" "$@"
 }
