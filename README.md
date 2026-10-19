@@ -42,5 +42,66 @@ A lightweight, security-focused Linux operating system built around instant, tam
 
 ## Building
 
-Build instructions will be added once the base system is in place.
-Development currently targets x86_64 and is tested in QEMU.
+WormOS is built entirely from source with its own cross toolchain
+(`x86_64-wormos-linux-gnu`). Development targets x86_64 and is tested in
+QEMU with UEFI firmware.
+
+### Requirements
+
+A Debian 13 (or similar) host with roughly 25 GB of free disk space:
+
+```
+sudo apt install build-essential bison flex gawk texinfo m4 help2man \
+    libncurses-dev libssl-dev libelf-dev rsync curl xz-utils bzip2 \
+    btrfs-progs dosfstools mtools fakeroot grub-efi-amd64-bin \
+    qemu-system-x86 ovmf
+```
+
+### Build and run
+
+```
+make            # toolchain, kernel, packages, root filesystem and disk image
+make run        # boot the image in QEMU on the serial console (Ctrl-A X quits)
+make run-gui    # boot the image in a QEMU window
+```
+
+The first build compiles the toolchain and takes a while. Later builds reuse
+it. Individual steps can be run with `make toolchain`, `make kernel`,
+`make packages`, `make rootfs` and `make image`.
+
+The development image has an empty root password.
+
+### Layout
+
+| Path | Contents |
+| --- | --- |
+| `scripts/` | Build scripts (toolchain, kernel, root filesystem, image, QEMU) |
+| `tools/wbuild` | Package builder |
+| `recipes/` | Package recipes |
+| `src/` | WormOS components (e.g. `worminit`, the init system) |
+| `kernel/` | Kernel configuration |
+| `toolchain/` | Pinned toolchain sources and checksums |
+
+### Package recipes
+
+Each package is described by `recipes/NAME/recipe`, a short bash script:
+
+```bash
+name=example
+version=1.0
+description="An example package"
+source=(https://example.org/example-$version.tar.xz)
+sha256=(...)
+
+build() {
+	./configure --prefix=/usr --host="$TARGET"
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+```
+
+Build it with `tools/wbuild example`. Every source is verified against its
+pinned SHA-256 checksum before use.

@@ -1,0 +1,2 @@
+type = respawn
+exec = getty 38400 tty1 linux

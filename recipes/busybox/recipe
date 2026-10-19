@@ -1,0 +1,45 @@
+name=busybox
+version=1.38.0
+description="Core command-line utilities (temporary userland)"
+source=(https://busybox.net/downloads/busybox-$version.tar.bz2)
+sha256=(34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2)
+
+bb_set() {
+	sed -i "/^CONFIG_$1=/d; /^# CONFIG_$1 is not set/d" .config
+	echo "CONFIG_$1=$2" >> .config
+}
+
+bb_unset() {
+	sed -i "/^CONFIG_$1=/d; /^# CONFIG_$1 is not set/d" .config
+	echo "# CONFIG_$1 is not set" >> .config
+}
+
+build() {
+	make defconfig
+	bb_unset INIT            # worminit is PID 1
+	bb_unset LINUXRC
+	bb_unset TC              # does not build against current kernel headers
+	bb_unset FEATURE_SUID    # no setuid multi-call binary
+	bb_set EXTRA_CFLAGS "\"-std=gnu17\""
+	make oldconfig < /dev/null > /dev/null
+
+	make CROSS_COMPILE="$TARGET-" CONFIG_EXTRA_LDFLAGS="$LDFLAGS" -j"$JOBS"
+}
+
+package() {
+	install -Dm755 busybox "$pkgdir/usr/bin/busybox"
+	install -Dm755 examples/udhcp/simple.script \
+		"$pkgdir/usr/share/udhcpc/default.script"
+
+	# Merged /usr: every applet goes into /usr/bin or /usr/sbin.
+	mkdir -p "$pkgdir/usr/sbin"
+	local path applet
+	while read -r path; do
+		applet=${path##*/}
+		[ "$applet" = busybox ] && continue
+		case $path in
+			*sbin/*) ln -sf ../bin/busybox "$pkgdir/usr/sbin/$applet" ;;
+			*)       ln -sf busybox "$pkgdir/usr/bin/$applet" ;;
+		esac
+	done < busybox.links
+}

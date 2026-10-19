@@ -1,0 +1,14 @@
+name=base-files
+version=0.1.0
+description="Base system configuration and directory layout"
+
+package() {
+	cp -a "$recipedir/files/." "$pkgdir/"
+	chmod 600 "$pkgdir/etc/shadow"
+
+	# Generated at runtime on tmpfs, so /etc can stay read-only.
+	ln -s ../run/resolv.conf "$pkgdir/etc/resolv.conf"
+	ln -s ../proc/self/mounts "$pkgdir/etc/mtab"
+
+	mkdir -p "$pkgdir/etc/profile.d"
+}

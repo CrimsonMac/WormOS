@@ -1,0 +1,13 @@
+name=worminit
+version=0.1.0
+description="WormOS init system"
+localsrc=src/worminit
+
+build() {
+	make CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	ln -s worminit "$pkgdir/usr/sbin/init"
+}

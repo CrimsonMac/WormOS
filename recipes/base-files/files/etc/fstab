@@ -1,0 +1,2 @@
+# <device>      <mount point>  <type>  <options>                        <dump> <pass>
+LABEL=WORMOS    /home          btrfs   subvol=@home,noatime,compress=zstd,nosuid,nodev 0 0

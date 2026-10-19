@@ -1,0 +1,85 @@
+#!/bin/bash
+# wbuild - build a WormOS package from its recipe.
+#
+# Usage: tools/wbuild NAME...
+#
+# A recipe lives in recipes/NAME/recipe and is a bash script that sets:
+#
+#   name, version       package name and version
+#   description         one-line summary
+#   source=(URL...)     archives to download (the first one is unpacked)
+#   sha256=(SUM...)     checksums, one per source
+#   localsrc=PATH       alternatively, a source tree inside this repository
+#
+# and defines two functions, run from the unpacked source directory:
+#
+#   build()             compile
+#   package()           install into "$pkgdir"
+#
+# Recipes can use $recipedir (the recipe's directory, for extra files),
+# $srcdir, $pkgdir, $TARGET, $SYSROOT and $JOBS. CC, CXX and friends point
+# at the WormOS cross toolchain.
+
+. "$(dirname "$0")/../scripts/env.sh"
+
+[ $# -gt 0 ] || die "usage: wbuild NAME..."
+[ -x "$TOOLS/bin/$TARGET-gcc" ] || die "toolchain missing, run scripts/build-toolchain.sh first"
+
+export CC="$TARGET-gcc" CXX="$TARGET-g++" AR="$TARGET-ar" AS="$TARGET-as"
+export LD="$TARGET-ld" NM="$TARGET-nm" RANLIB="$TARGET-ranlib"
+export STRIP="$TARGET-strip" OBJCOPY="$TARGET-objcopy"
+export CFLAGS="-O2 -pipe -fstack-protector-strong -fstack-clash-protection -fcf-protection -D_FORTIFY_SOURCE=3"
+export CXXFLAGS="$CFLAGS"
+export LDFLAGS="-Wl,-O1,--as-needed,-z,relro,-z,now"
+
+build_one() (
+	local recipedir=$WORMOS_ROOT/recipes/$1
+	[ -f "$recipedir/recipe" ] || die "no recipe for $1"
+
+	local name version description localsrc
+	local -a source=() sha256=()
+	. "$recipedir/recipe"
+	[ "$name" = "$1" ] || die "$1: recipe declares name '$name'"
+
+	srcdir=$WORK/$name
+	pkgdir=$PKGDIR/$name
+	export recipedir srcdir pkgdir
+
+	msg "Building $name $version"
+	local i
+	for i in "${!source[@]}"; do
+		fetch "${source[$i]}" "${sha256[$i]:?missing checksum for ${source[$i]}}"
+	done
+
+	if [ -n "$localsrc" ]; then
+		rm -rf "$srcdir"
+		cp -r "$WORMOS_ROOT/$localsrc" "$srcdir"
+	elif [ ${#source[@]} -gt 0 ]; then
+		unpack "$SOURCES/$(basename "${source[0]}")" "$srcdir"
+	else
+		mkdir -p "$srcdir"
+	fi
+
+	rm -rf "$pkgdir"
+	mkdir -p "$pkgdir"
+	cd "$srcdir"
+	if declare -F build >/dev/null; then build; fi
+	cd "$srcdir"
+	package
+
+	# Record what the package installed.
+	mkdir -p "$BUILD/pkginfo"
+	{
+		echo "name = $name"
+		echo "version = $version"
+		echo "description = $description"
+	} > "$BUILD/pkginfo/$name.info"
+	(cd "$pkgdir" && find . -mindepth 1 | sed 's|^\./||' | sort) \
+		> "$BUILD/pkginfo/$name.files"
+
+	msg "Packaged $name $version"
+)
+
+for pkg in "$@"; do
+	build_one "$pkg"
+done

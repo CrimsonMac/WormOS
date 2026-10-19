@@ -1,0 +1,2 @@
+type = oneshot
+exec = ip link set lo up

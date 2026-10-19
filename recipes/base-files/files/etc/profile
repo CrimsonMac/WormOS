@@ -1,0 +1,17 @@
+# System-wide shell configuration.
+
+export PATH=/usr/local/bin:/usr/bin:/usr/sbin
+export PAGER=less
+umask 022
+
+if [ "$(id -u)" -eq 0 ]; then
+	PS1='\[\033[1;35m\]\h\[\033[0m\]:\w# '
+else
+	PS1='\[\033[1;35m\]\u@\h\[\033[0m\]:\w$ '
+fi
+export PS1
+
+for f in /etc/profile.d/*.sh; do
+	[ -r "$f" ] && . "$f"
+done
+unset f

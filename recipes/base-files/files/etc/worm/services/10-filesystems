@@ -1,0 +1,3 @@
+# Mount everything listed in /etc/fstab.
+type = oneshot
+exec = mount -a

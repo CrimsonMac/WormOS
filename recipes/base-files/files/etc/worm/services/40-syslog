@@ -1,0 +1,2 @@
+type = daemon
+exec = syslogd -C256

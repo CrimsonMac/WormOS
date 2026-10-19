@@ -1,0 +1,3 @@
+# Login prompt on the first serial port (used by QEMU -nographic).
+type = respawn
+exec = getty -L 115200 ttyS0 vt100
