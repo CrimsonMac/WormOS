@@ -2,7 +2,8 @@
 
 A lightweight, security-focused Linux operating system built around instant, tamper-resistant snapshots.
 
-> **Status:** early development. A minimal base system boots in QEMU.
+> **Status:** early development. A minimal base system boots in QEMU with a
+> read-only root and working snapshots.
 
 ## Philosophy
 
@@ -30,6 +31,45 @@ A lightweight, security-focused Linux operating system built around instant, tam
 - An independent init system and package manager (`wh` / `wormhole`), with
   automatic snapshots before every change (`snap auto on|off`).
 - A lightweight Wayland desktop.
+
+## Snapshots
+
+`snap` manages snapshots of the system (`/`) and of `/home`. The default
+scope is the system, so rewinding never touches your files unless asked to.
+
+```
+snap now -c "Before trying nginx"   # take a snapshot with a comment
+snap list                           # ID, date, scope, type, comment
+snap diff 3                         # what changed since snapshot 3
+snap restore 3 /etc/nginx           # bring back one file or folder
+snap browse 3                       # read-only shell inside snapshot 3
+snap rewind                         # go back to the latest snapshot
+snap rewind 3 --home                # rewind /home only (--all for both)
+snap verify                         # check snapshots for tampering
+snap delete 3 / snap prune --keep 10 / snap pin 3 / snap comment 3 "..."
+snap auto on|off                    # snapshots before package changes
+```
+
+How it works:
+
+- The disk is a single btrfs filesystem with the subvolumes `@` (the system,
+  mounted read-only), `@var` (logs and state), `@home` and `@snapshots`.
+- Snapshots are read-only btrfs snapshots stored in `@snapshots`, which the
+  running system never mounts. `snap` mounts it in a private mount namespace
+  only for the duration of a command.
+- Every snapshot has a manifest with the checksum, owner, mode and extended
+  attributes of each file. Rewinds verify the target first and refuse a
+  snapshot that was modified.
+- A rewind is applied at a soft reboot: the init system stops userland, the
+  initramfs init (`wormrd`) swaps the subvolume and the system starts again
+  without restarting the kernel. The state being left is snapshotted first,
+  so a rewind can itself be undone.
+- The boot menu has a "Rewind to a snapshot" submenu with the latest system
+  snapshots, which rewinds before anything from the installed system runs.
+
+These protections raise the bar, but software running as root on the same
+machine can always write to the disk directly. Untrusted code belongs in an
+isolated sandbox, which is planned for a later phase.
 
 ## Roadmap
 
@@ -67,11 +107,20 @@ make run-gui    # boot the image in a QEMU window
 make test       # boot the image and run automated checks
 ```
 
+`make test` boots a throwaway copy of the image, checks the running system
+and exercises snapshots end to end (take, diff, restore, browse, rewind of
+the system and of `/home`, and a rewind from the boot menu).
+
 The first build compiles the toolchain and takes a while. Later builds reuse
 it. Individual steps can be run with `make toolchain`, `make kernel`,
 `make packages`, `make rootfs` and `make image`.
 
 The development image has an empty root password.
+
+The root filesystem is read-only. To change it by hand during development,
+remount just the root mount: `mount -o remount,bind,rw /` (and
+`remount,bind,ro` afterwards). A plain `mount -o remount,ro /` would make the
+whole btrfs filesystem read-only, including `/var` and `/home`.
 
 ### Layout
 
@@ -80,7 +129,7 @@ The development image has an empty root password.
 | `scripts/` | Build scripts (toolchain, kernel, root filesystem, image, QEMU) |
 | `tools/wbuild` | Package builder |
 | `recipes/` | Package recipes |
-| `src/` | WormOS components (e.g. `worminit`, the init system) |
+| `src/` | WormOS components: `worminit` (init), `wormrd` (initramfs init), `snap` |
 | `kernel/` | Kernel configuration |
 | `toolchain/` | Pinned toolchain sources and checksums |
 
