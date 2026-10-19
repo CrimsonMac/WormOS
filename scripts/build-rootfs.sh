@@ -3,6 +3,12 @@
 #
 # Runs under fakeroot so files can be owned by root without real privileges.
 # The ownership database is saved to build/fakeroot.state for mkimage.sh.
+#
+# The result is one directory per btrfs subvolume under build/fsroot:
+#   @           the system root, mounted read-only
+#   @var        /var, writable state and logs (not part of system snapshots)
+#   @home       /home
+#   @snapshots  snapshot store, never mounted by the running system
 
 . "$(dirname "$0")/env.sh"
 
@@ -12,7 +18,7 @@ if [ -z "${FAKEROOTKEY:-}" ]; then
 	exec fakeroot -s "$STATE" -- "$0" "$@"
 fi
 
-PACKAGES=(base-files glibc gcc-libs busybox worminit linux)
+PACKAGES=(base-files glibc gcc-libs busybox worminit wormrd linux)
 
 for p in "${PACKAGES[@]}"; do
 	[ -d "$PKGDIR/$p" ] || die "package $p has not been built"
@@ -25,7 +31,7 @@ mkdir -p "$ROOTFS" "$FSROOT/@home" "$FSROOT/@snapshots"
 cd "$ROOTFS"
 mkdir -p boot dev etc home mnt proc root run sys tmp \
 	usr/bin usr/lib usr/sbin usr/share \
-	var/cache var/lib var/log var/spool
+	var/cache var/lib var/log var/spool var/roothome
 ln -s usr/bin bin
 ln -s usr/sbin sbin
 ln -s usr/lib lib
@@ -57,8 +63,14 @@ msg "Stripping binaries"
 find "$ROOTFS/usr" -type f \( -perm -u+x -o -name '*.so*' \) ! -name '*.ko*' -print0 |
 	xargs -0 -r "$TARGET-strip" --strip-unneeded 2>/dev/null || true
 
+"$WORMOS_ROOT/scripts/build-initramfs.sh"
+
+# /var becomes its own subvolume; the root keeps an empty mount point.
+mv "$ROOTFS/var" "$FSROOT/@var"
+mkdir "$ROOTFS/var"
+
 chown -R 0:0 "$FSROOT"
-chmod 0700 root
+chmod 0700 root "$FSROOT/@var/roothome"
 chmod 1777 tmp
 chmod 0600 etc/shadow
 

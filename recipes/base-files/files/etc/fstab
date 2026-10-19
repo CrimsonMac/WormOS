@@ -1,2 +1,6 @@
 # <device>      <mount point>  <type>  <options>                        <dump> <pass>
+# The root (subvolume @) is mounted read-only by the initramfs.
+LABEL=WORMOS    /var           btrfs   subvol=@var,noatime,compress=zstd,nosuid,nodev 0 0
 LABEL=WORMOS    /home          btrfs   subvol=@home,noatime,compress=zstd,nosuid,nodev 0 0
+# The root is read-only, so root's home lives on the writable /var.
+/var/roothome   /root          none    bind                             0 0

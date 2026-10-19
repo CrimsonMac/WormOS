@@ -1,0 +1,12 @@
+name=wormrd
+version=0.1.0
+description="WormOS initramfs init"
+localsrc=src/wormrd
+
+build() {
+	make CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}

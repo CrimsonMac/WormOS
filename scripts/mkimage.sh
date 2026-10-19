@@ -3,7 +3,7 @@
 #
 # Layout (GPT):
 #   1  EFI system partition (FAT32)  GRUB
-#   2  WormOS root (btrfs)           subvolumes @, @home, @snapshots
+#   2  WormOS root (btrfs)           subvolumes @, @var, @home, @snapshots
 #
 # No root privileges or loop devices are needed: each partition is built as
 # a separate file and then written into the disk image.
@@ -33,7 +33,7 @@ TMP=$BUILD/image
 rm -rf "$TMP"
 mkdir -p "$TMP" "$OUT"
 
-KERNEL_CMDLINE="root=PARTUUID=$ROOT_PARTUUID rootfstype=btrfs rootflags=subvol=@,compress=zstd rw console=tty0 console=ttyS0,115200"
+KERNEL_CMDLINE="root=UUID=$FS_UUID rootflags=subvol=@,compress=zstd ro console=tty0 console=ttyS0,115200"
 
 msg "Creating btrfs root filesystem"
 truncate -s $((root_size * SECTOR)) "$TMP/root.img"
@@ -43,6 +43,7 @@ fakeroot -i "$STATE" -- mkfs.btrfs -q \
 	--compress zstd \
 	--rootdir "$FSROOT" \
 	--subvol rw:@ \
+	--subvol rw:@var \
 	--subvol rw:@home \
 	--subvol rw:@snapshots \
 	"$TMP/root.img"
@@ -65,6 +66,7 @@ search --no-floppy --fs-uuid --set=root $FS_UUID
 
 menuentry "WormOS" {
 	linux /@/boot/vmlinuz $KERNEL_CMDLINE
+	initrd /@/boot/initramfs.img
 }
 EOF
 
