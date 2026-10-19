@@ -2,7 +2,7 @@
 
 A lightweight, security-focused Linux operating system built around instant, tamper-resistant snapshots.
 
-> **Status:** early development. Nothing is bootable yet.
+> **Status:** early development. A minimal base system boots in QEMU.
 
 ## Philosophy
 
