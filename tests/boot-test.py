@@ -24,7 +24,13 @@ CHECKS = [
     ("kernel", "uname -r", r"-wormos"),
     ("os-release", ". /etc/os-release; echo $NAME", r"WormOS"),
     ("init is worminit", "readlink /proc/1/exe", r"/worminit$"),
+    ("booted through initramfs", "dmesg | grep -c 'Freeing initrd memory'", r"^1$"),
     ("root on @ subvolume", "grep ' / ' /proc/mounts", r"subvol=/@\s"),
+    ("root is read-only", "grep ' / ' /proc/mounts", r"\sro[,\s]"),
+    ("root cannot be written", "touch /probe 2>&1", r"Read-only file system"),
+    ("var on @var subvolume", "grep ' /var ' /proc/mounts", r"\srw,.*subvol=/@var"),
+    ("root home is writable", "touch ~/probe && grep -c ' /root ' /proc/mounts", r"^1$"),
+    ("snapshots not mounted", "grep -c snapshots /proc/mounts", r"^0$"),
     ("home on @home subvolume", "grep ' /home ' /proc/mounts", r"subvol=/@home"),
     ("network configured", "ip -4 addr show eth0", r"inet 10\.0\.2\.15"),
     ("syslog running", "pidof syslogd", r"^\d+"),
@@ -37,6 +43,7 @@ class Console:
         self.proc = proc
         self.log = log
         self.buf = b""
+        self.seq = 0
 
     def _read(self, timeout):
         ready, _, _ = select.select([self.proc.stdout], [], [], timeout)
@@ -69,10 +76,14 @@ class Console:
         self.proc.stdin.flush()
 
     def run(self, cmd, timeout=60):
-        marker = "__END__"
-        self.send(f"{cmd}; echo {marker}\n")
-        self.expect(f"echo {marker}", timeout)       # the echoed command line
-        return self.expect(marker, timeout).replace("\r", "").strip()
+        # The marker is assembled by printf, so it never appears in the
+        # echoed command line and cannot be matched too early.
+        self.seq += 1
+        tag = f"__END {self.seq}"
+        self.send(f"{cmd}; printf '%s_%s__\\n' {tag}\n")
+        out = self.expect(f"__END_{self.seq}__", timeout).replace("\r", "")
+        _, _, out = out.rpartition(tag)          # drop the echoed command
+        return out.partition("\n")[2].strip()
 
 
 def main():
