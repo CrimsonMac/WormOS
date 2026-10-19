@@ -48,6 +48,7 @@ SNAPSHOT_CHECKS = [
      r"^ok$"),
     ("snap diff", "snap diff 1", r"^\+ /etc/probe$"),
     ("snap list", "snap list", r"^\s+1\s.*system\s+manual\s+test base$"),
+    ("snap verify", "snap verify", r"^snapshot 1 \(system\): ok$"),
 ]
 
 # After "snap rewind" and the reboot it causes.
@@ -113,7 +114,9 @@ def main():
                         help="seconds to wait for the login prompt")
     args = parser.parse_args()
 
-    proc = subprocess.Popen([os.path.join(ROOT, "scripts", "run-qemu.sh")],
+    # Disk writes are discarded, so the test always starts from the built
+    # image and leaves it untouched.
+    proc = subprocess.Popen([os.path.join(ROOT, "scripts", "run-qemu.sh"), "--snapshot"],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT)
     failures = 0
