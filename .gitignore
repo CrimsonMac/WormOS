@@ -35,3 +35,9 @@
 # Local environment
 .env
 .env.*
+
+# Programs built in place in src/
+/src/snap/snap
+/src/wh/wh
+/src/worminit/worminit
+/src/wormrd/wormrd
