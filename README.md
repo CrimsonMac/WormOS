@@ -144,6 +144,9 @@ the system and of `/home`, and a rewind from the boot menu), then
 `worm unlock`/`lock` and the package manager against `out/repo`, served to
 the VM over HTTP (install, a trial that rolls back, remove and undo).
 
+Building the disk image uses `sudo` for one step (applying file ownership
+before `mkfs.btrfs`); everything else runs as a normal user.
+
 The first build compiles the toolchain and takes a while. Later builds reuse
 it. Individual steps can be run with `make toolchain`, `make kernel`,
 `make packages`, `make repo`, `make rootfs` and `make image`.

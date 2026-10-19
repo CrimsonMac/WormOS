@@ -43,6 +43,8 @@ CHECKS = [
     ("network configured", "ip -4 addr show eth0", r"inet 10\.0\.2\.15"),
     ("syslog running", "pidof syslogd", r"^\d+"),
     ("hostname", "hostname", r"^wormos$"),
+    ("system files owned by root", "find / /var -xdev ! -user 0 | wc -l", r"^0$"),
+    ("shadow is private", "stat -c '%a %u' /etc/shadow", r"^600 0$"),
 ]
 
 # Snapshot, change the system, and look at the change.

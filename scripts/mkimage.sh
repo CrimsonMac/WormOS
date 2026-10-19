@@ -5,8 +5,11 @@
 #   1  EFI system partition (FAT32)  GRUB
 #   2  WormOS root (btrfs)           subvolumes @, @var, @home, @snapshots
 #
-# No root privileges or loop devices are needed: each partition is built as
-# a separate file and then written into the disk image.
+# Each partition is built as a separate file and then written into the
+# disk image, so no loop devices are needed. Building the btrfs needs root
+# (sudo) for one step: mkfs.btrfs reads file owners in a way fakeroot cannot
+# intercept, so the owners and modes fakeroot recorded are applied for real
+# to a temporary copy of the tree first.
 
 . "$(dirname "$0")/env.sh"
 
@@ -30,23 +33,30 @@ ROOT_PARTUUID=$(new_uuid)
 ESP_PARTUUID=$(new_uuid)
 
 TMP=$BUILD/image
-rm -rf "$TMP"
+sudo rm -rf "$TMP"
 mkdir -p "$TMP" "$OUT"
 
 KERNEL_CMDLINE="root=UUID=$FS_UUID rootflags=subvol=@,compress=zstd ro console=tty0 console=ttyS0,115200"
 
+msg "Applying file ownership"
+fakeroot -i "$STATE" -- find "$FSROOT" -printf '%U %G %m %y %P\0' > "$TMP/owners"
+sudo rm -rf "$TMP/fsroot"
+sudo cp -a "$FSROOT" "$TMP/fsroot"
+sudo python3 -I "$WORMOS_ROOT/scripts/apply-ownership.py" "$TMP/owners" "$TMP/fsroot"
+
 msg "Creating btrfs root filesystem"
 truncate -s $((root_size * SECTOR)) "$TMP/root.img"
-fakeroot -i "$STATE" -- mkfs.btrfs -q \
+sudo mkfs.btrfs -q \
 	-L WORMOS \
 	-U "$FS_UUID" \
 	--compress zstd \
-	--rootdir "$FSROOT" \
+	--rootdir "$TMP/fsroot" \
 	--subvol rw:@ \
 	--subvol rw:@var \
 	--subvol rw:@home \
 	--subvol rw:@snapshots \
 	"$TMP/root.img"
+sudo rm -rf "$TMP/fsroot"
 
 msg "Creating EFI system partition"
 grub-mkimage -O x86_64-efi -p /EFI/BOOT -o "$TMP/BOOTX64.EFI" \
