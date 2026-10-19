@@ -53,6 +53,8 @@ static void usage(FILE *out)
 "  comment ID TEXT          set a snapshot's comment\n"
 "  verify [ID...]           check snapshots have not been tampered with\n"
 "  auto [on|off]            snapshots before package changes (default on)\n"
+"  stage begin|commit|abort|keep\n"
+"                           staged system changes, used by wh\n"
 "\n"
 "Scope (now, rewind, diff, browse): --system (default), --home or --all.\n",
 	      out);
@@ -152,6 +154,7 @@ struct opts {
 	int yes;
 	int automatic;
 	int keep;
+	int trial;
 	const char *comment;
 };
 
@@ -165,6 +168,7 @@ static int parse_opts(int argc, char **argv, struct opts *o, const char *allowed
 		{ "comment", required_argument, NULL, 'c' },
 		{ "auto",    no_argument,       NULL, 'a' },
 		{ "keep",    required_argument, NULL, 'k' },
+		{ "try",     no_argument,       NULL, 'T' },
 		{ NULL, 0, NULL, 0 },
 	};
 	int c;
@@ -182,6 +186,7 @@ static int parse_opts(int argc, char **argv, struct opts *o, const char *allowed
 		case 'c': o->comment = optarg; break;
 		case 'a': o->automatic = 1; break;
 		case 'k': o->keep = parse_id_arg(optarg); break;
+		case 'T': o->trial = 1; break;
 		}
 	}
 	if (!o->scope)
@@ -248,6 +253,11 @@ static int cmd_list(int argc, char **argv)
 	if (pending_read(&pid, &pscope) > 0)
 		printf("\nRewind of %s to snapshot %d will happen at the next boot.\n",
 		       scope_desc(pscope), pid);
+	if (stage_pending())
+		printf("\nA package change will be applied at the next restart.\n");
+	if ((pid = stage_trial()))
+		printf("\nA trial is running: the next restart returns to snapshot %d"
+		       " unless it is kept (wh keep).\n", pid);
 	free(list);
 	return 0;
 }
@@ -299,6 +309,10 @@ static int cmd_rewind(int argc, char **argv)
 		return 1;
 	}
 
+	if (stage_pending()) {
+		printf("The package change waiting to be applied is cancelled.\n");
+		stage_discard();
+	}
 	if (pending_write(s.id, o.scope) < 0)
 		die("cannot record the rewind: %s", strerror(errno));
 	sync();
@@ -542,6 +556,36 @@ static int cmd_auto(int argc, char **argv)
 	die("usage: snap auto [on|off]");
 }
 
+static int cmd_stage(int argc, char **argv)
+{
+	const char *sub = argc > 1 ? argv[1] : "";
+	struct opts o;
+	int id;
+
+	open_store();
+	store_lock();
+	if (strcmp(sub, "begin") == 0 && argc == 2)
+		return stage_begin();
+	if (strcmp(sub, "abort") == 0 && argc == 2) {
+		stage_discard();
+		return 0;
+	}
+	if (strcmp(sub, "keep") == 0 && argc == 2) {
+		if (stage_keep() < 0)
+			die("no trial is running");
+		return 0;
+	}
+	if (strcmp(sub, "commit") == 0) {
+		/* Prints the ID of the "before" snapshot (0 if none). */
+		if (parse_opts(argc - 1, argv + 1, &o, "Tc") != argc - 1)
+			die("usage: snap stage commit [--try] [-c COMMENT]");
+		id = stage_commit(o.trial, o.comment);
+		printf("%d\n", id);
+		return 0;
+	}
+	die("usage: snap stage begin | commit [--try] [-c COMMENT] | abort | keep");
+}
+
 static int cmd_boot(int argc, char **argv)
 {
 	int rewind = 0;
@@ -574,6 +618,7 @@ static const struct command {
 	{ "comment", cmd_comment },
 	{ "verify",  cmd_verify },
 	{ "auto",    cmd_auto },
+	{ "stage",   cmd_stage },
 	{ "boot",    cmd_boot },
 	{ NULL, NULL },
 };

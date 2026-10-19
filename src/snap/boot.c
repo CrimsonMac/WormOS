@@ -1,7 +1,8 @@
 /*
  * Boot-time tasks, run by the initramfs before the system root is mounted:
- * clean up interrupted operations and apply a pending rewind, or one chosen
- * in the boot menu.
+ * clean up interrupted operations, end a trial that was not kept, then apply
+ * a pending rewind (or one chosen in the boot menu) or a staged package
+ * change (see stage.c).
  *
  * The target snapshot is verified against its checksums first. A rewind
  * then snapshots the current state, so it can itself be undone.
@@ -46,7 +47,7 @@ static int replace_subvol(int id, int scope)
 	return 0;
 }
 
-static int apply_rewind(int id, int scope)
+int boot_rewind(int id, int scope)
 {
 	struct snapshot s;
 	char comment[64];
@@ -89,22 +90,32 @@ static int apply_rewind(int id, int scope)
  */
 int boot_tasks(int rewind_id)
 {
-	int id, scope, r;
+	int id, scope, r, ret = 0;
 
 	store_lock();
 
+	if (stage_boot_trial() < 0)
+		ret = 1;
+
+	/* A rewind wins over a staged change, which is dropped. */
 	if (rewind_id) {
 		pending_clear();
-		return apply_rewind(rewind_id, SCOPE_SYSTEM) < 0 ? 1 : 0;
+		stage_discard();
+		return boot_rewind(rewind_id, SCOPE_SYSTEM) < 0 ? 1 : ret;
 	}
 	r = pending_read(&id, &scope);
-	if (r == 0)
-		return 0;
-	/* Clear the request first: a rewind that fails must not loop forever. */
-	pending_clear();
-	if (r < 0) {
-		warn("ignoring a malformed rewind request");
-		return 1;
+	if (r != 0) {
+		/* Clear the request first: a failing rewind must not loop forever. */
+		pending_clear();
+		stage_discard();
+		if (r < 0) {
+			warn("ignoring a malformed rewind request");
+			return 1;
+		}
+		return boot_rewind(id, scope) < 0 ? 1 : ret;
 	}
-	return apply_rewind(id, scope) < 0 ? 1 : 0;
+
+	if (stage_boot_activate() < 0)
+		ret = 1;
+	return ret;
 }

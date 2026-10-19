@@ -14,6 +14,7 @@
 #define SUBVOL_SYSTEM    "@"
 #define SUBVOL_HOME      "@home"
 #define SUBVOL_STORE     "@snapshots"
+#define SUBVOL_NEXT      "@.next"         /* staged system change */
 
 /* Inside each snapshot directory @snapshots/<id>/. */
 #define SNAP_SYSTEM      "system"
@@ -24,6 +25,8 @@
 #define STORE_LOCK       ".lock"
 #define STORE_CONFIG     "config"
 #define STORE_PENDING    "pending"
+#define STORE_ACTIVATE   "activate"
+#define STORE_TRIAL      "trial"
 
 #define SCOPE_SYSTEM     1
 #define SCOPE_HOME       2
@@ -102,7 +105,18 @@ int restore_path(int id, const char *path);
 /* menu.c */
 void menu_update(void);
 
+/* stage.c */
+int stage_begin(void);
+int stage_commit(int trial, const char *comment);
+int stage_keep(void);
+void stage_discard(void);
+int stage_pending(void);
+int stage_trial(void);
+int stage_boot_trial(void);
+int stage_boot_activate(void);
+
 /* boot.c */
 int boot_tasks(int rewind_id);
+int boot_rewind(int id, int scope);
 
 #endif
