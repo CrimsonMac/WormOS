@@ -20,10 +20,13 @@ A lightweight, security-focused Linux operating system built around instant, tam
   snap list                      # list snapshots
   snap rewind                    # return to the last snapshot
   ```
-- Snapshots protected from the running system and verified at boot.
-- A firewall enabled by default.
-- Tor and Tor Browser integration.
-- Optional tool kits (forensics, blue team, network analysis), installed on demand.
+- Separate system and home snapshots, built on Btrfs, with fast rewinds.
+- Snapshots protected from the running system, verified at boot, and restorable from the boot menu.
+- Wormholes: disposable sandboxes for untrusted software and malware analysis (`worm open`).
+- An nftables firewall that denies inbound traffic by default (`worm fw`).
+- Tor built in, Tor Browser with signature-verified installation, and an optional system-wide anonymous mode.
+- Hardened defaults: full-disk encryption, MAC address randomization, encrypted DNS, a hardened kernel and no telemetry.
+- Optional tool kits (forensics, blue team, network analysis), installed on demand into isolated containers (`worm kit`).
 - An independent init system and package manager.
 - A lightweight Wayland desktop.
 
