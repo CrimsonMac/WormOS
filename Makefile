@@ -2,7 +2,8 @@
 
 # In build order: later packages build against earlier ones.
 PACKAGES := base-files busybox worminit wormrd snap \
-	zlib zstd openssl ca-certificates curl monocypher wh
+	zlib zstd openssl ca-certificates curl monocypher wh worm \
+	libpcap tcpdump
 
 all: image
 

@@ -71,6 +71,37 @@ These protections raise the bar, but software running as root on the same
 machine can always write to the disk directly. Untrusted code belongs in an
 isolated sandbox, which is planned for a later phase.
 
+## Packages
+
+`wh` (short for wormhole) installs software from the signed WormOS
+repository. Changes never touch the running system: they are made in a
+staged copy, the current system is snapshotted, and a quick restart (the
+kernel keeps running) switches over.
+
+```
+wh update                 # download the package index
+wh search tcp             # find packages
+wh install tcpdump        # install, with whatever it needs
+wh install --try nmap     # trial: undone at the restart after next...
+wh keep                   # ...unless you keep it
+wh remove tcpdump
+wh upgrade
+wh history                # every change, with its snapshot
+wh undo                   # go back to before the last change
+```
+
+The package index is signed with Ed25519 and checked on every use; packages
+must match the SHA-256 the index lists, and an index older than the one
+already downloaded is refused. Packages are unpacked by wh itself, which
+never writes outside the system it installs into.
+
+To change the read-only system by hand:
+
+```
+worm unlock               # make / writable (only the root mount)
+worm lock                 # read-only again, and snapshot the changes
+```
+
 ## Roadmap
 
 1. Minimal bootable base system (kernel, libc, init)
@@ -101,7 +132,7 @@ sudo apt install build-essential bison flex gawk texinfo m4 help2man \
 ### Build and run
 
 ```
-make            # toolchain, kernel, packages, root filesystem and disk image
+make            # toolchain, kernel, packages, repository, root filesystem and disk image
 make run        # boot the image in QEMU on the serial console (Ctrl-A X quits)
 make run-gui    # boot the image in a QEMU window
 make test       # boot the image and run automated checks
@@ -109,18 +140,25 @@ make test       # boot the image and run automated checks
 
 `make test` boots a throwaway copy of the image, checks the running system
 and exercises snapshots end to end (take, diff, restore, browse, rewind of
-the system and of `/home`, and a rewind from the boot menu).
+the system and of `/home`, and a rewind from the boot menu), then
+`worm unlock`/`lock` and the package manager against `out/repo`, served to
+the VM over HTTP (install, a trial that rolls back, remove and undo).
 
 The first build compiles the toolchain and takes a while. Later builds reuse
 it. Individual steps can be run with `make toolchain`, `make kernel`,
-`make packages`, `make rootfs` and `make image`.
+`make packages`, `make repo`, `make rootfs` and `make image`.
+
+`make repo` packs every package into `out/repo` and signs the index. The
+first run creates a signing key in `~/.config/wormos/core.key` (keep it
+safe and backed up); its public half is `keys/core.pub`, which is built
+into the system. The root filesystem is assembled by installing the base
+packages from that repository with `wh --root`.
 
 The development image has an empty root password.
 
-The root filesystem is read-only. To change it by hand during development,
-remount just the root mount: `mount -o remount,bind,rw /` (and
-`remount,bind,ro` afterwards). A plain `mount -o remount,ro /` would make the
-whole btrfs filesystem read-only, including `/var` and `/home`.
+The root filesystem is read-only; change it with `worm unlock` and
+`worm lock`. (A plain `mount -o remount,ro /` would make the whole btrfs
+filesystem read-only, including `/var` and `/home`.)
 
 ### Layout
 
@@ -128,14 +166,18 @@ whole btrfs filesystem read-only, including `/var` and `/home`.
 | --- | --- |
 | `scripts/` | Build scripts (toolchain, kernel, root filesystem, image, QEMU) |
 | `tools/wbuild` | Package builder |
+| `tools/wpack`, `tools/wrepo` | Package files and the signed repository |
+| `keys/` | Public key of the package repository |
 | `recipes/` | Package recipes |
-| `src/` | WormOS components: `worminit` (init), `wormrd` (initramfs init), `snap` |
+| `src/` | WormOS components: `worminit` (init), `wormrd` (initramfs init), `snap`, `wh`, `worm` |
 | `kernel/` | Kernel configuration |
 | `toolchain/` | Pinned toolchain sources and checksums |
 
 ### Package recipes
 
-Each package is described by `recipes/NAME/recipe`, a short bash script:
+Each package is described by `recipes/NAME/recipe`, a short bash script
+(see the comment at the top of `tools/wbuild` for every field, including
+`depends`, `caps` for file capabilities and `groups`):
 
 ```bash
 name=example

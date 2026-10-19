@@ -20,7 +20,7 @@ fi
 
 # The base system. Packages come from the signed repository (tools/wrepo)
 # and are installed with wh, as on a running system.
-PACKAGES=(base-files glibc gcc-libs busybox worminit wormrd snap wh linux
+PACKAGES=(base-files glibc gcc-libs busybox worminit wormrd snap wh worm linux
 	zstd curl)
 WH=$BUILD/host/wh
 

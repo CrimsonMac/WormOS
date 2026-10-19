@@ -3,19 +3,24 @@
 
 Logs in on the serial console and runs a set of checks. It then takes a
 snapshot, changes the system, rewinds (a soft reboot that keeps the kernel
-running) and checks the change is gone. Last,
-it reboots and picks a snapshot from the "Rewind to a snapshot" boot menu.
-The full console output is written to build/boot.log.
+running) and checks the change is gone, then reboots and picks a snapshot
+from the "Rewind to a snapshot" boot menu. Last, it exercises worm
+unlock/lock and the package manager against out/repo, served over HTTP
+from this machine: install, a trial removal that rolls back, a removal and
+its undo. The full console output is written to build/boot.log.
 
 Usage: tests/boot-test.py [--timeout SECONDS]
 """
 
 import argparse
+import functools
+import http.server
 import os
 import re
 import select
 import subprocess
 import sys
+import threading
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -94,6 +99,60 @@ MENU_CHECKS = [
 ]
 
 
+# Package manager and worm checks. {repo} is the repository URL.
+WORM_CHECKS = [
+    ("installed packages recorded", "wh list", r"^wh\s+0\.1\.0-1"),
+    ("wh update", "wh --repo {repo} update", r"^Package index updated: \d+ packages$"),
+    ("wh search", "wh search tcp", r"^tcpdump 4\.99\.7-1$"),
+    ("worm unlock", "worm unlock", r"^The system is unlocked"),
+    ("wh refuses while unlocked", "wh --repo {repo} -y install tcpdump 2>&1",
+     r"the system is unlocked"),
+    ("lock refused while a file is open",
+     "exec 3>/etc/held; worm lock 2>&1", r"^Cannot lock yet(.|\n)*/etc/held"),
+    ("worm lock", "exec 3>&-; worm lock",
+     r"^The system is locked\.\n(.*\n)?Snapshot \d+ created"),
+    ("manual change kept", "ls /etc/held && touch /etc/x 2>&1", r"Read-only file system"),
+]
+
+AFTER_INSTALL_CHECKS = [
+    ("tcpdump runs", "tcpdump --version 2>&1", r"^tcpdump version 4\.99\.7"),
+    ("install in history", "wh history", r"\sinstall\s+\d+\s+libpcap tcpdump$"),
+    ("install snapshot", "snap list", r"auto\s+wh install libpcap tcpdump$"),
+    ("still read-only after install", "touch /usr/x 2>&1", r"Read-only file system"),
+]
+
+AFTER_TRIAL_CHECKS = [
+    ("trial removed tcpdump", "ls /usr/bin/tcpdump 2>&1", r"No such file"),
+    ("trial is reported", "snap list", r"A trial is running"),
+]
+
+AFTER_TRIAL_END_CHECKS = [
+    ("trial rolled back", "tcpdump --version 2>&1", r"^tcpdump version"),
+]
+
+AFTER_REMOVE_CHECKS = [
+    ("tcpdump removed", "ls /usr/bin/tcpdump 2>&1", r"No such file"),
+    ("library kept", "wh list", r"^libpcap\s"),
+]
+
+AFTER_UNDO_CHECKS = [
+    ("undo brought tcpdump back", "tcpdump --version 2>&1", r"^tcpdump version"),
+    ("undo in history", "wh history", r"\sundo\s+\d+\s+#\d+$"),
+]
+
+
+def serve_repo():
+    """Serve out/repo over HTTP; the VM reaches it at 10.0.2.2."""
+    class Quiet(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+    handler = functools.partial(Quiet, directory=os.path.join(ROOT, "out", "repo"))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return f"http://10.0.2.2:{server.server_address[1]}/"
+
+
 class Console:
     def __init__(self, proc, log):
         self.proc = proc
@@ -155,8 +214,13 @@ def main():
                             stderr=subprocess.STDOUT)
     failures = 0
     passed = 0
+    repo = serve_repo()
+    worm_checks = [(n, c.format(repo=repo), p) for n, c, p in WORM_CHECKS]
     total = (len(CHECKS) + len(SNAPSHOT_CHECKS) + len(BROWSE_CHECKS) +
-             len(REWIND_CHECKS) + len(HOME_CHECKS) + len(MENU_CHECKS) + 4)
+             len(REWIND_CHECKS) + len(HOME_CHECKS) + len(MENU_CHECKS) +
+             len(worm_checks) + len(AFTER_INSTALL_CHECKS) +
+             len(AFTER_TRIAL_CHECKS) + len(AFTER_TRIAL_END_CHECKS) +
+             len(AFTER_REMOVE_CHECKS) + len(AFTER_UNDO_CHECKS) + 9)
     start = time.time()
 
     def check(name, ok, out=""):
@@ -171,6 +235,14 @@ def main():
         for name, cmd, pattern in checks:
             out = con.run(cmd)
             check(name, re.search(pattern, out, re.MULTILINE) is not None, out)
+
+    def restart_with(con, name, cmd, expect):
+        """Run a command that restarts the system; check the boot output."""
+        con.send(cmd + "\n")
+        out = con.expect("login:", args.timeout)
+        check(name, expect in out, out[-500:])
+        con.send("root\n")
+        con.expect("# ", 60)
 
     def login(con, timeout):
         con.expect("login:", timeout)
@@ -225,6 +297,21 @@ def main():
             con.send("root\n")
             con.expect("# ", 60)
             run_checks(con, MENU_CHECKS)
+
+            run_checks(con, worm_checks)
+            restart_with(con, "install applied", f"wh --repo {repo} -y install tcpdump",
+                         "applied the package change")
+            run_checks(con, AFTER_INSTALL_CHECKS)
+            restart_with(con, "trial applied", "wh --try -y remove tcpdump",
+                         "applied the package change (trial)")
+            run_checks(con, AFTER_TRIAL_CHECKS)
+            restart_with(con, "trial ended", "kill -HUP 1", "the trial was not kept")
+            run_checks(con, AFTER_TRIAL_END_CHECKS)
+            restart_with(con, "remove applied", "wh -y remove tcpdump",
+                         "applied the package change")
+            run_checks(con, AFTER_REMOVE_CHECKS)
+            restart_with(con, "undo applied", "wh undo", "rewound system to snapshot")
+            run_checks(con, AFTER_UNDO_CHECKS)
 
             con.send("poweroff\n")
             con.expect("Power down", 120)
