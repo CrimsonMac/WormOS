@@ -1,23 +1,41 @@
-# newos
+# WormOS
 
-An independent Linux-based operating system built from source, designed to be lightweight and fully reversible.
+A lightweight, security-focused Linux operating system built around instant, tamper-resistant snapshots.
 
 > **Status:** early development. Nothing is bootable yet.
 
-## Goals
+## Philosophy
 
-- **Independent:** built on the Linux kernel, with its own init system, package manager and desktop shell.
-- **Immutable with full history:** every system change creates a new generation. Generations can be browsed, compared, rolled back to, or booted directly from the boot menu.
-- **Lightweight:** a modern Wayland desktop with a small footprint (target ISO under 600 MB, idle memory under 400 MB).
-- **Simple:** a small, readable codebase where every component is understood.
+- **Testing:** a safe place to try software, write code and experiment. If something breaks, go back.
+- **Secure:** hardened defaults, a firewall enabled out of the box, and privacy tools built in.
+- **Reversible:** the base system is immutable, and every state can be snapshotted and restored in seconds.
+- **Isolated:** risky work runs in disposable sandboxes that cannot reach the host or its snapshots.
+
+## Planned features
+
+- `snap`, a simple snapshot tool, plus a graphical timeline:
+  ```
+  snap now                       # snapshot the system now
+  snap now -c "Installed nginx"  # snapshot with a comment
+  snap list                      # list snapshots
+  snap rewind                    # return to the last snapshot
+  ```
+- Snapshots protected from the running system and verified at boot.
+- A firewall enabled by default.
+- Tor and Tor Browser integration.
+- Optional tool kits (forensics, blue team, network analysis), installed on demand.
+- An independent init system and package manager.
+- A lightweight Wayland desktop.
 
 ## Roadmap
 
 1. Minimal bootable base system (kernel, libc, init)
-2. Package manager and generation system
-3. Graphics stack and Wayland compositor
-4. Desktop shell and timeline application
-5. Bootable ISO and installer
+2. Snapshot system and package manager
+3. Security baseline (firewall, sandboxing, hardening)
+4. Graphics stack and Wayland compositor
+5. Desktop shell and snapshot timeline
+6. Tool kits
+7. Bootable ISO and installer
 
 ## Building
 
