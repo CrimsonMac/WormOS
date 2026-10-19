@@ -1,0 +1,11 @@
+name=ca-certificates
+version=2026.09.25
+description="Mozilla's trusted certificate authorities, as published by curl"
+# Checked against the SHA-256 published at https://curl.se/ca/.
+source=(https://curl.se/ca/cacert-2026-09-25.pem)
+sha256=(a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505)
+
+package() {
+	install -Dm644 cacert-2026-09-25.pem "$pkgdir/etc/ssl/certs/ca-certificates.crt"
+	ln -s certs/ca-certificates.crt "$pkgdir/etc/ssl/cert.pem"
+}

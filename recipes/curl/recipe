@@ -1,0 +1,26 @@
+name=curl
+version=8.23.0
+description="Command-line tool and library for transferring data with URLs"
+depends=(glibc zlib zstd openssl ca-certificates)
+# Signed by Daniel Stenberg (27EDEAF22F3ABCEB50DB9A125CC908FDB71E12C2).
+source=(https://curl.se/download/curl-$version.tar.xz)
+sha256=(8dadd7d2536a314f982ad05a651b713f426bf7d02cc2c76cffb9796f2218e6c5)
+
+build() {
+	# An explicit --build keeps configure in cross mode: our binaries happen
+	# to run on the build host, which would make it test them with the
+	# target libraries.
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--with-openssl --with-zlib --with-zstd \
+		--with-ca-bundle=/etc/ssl/certs/ca-certificates.crt \
+		--without-libpsl --without-libidn2 --without-nghttp2 \
+		--without-brotli --disable-ldap --disable-manual \
+		--disable-static
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man"
+}

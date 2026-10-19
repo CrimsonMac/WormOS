@@ -1,0 +1,20 @@
+name=openssl
+version=3.5.9
+description="TLS and cryptography library (long-term support branch)"
+depends=(glibc zlib)
+# Signed by the OpenSSL project key (B146647E45A7B33947AB226B2A2C87D161692D40,
+# listed in the project's doc/fingerprints.txt).
+source=(https://github.com/openssl/openssl/releases/download/openssl-$version/openssl-$version.tar.gz)
+sha256=(603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a)
+
+build() {
+	./Configure linux-x86_64 --prefix=/usr --openssldir=/etc/ssl --libdir=lib \
+		shared zlib-dynamic no-tests no-docs
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install_sw install_ssldirs
+	rm -f "$pkgdir"/usr/lib/*.a
+	rm -rf "$pkgdir/etc/ssl/misc"
+}

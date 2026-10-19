@@ -1,0 +1,22 @@
+name=zstd
+version=1.5.7
+description="Zstandard compression library and tool"
+depends=(glibc)
+# Signed by the Zstandard release key (4EF4AC63455FC9F4545D9B7DEF8FE99528B52FFD).
+source=(https://github.com/facebook/zstd/releases/download/v$version/zstd-$version.tar.gz)
+sha256=(eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3)
+
+zmake() {
+	make prefix=/usr HAVE_ZLIB=0 HAVE_LZMA=0 HAVE_LZ4=0 "$@"
+}
+
+build() {
+	zmake -C lib -j"$JOBS" lib-release
+	zmake -C programs -j"$JOBS" zstd-release
+}
+
+package() {
+	zmake -C lib DESTDIR="$pkgdir" install-pc install-includes install-shared
+	zmake -C programs DESTDIR="$pkgdir" install
+	rm -rf "$pkgdir/usr/share/man"
+}
