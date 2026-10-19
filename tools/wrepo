@@ -1,0 +1,79 @@
+#!/bin/bash
+# wrepo - build the signed package repository in out/repo.
+#
+# Usage: tools/wrepo [NAME...]
+#
+# Packs the named packages (default: every staged package) with wpack, then
+# writes out/repo/index and signs it as out/repo/index.sig.
+#
+# The index lists every package with its version, file, size, SHA-256,
+# dependencies and description. Only the index is signed: each package is
+# checked against the SHA-256 the signed index gives for it. The index's
+# date lets wh refuse an index older than the one it already has.
+#
+# The signing key is $WORMOS_SIGNING_KEY (default ~/.config/wormos/core.key).
+# Its public half is keys/core.pub, which is built into the image. Without
+# either, a new key pair is created.
+
+. "$(dirname "$0")/../scripts/env.sh"
+
+SECRET=${WORMOS_SIGNING_KEY:-$HOME/.config/wormos/core.key}
+PUBLIC=$WORMOS_ROOT/keys/core.pub
+WSIGN=$BUILD/host/wsign
+
+# Build wsign for the build host, with Monocypher from its recipe's pinned source.
+build_wsign() {
+	local name version
+	local -a source sha256
+	eval "$(sed -n '/^\(name\|version\|source\|sha256\)=/p' "$WORMOS_ROOT/recipes/monocypher/recipe")"
+	fetch "${source[0]}" "${sha256[0]}"
+	local mono=$BUILD/host/monocypher
+	unpack "$SOURCES/$(basename "${source[0]}")" "$mono"
+	cc -O2 -std=gnu17 -Wall -Wextra -I"$mono/src" -I"$mono/src/optional" \
+		-o "$WSIGN" "$WORMOS_ROOT/src/wh/wsign.c" "$WORMOS_ROOT/src/wh/sig.c" \
+		"$mono/src/monocypher.c" "$mono/src/optional/monocypher-ed25519.c"
+}
+
+if [ ! -x "$WSIGN" ] || [ "$WORMOS_ROOT/src/wh/wsign.c" -nt "$WSIGN" ] ||
+   [ "$WORMOS_ROOT/src/wh/sig.c" -nt "$WSIGN" ]; then
+	mkdir -p "$BUILD/host"
+	build_wsign
+fi
+
+if [ ! -f "$SECRET" ]; then
+	[ -f "$PUBLIC" ] && die "signing key $SECRET is missing (keys/core.pub exists)"
+	msg "Creating a new signing key: $SECRET"
+	mkdir -p "$(dirname "$SECRET")" "$(dirname "$PUBLIC")"
+	chmod 700 "$(dirname "$SECRET")"
+	"$WSIGN" keygen "$SECRET" "$PUBLIC"
+fi
+
+if [ $# -eq 0 ]; then
+	set -- $(cd "$BUILD/pkginfo" && ls *.info | sed 's/\.info$//')
+fi
+"$WORMOS_ROOT/tools/wpack" "$@"
+
+msg "Writing package index"
+index=$REPO/index
+{
+	echo "# WormOS package index"
+	echo "date = $(date +%s)"
+	for wpkg in "$REPO"/*.wpkg; do
+		info=$(zstd -dc "$wpkg" | tar -xOf - .PKGINFO)
+		get() { sed -n "s/^$1 = //p" <<< "$info" | head -1; }
+		echo
+		echo "[$(get name)]"
+		echo "version = $(get version)-$(get release)"
+		echo "file = $(basename "$wpkg")"
+		echo "sha256 = $(sha256sum "$wpkg" | cut -d' ' -f1)"
+		echo "size = $(stat -c %s "$wpkg")"
+		echo "installed-size = $(get size)"
+		echo "depends = $(get depends)"
+		echo "description = $(get description)"
+	done
+} > "$index.part"
+mv "$index.part" "$index"
+rm -f "$index.sig"
+"$WSIGN" sign "$SECRET" "$index"
+"$WSIGN" verify "$PUBLIC" "$index" > /dev/null || die "the new index does not verify"
+msg "Repository ready: $REPO ($(ls "$REPO"/*.wpkg | wc -l) packages)"

@@ -1,6 +1,7 @@
 name=worminit
 version=0.1.0
 description="WormOS init system"
+depends=(glibc)
 localsrc=src/worminit
 
 build() {

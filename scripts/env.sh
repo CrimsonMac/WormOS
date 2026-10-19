@@ -11,6 +11,7 @@ JOBS=${JOBS:-$(nproc)}
 SOURCES=$WORMOS_ROOT/sources
 BUILD=$WORMOS_ROOT/build
 OUT=$WORMOS_ROOT/out
+REPO=$OUT/repo              # signed package repository (.wpkg files and index)
 TOOLS=$BUILD/tools          # cross toolchain prefix
 SYSROOT=$BUILD/sysroot      # target headers and libraries used for linking
 WORK=$BUILD/work            # unpacked sources and build trees
@@ -45,6 +46,24 @@ unpack() {
 	rm -rf "$2"
 	mkdir -p "$2"
 	tar -xf "$1" -C "$2" --strip-components=1
+}
+
+# pkginfo NAME VERSION RELEASE DESCRIPTION [DEPENDS...]
+# Record metadata for a package staged in $PKGDIR/NAME. Extra lines (caps,
+# groups, excludes) can be appended to $BUILD/pkginfo/NAME.info afterwards.
+pkginfo() {
+	local name=$1 version=$2 release=$3 description=$4
+	shift 4
+	mkdir -p "$BUILD/pkginfo"
+	{
+		echo "name = $name"
+		echo "version = $version"
+		echo "release = $release"
+		echo "description = $description"
+		echo "depends = $*"
+	} > "$BUILD/pkginfo/$name.info"
+	(cd "$PKGDIR/$name" && find . -mindepth 1 | sed 's|^\./||' | sort) \
+		> "$BUILD/pkginfo/$name.files"
 }
 
 # stamp NAME: mark a build step done; done_step NAME: test whether it is.

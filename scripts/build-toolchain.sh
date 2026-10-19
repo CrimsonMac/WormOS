@@ -162,4 +162,12 @@ if ! done_step gcc-final; then
 	stamp gcc-final
 fi
 
+# Package metadata for the libraries the target system uses. Development
+# files stay in the sysroot and are left out of the packages.
+pkginfo linux-headers 6.18.57 1 "Linux kernel headers"
+pkginfo glibc 2.44 1 "The GNU C library"
+printf 'exclude = %s\n' usr/include '*.a' '*.o' usr/share/info usr/share/man \
+	usr/share/i18n >> "$BUILD/pkginfo/glibc.info"
+pkginfo gcc-libs 15.3.0 1 "GCC runtime libraries" glibc
+
 msg "Toolchain ready: $("$TARGET-gcc" --version | head -1)"

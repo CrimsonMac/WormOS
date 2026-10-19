@@ -1,0 +1,18 @@
+name=monocypher
+version=4.0.3
+description="Small cryptographic library (static, for building wh)"
+# The SHA-512 published on monocypher.org was checked before pinning.
+source=(https://monocypher.org/download/monocypher-$version.tar.gz)
+sha256=(8cc9bc341a66249016db9bd70e9142d8d0aef9945973744b1ac05dbc55d8ee66)
+
+build() {
+	$CC $CFLAGS -Isrc -Isrc/optional -c src/monocypher.c src/optional/monocypher-ed25519.c
+	$AR rcs libmonocypher.a monocypher.o monocypher-ed25519.o
+}
+
+package() {
+	install -Dm644 libmonocypher.a "$pkgdir/usr/lib/libmonocypher.a"
+	install -Dm644 src/monocypher.h "$pkgdir/usr/include/monocypher.h"
+	install -Dm644 src/optional/monocypher-ed25519.h "$pkgdir/usr/include/monocypher-ed25519.h"
+	install -Dm644 LICENCE.md "$pkgdir/usr/share/licenses/monocypher/LICENCE.md"
+}

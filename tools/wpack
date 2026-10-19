@@ -1,0 +1,74 @@
+#!/bin/bash
+# wpack - turn staged packages into .wpkg files.
+#
+# Usage: tools/wpack NAME...
+#
+# Packs build/pkgs/NAME, described by build/pkginfo/NAME.info, into
+# out/repo/NAME-VERSION-RELEASE.wpkg: a zstd-compressed pax tar whose first
+# member is .PKGINFO, followed by the files. Binaries are stripped, files
+# listed as "exclude" in the info are left out, and everything is owned by
+# root. .PKGINFO repeats the package metadata and adds the installed size
+# and the SHA-256 of every regular file.
+
+. "$(dirname "$0")/../scripts/env.sh"
+
+[ $# -gt 0 ] || die "usage: wpack NAME..."
+
+# info_get FILE KEY: the value of the first "KEY = value" line.
+info_get() { sed -n "s/^$2 = //p" "$1" | head -1; }
+
+pack_one() {
+	local name=$1 info=$BUILD/pkginfo/$1.info
+	local version release stage out
+	local -a excludes=()
+
+	[ -f "$info" ] || die "$name: no package info, build it first"
+	[ -d "$PKGDIR/$name" ] || die "$name: not staged in $PKGDIR"
+	version=$(info_get "$info" version)
+	release=$(info_get "$info" release)
+	[[ $name =~ ^[a-z0-9][a-z0-9+_.-]*$ ]] || die "$name: invalid package name"
+	[[ $version =~ ^[0-9][A-Za-z0-9+_.~]*$ ]] || die "$name: invalid version '$version'"
+	[[ $release =~ ^[0-9]+$ ]] || die "$name: invalid release '$release'"
+
+	stage=$BUILD/wpack/$name
+	rm -rf "$stage"
+	mkdir -p "$stage/root" "$stage/meta" "$REPO"
+
+	while read -r pattern; do
+		excludes+=("--exclude=$pattern")
+	done < <(info_get_all "$info" exclude)
+	rsync -a "${excludes[@]}" "$PKGDIR/$name/" "$stage/root/"
+
+	# strip skips (and complains about) non-ELF files such as scripts.
+	if [ -d "$stage/root/usr" ]; then
+		find "$stage/root/usr" -type f \( -perm -u+x -o -name '*.so*' \) \
+			! -name '*.ko*' ! -name '*.a' -print0 |
+			xargs -0 -r "$TARGET-strip" --strip-unneeded 2>/dev/null || true
+	fi
+
+	{
+		grep -v '^exclude = ' "$info"
+		echo "size = $(du -sb "$stage/root" | cut -f1)"
+		(cd "$stage/root" && find . -type f -printf '%P\0' | sort -z |
+			xargs -0 -r sha256sum | sed 's/^\([0-9a-f]*\)  /file = \1 /')
+	} > "$stage/meta/.PKGINFO"
+
+	out=$REPO/$name-$version-$release.wpkg
+	rm -f "$REPO/$name"-[0-9]*.wpkg
+	local -a top=()
+	mapfile -t top < <(cd "$stage/root" && find . -mindepth 1 -maxdepth 1 -printf '%P\n' | sort)
+	tar --format=pax --pax-option=delete=atime,delete=ctime \
+		--owner=0 --group=0 --numeric-owner --sort=name \
+		-C "$stage/meta" -cf - .PKGINFO -C "$stage/root" "${top[@]}" |
+		zstd -q -19 -T0 > "$out.part"
+	mv "$out.part" "$out"
+	rm -rf "$stage"
+	msg "Packed $(basename "$out") ($(du -h "$out" | cut -f1))"
+}
+
+# info_get_all FILE KEY: every value of "KEY = value" lines.
+info_get_all() { sed -n "s/^$2 = //p" "$1"; }
+
+for pkg in "$@"; do
+	pack_one "$pkg"
+done

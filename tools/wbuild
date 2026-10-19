@@ -6,7 +6,11 @@
 # A recipe lives in recipes/NAME/recipe and is a bash script that sets:
 #
 #   name, version       package name and version
+#   release             package release, bumped when the recipe changes (default 1)
 #   description         one-line summary
+#   depends=(NAME...)   packages needed at run time
+#   caps=("PATH CAPS"...)  file capabilities, e.g. "usr/bin/dumpcap cap_net_raw=ep"
+#   groups=(NAME...)    system groups the package needs
 #   source=(URL...)     archives to download (the first one is unpacked)
 #   sha256=(SUM...)     checksums, one per source
 #   localsrc=PATH       alternatively, a source tree inside this repository
@@ -36,8 +40,8 @@ build_one() (
 	local recipedir=$WORMOS_ROOT/recipes/$1
 	[ -f "$recipedir/recipe" ] || die "no recipe for $1"
 
-	local name="" version="" description="" localsrc=""
-	local -a source=() sha256=()
+	local name="" version="" release=1 description="" localsrc=""
+	local -a source=() sha256=() depends=() caps=() groups=()
 	. "$recipedir/recipe"
 	[ "$name" = "$1" ] || die "$1: recipe declares name '$name'"
 
@@ -68,14 +72,11 @@ build_one() (
 	package
 
 	# Record what the package installed.
-	mkdir -p "$BUILD/pkginfo"
+	pkginfo "$name" "$version" "$release" "$description" "${depends[@]}"
 	{
-		echo "name = $name"
-		echo "version = $version"
-		echo "description = $description"
-	} > "$BUILD/pkginfo/$name.info"
-	(cd "$pkgdir" && find . -mindepth 1 | sed 's|^\./||' | sort) \
-		> "$BUILD/pkginfo/$name.files"
+		for c in "${caps[@]}"; do echo "cap = $c"; done
+		for g in "${groups[@]}"; do echo "group = $g"; done
+	} >> "$BUILD/pkginfo/$name.info"
 
 	msg "Packaged $name $version"
 )
