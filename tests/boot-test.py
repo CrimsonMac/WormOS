@@ -2,7 +2,8 @@
 """Boot the WormOS image in QEMU and check the running system.
 
 Logs in on the serial console and runs a set of checks. It then takes a
-snapshot, changes the system, rewinds and checks the change is gone. Last,
+snapshot, changes the system, rewinds (a soft reboot that keeps the kernel
+running) and checks the change is gone. Last,
 it reboots and picks a snapshot from the "Rewind to a snapshot" boot menu.
 The full console output is written to build/boot.log.
 
@@ -44,21 +45,22 @@ SNAPSHOT_CHECKS = [
     ("snap now", "snap now -c 'test base'", r"^Snapshot 1 created \(system\)$"),
     ("store stays hidden", "grep -c snapshots /proc/mounts", r"^0$"),
     ("change the system",
-     "mount -o remount,rw / && echo x > /etc/probe && mount -o remount,ro / && echo ok",
+     "mount -o remount,bind,rw / && echo x > /etc/probe && mount -o remount,bind,ro / && echo ok",
      r"^ok$"),
     ("snap diff", "snap diff 1", r"^\+ /etc/probe$"),
     ("snap list", "snap list", r"^\s+1\s.*system\s+manual\s+test base$"),
     ("snap verify", "snap verify", r"^snapshot 1 \(system\): ok$"),
 ]
 
-# After "snap rewind" and the reboot it causes.
+# After "snap rewind" and the soft reboot it causes.
 REWIND_CHECKS = [
+    ("services restarted", "pidof syslogd && grep -c ' /var ' /proc/mounts", r"^1$"),
     ("change is gone", "ls /etc/probe 2>&1", r"No such file"),
     ("previous state saved", "snap list", r"^\s+2\s.*auto\s+Before rewind to 1$"),
     ("saved state has the change", "snap diff 1 2", r"^\+ /etc/probe$"),
     ("root still read-only", "grep ' / ' /proc/mounts", r"\sro[,\s]"),
     ("change the system again",
-     "mount -o remount,rw / && echo y > /etc/probe2 && mount -o remount,ro / && echo ok",
+     "mount -o remount,bind,rw / && echo y > /etc/probe2 && mount -o remount,bind,ro / && echo ok",
      r"^ok$"),
 ]
 
@@ -132,7 +134,7 @@ def main():
     failures = 0
     passed = 0
     total = (len(CHECKS) + len(SNAPSHOT_CHECKS) + len(REWIND_CHECKS) +
-             len(MENU_CHECKS) + 2)
+             len(MENU_CHECKS) + 3)
     start = time.time()
 
     def check(name, ok, out=""):
@@ -161,12 +163,16 @@ def main():
             run_checks(con, CHECKS)
             run_checks(con, SNAPSHOT_CHECKS)
 
+            boot_id = con.run("cat /proc/sys/kernel/random/boot_id")
             con.send("snap rewind -y\n")
             out = con.expect("login:", args.timeout)
-            check("initramfs applied the rewind",
-                  "rewound system to snapshot 1" in out, out[-500:])
+            check("rewind applied by soft reboot",
+                  "rewound system to snapshot 1" in out and "soft reboot" in out,
+                  out[-500:])
             con.send("root\n")
             con.expect("# ", 60)
+            out = con.run("cat /proc/sys/kernel/random/boot_id")
+            check("kernel kept running", boot_id.splitlines()[-1] in out, out)
             run_checks(con, REWIND_CHECKS)
 
             # Reboot and pick the newest snapshot from the boot menu: down to

@@ -17,6 +17,11 @@
  *
  * Shutdown is requested with signals (compatible with busybox halt, poweroff
  * and reboot): SIGUSR1 halts, SIGUSR2 powers off, SIGTERM and SIGINT reboot.
+ *
+ * SIGHUP soft-reboots: all processes are stopped and the filesystems
+ * unmounted, then wormrd takes over as PID 1 again to apply pending
+ * snapshot operations and start the system afresh, without restarting the
+ * kernel or the firmware. snap rewind uses this.
  */
 
 #define _GNU_SOURCE
@@ -37,6 +42,7 @@
 #include <unistd.h>
 
 #define SERVICE_DIR   "/etc/worm/services"
+#define WORMRD        "/usr/lib/wormrd/init"
 #define MAX_SERVICES  64
 #define MAX_EXEC      1024
 
@@ -352,7 +358,21 @@ static void kill_everything(void)
 		;
 }
 
-static void unmount_all(void)
+/* Kernel filesystems kept across a soft reboot. */
+static int kernel_fs(const char *dir)
+{
+	static const char *const keep[] = { "/proc", "/sys", "/dev", NULL };
+
+	for (int i = 0; keep[i]; i++) {
+		size_t n = strlen(keep[i]);
+
+		if (strncmp(dir, keep[i], n) == 0 && (dir[n] == '\0' || dir[n] == '/'))
+			return 1;
+	}
+	return 0;
+}
+
+static void unmount_all(int keep_kernel_fs)
 {
 	char mounts[64][PATH_MAX];
 	char line[PATH_MAX * 2];
@@ -364,7 +384,8 @@ static void unmount_all(void)
 			char dev[PATH_MAX], dir[PATH_MAX];
 
 			if (sscanf(line, "%4095s %4095s", dev, dir) == 2 &&
-			    strcmp(dir, "/") != 0)
+			    strcmp(dir, "/") != 0 &&
+			    !(keep_kernel_fs && kernel_fs(dir)))
 				snprintf(mounts[n++], PATH_MAX, "%s", dir);
 		}
 		fclose(f);
@@ -374,7 +395,13 @@ static void unmount_all(void)
 	while (n-- > 0)
 		umount2(mounts[n], MNT_DETACH);
 
-	if (mount(NULL, "/", NULL, MS_REMOUNT | MS_RDONLY, NULL) < 0)
+	/*
+	 * On a soft reboot the filesystem stays in use (a rewind is about to
+	 * write to it), and making it read-only here would have the next
+	 * read-write mount reset its options.
+	 */
+	if (!keep_kernel_fs &&
+	    mount(NULL, "/", NULL, MS_REMOUNT | MS_RDONLY, NULL) < 0)
 		log_msg("cannot remount / read-only: %s", strerror(errno));
 }
 
@@ -383,7 +410,7 @@ static void shutdown_system(int how)
 	shutting_down = 1;
 	kill_everything();
 	sync();
-	unmount_all();
+	unmount_all(0);
 	sync();
 
 	switch (how) {
@@ -395,6 +422,26 @@ static void shutdown_system(int how)
 	/* reboot() only returns on failure; never let PID 1 exit. */
 	for (;;)
 		pause();
+}
+
+static void soft_reboot(void)
+{
+	sigset_t none;
+
+	log_msg("soft reboot");
+	shutting_down = 1;
+	kill_everything();
+	sync();
+	unmount_all(1);
+	sync();
+
+	/* wormrd runs as PID 1 with a clean signal state. */
+	sigemptyset(&none);
+	sigprocmask(SIG_SETMASK, &none, NULL);
+	execl(WORMRD, WORMRD, "--soft-reboot", (char *)NULL);
+
+	log_msg("cannot start %s: %s, rebooting", WORMRD, strerror(errno));
+	shutdown_system(RB_AUTOBOOT);
 }
 
 int main(void)
@@ -413,6 +460,7 @@ int main(void)
 	sigaddset(&set, SIGINT);
 	sigaddset(&set, SIGUSR1);
 	sigaddset(&set, SIGUSR2);
+	sigaddset(&set, SIGHUP);
 	sigprocmask(SIG_BLOCK, &set, NULL);
 
 	/* Let ctrl-alt-del send SIGINT to init instead of rebooting at once. */
@@ -457,6 +505,9 @@ int main(void)
 		case SIGTERM:
 		case SIGINT:
 			shutdown_system(RB_AUTOBOOT);
+			break;
+		case SIGHUP:
+			soft_reboot();
 			break;
 		}
 		run_pending_restarts();

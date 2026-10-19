@@ -7,8 +7,9 @@
  * command runs and never appears in the system's mount table.
  *
  * Rewinds are not applied to the running system: snap records the request
- * and restarts, and the initramfs applies it (snap boot) before anything
- * from the system root runs.
+ * and restarts userland (a soft reboot through worminit and wormrd), and
+ * the rewind is applied (snap boot) before anything from the system root
+ * runs again.
  */
 
 #define _GNU_SOURCE
@@ -75,8 +76,31 @@ static void format_date(time_t t, char *buf, size_t len)
 	strftime(buf, len, "%Y-%m-%d %H:%M", &tm);
 }
 
-/* Find the device holding the running root filesystem. */
-static void root_device(char *dev, size_t len)
+/*
+ * Keep the filesystem-wide options (compression and so on) when mounting
+ * the top level: if the filesystem is read-only, a read-write mount
+ * reconfigures it with the options given, and would drop the others.
+ */
+static void top_options(const char *super, char *out, size_t len)
+{
+	char buf[1024], *tok, *save;
+	size_t n = 0;
+
+	snprintf(buf, sizeof(buf), "%s", super);
+	out[0] = '\0';
+	for (tok = strtok_r(buf, ",", &save); tok; tok = strtok_r(NULL, ",", &save)) {
+		if (!strcmp(tok, "rw") || !strcmp(tok, "ro") ||
+		    !strncmp(tok, "subvol=", 7) || !strncmp(tok, "subvolid=", 9))
+			continue;
+		n += snprintf(out + n, len - n, "%s,", tok);
+		if (n >= len)
+			die("mount options too long");
+	}
+	snprintf(out + n, len - n, "subvolid=5");
+}
+
+/* Find the device holding the running root filesystem, and its options. */
+static void root_device(char *dev, size_t len, char *opts, size_t optlen)
 {
 	char line[4096];
 	FILE *f = fopen("/proc/self/mountinfo", "re");
@@ -84,16 +108,17 @@ static void root_device(char *dev, size_t len)
 	if (!f)
 		die("cannot read /proc/self/mountinfo: %s", strerror(errno));
 	while (fgets(line, sizeof(line), f)) {
-		char mnt[PATH_MAX], type[64], src[PATH_MAX], *sep;
+		char mnt[PATH_MAX], type[64], src[PATH_MAX], super[1024], *sep;
 
 		if (sscanf(line, "%*s %*s %*s %*s %4095s", mnt) != 1 ||
 		    strcmp(mnt, "/") != 0 || !(sep = strstr(line, " - ")) ||
-		    sscanf(sep + 3, "%63s %4095s", type, src) != 2)
+		    sscanf(sep + 3, "%63s %4095s %1023s", type, src, super) != 3)
 			continue;
 		fclose(f);
 		if (strcmp(type, "btrfs") != 0)
 			die("the root filesystem is not btrfs");
 		snprintf(dev, len, "%s", src);
+		top_options(super, opts, optlen);
 		return;
 	}
 	fclose(f);
@@ -103,21 +128,20 @@ static void root_device(char *dev, size_t len)
 /* Mount the top level of the filesystem where only this process sees it. */
 static void open_store(void)
 {
-	char dev[PATH_MAX];
+	char dev[PATH_MAX], opts[1024];
 
 	if (top_given)
 		return;
 	if (geteuid() != 0)
 		die("snapshots are managed by root, try again with su");
 
-	root_device(dev, sizeof(dev));
+	root_device(dev, sizeof(dev), opts, sizeof(opts));
 	mkdir(RUNDIR, 0700);
 	mkdir(TOPMNT, 0700);
 	if (unshare(CLONE_NEWNS) < 0 ||
 	    mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) < 0)
 		die("cannot create a private mount namespace: %s", strerror(errno));
-	if (mount(dev, TOPMNT, "btrfs", MS_NOSUID | MS_NODEV | MS_NOEXEC,
-		  "subvolid=5") < 0)
+	if (mount(dev, TOPMNT, "btrfs", MS_NOSUID | MS_NODEV | MS_NOEXEC, opts) < 0)
 		die("cannot mount %s: %s", dev, strerror(errno));
 	top = TOPMNT;
 }
@@ -282,8 +306,10 @@ static int cmd_rewind(int argc, char **argv)
 		printf("Rewind recorded.\n");
 		return 0;
 	}
+	/* worminit soft-reboots on SIGHUP: userland restarts, the kernel stays. */
 	printf("Restarting...\n");
-	if (kill(1, SIGTERM) < 0)
+	fflush(stdout);
+	if (kill(1, SIGHUP) < 0)
 		die("cannot restart: %s", strerror(errno));
 	return 0;
 }

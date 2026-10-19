@@ -19,17 +19,6 @@
 
 #include "snap.h"
 
-static void delete_old(const char *subvol)
-{
-	char name[64], path[PATH_MAX];
-	struct stat st;
-
-	snprintf(name, sizeof(name), "%s.old", subvol);
-	path_join(path, sizeof(path), top, name);
-	if (stat(path, &st) == 0 && subvol_delete(top, name) < 0)
-		warn("cannot delete %s: %s", name, strerror(errno));
-}
-
 static int replace_subvol(int id, int scope)
 {
 	char live[PATH_MAX], old[PATH_MAX], src[PATH_MAX], oldname[64];
@@ -40,7 +29,7 @@ static int replace_subvol(int id, int scope)
 	path_join(old, sizeof(old), top, oldname);
 	store_entry_path(src, sizeof(src), id, scope);
 
-	delete_old(subvol);
+	subvol_delete_old(subvol);
 	if (rename(live, old) < 0) {
 		warn("cannot move %s aside: %s", subvol, strerror(errno));
 		return -1;
@@ -52,7 +41,8 @@ static int replace_subvol(int id, int scope)
 			warn("cannot put %s back: %s", subvol, strerror(errno));
 		return -1;
 	}
-	delete_old(subvol);
+	/* Kept while it is still mounted (a soft reboot); deleted later. */
+	subvol_delete_old(subvol);
 	return 0;
 }
 
@@ -102,9 +92,6 @@ int boot_tasks(int rewind_id)
 	int id, scope, r;
 
 	store_lock();
-	store_cleanup();
-	delete_old(SUBVOL_SYSTEM);
-	delete_old(SUBVOL_HOME);
 
 	if (rewind_id) {
 		pending_clear();

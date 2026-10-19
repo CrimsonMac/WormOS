@@ -80,6 +80,7 @@ void store_lock(void)
 			die("cannot lock the snapshot store: %s", strerror(errno));
 	}
 	/* The descriptor stays open, and the lock held, until exit. */
+	store_cleanup();
 }
 
 /* Read the first line of a store file. Returns 0 if it does not exist. */
@@ -412,7 +413,42 @@ int store_delete(int id)
 	return 0;
 }
 
-/* Remove snapshots that were interrupted half way. */
+/*
+ * Is the top-level subvolume name mounted anywhere? Btrfs lets a subvolume
+ * be deleted while it is mounted (only a mount on its directory entry stops
+ * it), so this has to be checked by hand.
+ */
+static int subvol_mounted(const char *name)
+{
+	char line[4096], root[PATH_MAX], want[PATH_MAX];
+	FILE *f = fopen("/proc/self/mountinfo", "re");
+	int found = 0;
+
+	if (!f)
+		return 1;       /* cannot tell, so assume it is */
+	snprintf(want, sizeof(want), "/%s", name);
+	while (!found && fgets(line, sizeof(line), f))
+		found = sscanf(line, "%*s %*s %*s %4095s", root) == 1 &&
+			strcmp(root, want) == 0;
+	fclose(f);
+	return found;
+}
+
+/* Delete <subvol>.old, left behind by a rewind, unless it is still in use. */
+void subvol_delete_old(const char *subvol)
+{
+	char name[64], path[PATH_MAX];
+	struct stat st;
+
+	snprintf(name, sizeof(name), "%s.old", subvol);
+	path_join(path, sizeof(path), top, name);
+	if (stat(path, &st) < 0 || subvol_mounted(name))
+		return;
+	if (subvol_delete(top, name) < 0)
+		warn("cannot delete %s: %s", name, strerror(errno));
+}
+
+/* Remove snapshots that were interrupted half way, and old subvolumes. */
 void store_cleanup(void)
 {
 	char path[PATH_MAX], dir[PATH_MAX];
@@ -430,6 +466,8 @@ void store_cleanup(void)
 		delete_dir(dir);
 	}
 	closedir(d);
+	subvol_delete_old(SUBVOL_SYSTEM);
+	subvol_delete_old(SUBVOL_HOME);
 }
 
 int config_auto(void)

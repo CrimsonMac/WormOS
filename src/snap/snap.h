@@ -77,6 +77,7 @@ int store_get(int id, struct snapshot *s);
 int store_create(int scope, const char *type, const char *comment);
 int store_delete(int id);
 void store_cleanup(void);
+void subvol_delete_old(const char *subvol);
 int store_write_info(const struct snapshot *s);
 void store_entry_path(char *out, size_t len, int id, int scope);
 int config_auto(void);

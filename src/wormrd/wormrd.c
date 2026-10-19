@@ -6,6 +6,10 @@
  * (such as a rewind) while nothing from the system is running yet, mounts
  * the system root read-only and hands over to the real init.
  *
+ * With --soft-reboot it does the same from the installed system: worminit
+ * execs it after stopping all processes, so a rewind takes effect without
+ * restarting the kernel. The new root replaces the old one with pivot_root.
+ *
  * Kernel command line:
  *
  *     root=UUID=...|LABEL=...|/dev/...   filesystem holding the system
@@ -32,13 +36,17 @@
 #include <sys/mount.h>
 #include <sys/reboot.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 #include <linux/btrfs.h>
 
-#define SYSROOT       "/sysroot"
-#define TOPDIR        "/top"
+static const char *sysroot = "/sysroot";
+static const char *topdir = "/top";
+#define SOFT_RUN      "/run"
+#define SOFT_SYSROOT  "/run/wormrd/sysroot"
+#define SOFT_TOPDIR   "/run/wormrd/top"
 #define SNAP_TOOL     "/usr/bin/snap"
 #define RESCUE_SHELL  "/bin/sh"
 #define ROOT_WAIT_MS  10000
@@ -58,6 +66,7 @@ static char opt_init[PATH_MAX] = "/sbin/init";
 static char opt_rewind[16];
 static int opt_rw;
 static int opt_rescue;
+static int soft_reboot;
 
 static void log_msg(const char *fmt, ...)
 {
@@ -141,8 +150,8 @@ static void parse_cmdline(void)
 		else if (strcmp(tok, "ro") == 0)
 			opt_rw = 0;
 		else if (strcmp(tok, "wormos.rescue") == 0)
-			opt_rescue = 1;
-		else if (strncmp(tok, "wormos.rewind=", 14) == 0 &&
+			opt_rescue = !soft_reboot;
+		else if (strncmp(tok, "wormos.rewind=", 14) == 0 && !soft_reboot &&
 			 strspn(tok + 14, "0123456789") == strlen(tok + 14))
 			snprintf(opt_rewind, sizeof(opt_rewind), "%s", tok + 14);
 	}
@@ -243,25 +252,46 @@ static void find_root(char *dev, size_t len)
 }
 
 /*
+ * Mount options for the top-level subvolume: rootflags without the subvolume
+ * selection. Filesystem-wide options must match, or a read-write mount of an
+ * already mounted filesystem would reset them.
+ */
+static void top_options(char *out, size_t len)
+{
+	char buf[sizeof(opt_rootflags)], *tok, *save;
+	size_t n = 0;
+
+	snprintf(buf, sizeof(buf), "%s", opt_rootflags);
+	for (tok = strtok_r(buf, ",", &save); tok; tok = strtok_r(NULL, ",", &save))
+		if (strncmp(tok, "subvol=", 7) && strncmp(tok, "subvolid=", 9) &&
+		    n < len)
+			n += snprintf(out + n, len - n, "%s,", tok);
+	if (n < len)
+		snprintf(out + n, len - n, "subvolid=5");
+}
+
+/*
  * Let the snapshot tool apply pending operations on the top-level subvolume,
  * before any program from the system root has run.
  */
 static void run_snapshot_hooks(const char *dev)
 {
+	char opts[sizeof(opt_rootflags) + 16];
 	pid_t pid;
 	int status;
 
 	if (access(SNAP_TOOL, X_OK) < 0)
 		return;
-	mount_fs(dev, TOPDIR, "btrfs", MS_NOSUID | MS_NODEV, "subvolid=5");
+	top_options(opts, sizeof(opts));
+	mount_fs(dev, topdir, "btrfs", MS_NOSUID | MS_NODEV, opts);
 
 	pid = fork();
 	if (pid == 0) {
 		if (opt_rewind[0])
-			execl(SNAP_TOOL, "snap", "--top", TOPDIR, "boot",
+			execl(SNAP_TOOL, "snap", "--top", topdir, "boot",
 			      "--rewind", opt_rewind, (char *)NULL);
 		else
-			execl(SNAP_TOOL, "snap", "--top", TOPDIR, "boot", (char *)NULL);
+			execl(SNAP_TOOL, "snap", "--top", topdir, "boot", (char *)NULL);
 		_exit(127);
 	}
 	if (pid < 0 || waitpid(pid, &status, 0) < 0)
@@ -269,8 +299,8 @@ static void run_snapshot_hooks(const char *dev)
 	else if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
 		log_msg("snapshot boot tasks failed, booting the current system");
 
-	if (umount(TOPDIR) < 0)
-		fatal("cannot unmount %s: %s", TOPDIR, strerror(errno));
+	if (umount(topdir) < 0)
+		fatal("cannot unmount %s: %s", topdir, strerror(errno));
 }
 
 /* Delete everything on the initramfs to free its memory. */
@@ -319,7 +349,7 @@ static __attribute__((noreturn)) void switch_root(void)
 	else if (fd >= 0)
 		close(fd);
 
-	if (chdir(SYSROOT) < 0 ||
+	if (chdir(sysroot) < 0 ||
 	    mount(".", "/", NULL, MS_MOVE, NULL) < 0 ||
 	    chroot(".") < 0 || chdir("/") < 0)
 		fatal("cannot switch to the root filesystem: %s", strerror(errno));
@@ -328,18 +358,48 @@ static __attribute__((noreturn)) void switch_root(void)
 	fatal("cannot start %s: %s", opt_init, strerror(errno));
 }
 
-int main(void)
+/*
+ * Soft reboot: the old root is a normal mount, so pivot into the new one
+ * and detach the old root with everything still mounted under it.
+ */
+static __attribute__((noreturn)) void pivot_root_to_new(void)
 {
-	char dev[PATH_MAX], init[PATH_MAX + sizeof(SYSROOT)];
+	umount2("/dev", MNT_DETACH);
+	umount2("/sys", MNT_DETACH);
+	umount2("/proc", MNT_DETACH);
+
+	if (chdir(sysroot) < 0 ||
+	    syscall(SYS_pivot_root, ".", ".") < 0 ||
+	    umount2(".", MNT_DETACH) < 0 || chdir("/") < 0)
+		fatal("cannot switch to the new root filesystem: %s", strerror(errno));
+
+	execl(opt_init, opt_init, (char *)NULL);
+	fatal("cannot start %s: %s", opt_init, strerror(errno));
+}
+
+int main(int argc, char **argv)
+{
+	char dev[PATH_MAX], init[PATH_MAX + 32];
 
 	if (getpid() != 1) {
 		fprintf(stderr, "wormrd: must be run as PID 1\n");
 		return 1;
 	}
+	soft_reboot = argc > 1 && strcmp(argv[1], "--soft-reboot") == 0;
 
-	mount_fs("proc", "/proc", "proc", MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL);
-	mount_fs("sysfs", "/sys", "sysfs", MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL);
-	mount_fs("devtmpfs", "/dev", "devtmpfs", MS_NOSUID, "mode=0755");
+	if (soft_reboot) {
+		/* /proc, /sys and /dev are still mounted; /run is gone. */
+		if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) < 0)
+			fatal("cannot make mounts private: %s", strerror(errno));
+		mount_fs("tmpfs", SOFT_RUN, "tmpfs", MS_NOSUID | MS_NODEV, "mode=0700");
+		mkdir("/run/wormrd", 0700);
+		sysroot = SOFT_SYSROOT;
+		topdir = SOFT_TOPDIR;
+	} else {
+		mount_fs("proc", "/proc", "proc", MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL);
+		mount_fs("sysfs", "/sys", "sysfs", MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL);
+		mount_fs("devtmpfs", "/dev", "devtmpfs", MS_NOSUID, "mode=0755");
+	}
 	setenv("PATH", "/usr/bin:/bin", 1);
 
 	parse_cmdline();
@@ -349,11 +409,13 @@ int main(void)
 	find_root(dev, sizeof(dev));
 	run_snapshot_hooks(dev);
 
-	mount_fs(dev, SYSROOT, "btrfs",
+	mount_fs(dev, sysroot, "btrfs",
 		 (opt_rw ? 0 : MS_RDONLY) | MS_NOATIME, opt_rootflags);
-	snprintf(init, sizeof(init), "%s%s", SYSROOT, opt_init);
+	snprintf(init, sizeof(init), "%s%s", sysroot, opt_init);
 	if (access(init, X_OK) < 0)
 		fatal("%s not found on the root filesystem", opt_init);
 
+	if (soft_reboot)
+		pivot_root_to_new();
 	switch_root();
 }
