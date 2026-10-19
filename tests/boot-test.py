@@ -50,6 +50,14 @@ SNAPSHOT_CHECKS = [
     ("snap diff", "snap diff 1", r"^\+ /etc/probe$"),
     ("snap list", "snap list", r"^\s+1\s.*system\s+manual\s+test base$"),
     ("snap verify", "snap verify", r"^snapshot 1 \(system\): ok$"),
+    ("store stays hidden after use", "grep -c snapshots /proc/mounts", r"^0$"),
+]
+
+# Inside "snap browse 1", a read-only shell in the snapshot.
+BROWSE_CHECKS = [
+    ("browse shows the snapshot", "pwd; ls /run/snap/view/etc/probe 2>&1", r"No such file"),
+    ("browse is read-only", "touch /run/snap/view/x 2>&1", r"Read-only file system"),
+    ("browse hides the store", "ls /run/snap/top 2>&1 | wc -l", r"^0$"),
 ]
 
 # After "snap rewind" and the soft reboot it causes.
@@ -62,13 +70,27 @@ REWIND_CHECKS = [
     ("change the system again",
      "mount -o remount,bind,rw / && echo y > /etc/probe2 && mount -o remount,bind,ro / && echo ok",
      r"^ok$"),
+    ("restore one file", "snap restore 2 /etc/probe && cat /etc/probe",
+     r"^Restored /etc/probe from snapshot 2 .*\n(.*\n)?x$"),
+    ("home snapshot",
+     "mkdir -p /home/u && echo keep > /home/u/a && snap now --home -c home",
+     r"^Snapshot \d+ created \(home\)$"),
+    ("change home", "echo junk > /home/u/b && rm /home/u/a && echo ok", r"^ok$"),
 ]
 
-# After rewinding to snapshot 2 ("Before rewind to 1") from the boot menu.
+# After "snap rewind --home".
+HOME_CHECKS = [
+    ("home file is back", "cat /home/u/a", r"^keep$"),
+    ("later home file is gone", "ls /home/u/b 2>&1", r"No such file"),
+    ("system was not rewound", "cat /etc/probe2", r"^y$"),
+]
+
+# After rewinding from the boot menu to the newest system snapshot, 3,
+# taken just before /etc/probe was restored.
 MENU_CHECKS = [
-    ("snapshot 2 state is back", "cat /etc/probe", r"^x$"),
-    ("later change is gone", "ls /etc/probe2 2>&1", r"No such file"),
-    ("menu rewind saved previous state", "snap list", r"^\s+3\s.*auto\s+Before rewind to 2$"),
+    ("snapshot 3 state is back", "cat /etc/probe2", r"^y$"),
+    ("later restore is undone", "ls /etc/probe 2>&1", r"No such file"),
+    ("menu rewind saved previous state", "snap list", r"^\s+\d+\s.*system\s+auto\s+Before rewind to 3$"),
 ]
 
 
@@ -133,8 +155,8 @@ def main():
                             stderr=subprocess.STDOUT)
     failures = 0
     passed = 0
-    total = (len(CHECKS) + len(SNAPSHOT_CHECKS) + len(REWIND_CHECKS) +
-             len(MENU_CHECKS) + 3)
+    total = (len(CHECKS) + len(SNAPSHOT_CHECKS) + len(BROWSE_CHECKS) +
+             len(REWIND_CHECKS) + len(HOME_CHECKS) + len(MENU_CHECKS) + 4)
     start = time.time()
 
     def check(name, ok, out=""):
@@ -162,6 +184,11 @@ def main():
             print(f"booted to login prompt in {time.time() - start:.0f}s")
             run_checks(con, CHECKS)
             run_checks(con, SNAPSHOT_CHECKS)
+            con.send("snap browse 1\n")
+            con.expect("Exit the shell to leave.", 60)
+            run_checks(con, BROWSE_CHECKS)
+            con.send("exit\n")
+            time.sleep(1)
 
             boot_id = con.run("cat /proc/sys/kernel/random/boot_id")
             con.send("snap rewind -y\n")
@@ -175,6 +202,13 @@ def main():
             check("kernel kept running", boot_id.splitlines()[-1] in out, out)
             run_checks(con, REWIND_CHECKS)
 
+            con.send("snap rewind --home -y\n")
+            out = con.expect("login:", args.timeout)
+            check("home rewind applied", "rewound home to snapshot" in out, out[-500:])
+            con.send("root\n")
+            con.expect("# ", 60)
+            run_checks(con, HOME_CHECKS)
+
             # Reboot and pick the newest snapshot from the boot menu: down to
             # the submenu, enter it, take its first entry.
             con.send("reboot\n")
@@ -182,11 +216,11 @@ def main():
             con.send("\x1b[B")
             time.sleep(0.5)
             con.send("\r")
-            con.expect("Snapshot 2", 60)
+            con.expect("Snapshot 3", 60)
             time.sleep(0.5)
             con.send("\r")
             out = con.expect("login:", args.timeout)
-            check("boot menu rewind applied", "rewound system to snapshot 2" in out,
+            check("boot menu rewind applied", "rewound system to snapshot 3" in out,
                   out[-500:])
             con.send("root\n")
             con.expect("# ", 60)
