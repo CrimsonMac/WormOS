@@ -22,12 +22,13 @@ A lightweight, security-focused Linux operating system built around instant, tam
   ```
 - Separate system and home snapshots, built on Btrfs, with fast rewinds.
 - Snapshots protected from the running system, verified at boot, and restorable from the boot menu.
-- Wormholes: disposable sandboxes for untrusted software and malware analysis (`worm open`).
+- Disposable sandboxes for untrusted software and malware analysis (`worm sandbox`).
 - An nftables firewall that denies inbound traffic by default (`worm fw`).
 - Tor built in, Tor Browser with signature-verified installation, and an optional system-wide anonymous mode.
 - Hardened defaults: full-disk encryption, MAC address randomization, encrypted DNS, a hardened kernel and no telemetry.
 - Optional tool kits (forensics, blue team, network analysis), installed on demand into isolated containers (`worm kit`).
-- An independent init system and package manager.
+- An independent init system and package manager (`wh` / `wormhole`), with
+  automatic snapshots before every change (`snap auto on|off`).
 - A lightweight Wayland desktop.
 
 ## Roadmap
