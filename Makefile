@@ -1,6 +1,6 @@
 # WormOS build entry points. See README.md for details.
 
-PACKAGES := base-files busybox worminit wormrd
+PACKAGES := base-files busybox worminit wormrd snap
 
 all: image
 

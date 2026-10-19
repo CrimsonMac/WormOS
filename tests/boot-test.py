@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Boot the WormOS image in QEMU and check the running system.
 
-Logs in on the serial console, runs a set of checks and powers the machine
-off. The full console output is written to build/boot.log.
+Logs in on the serial console and runs a set of checks. It then takes a
+snapshot, changes the system, rewinds (which reboots the machine) and checks
+the change is gone, before powering off. The full console output is written
+to build/boot.log.
 
 Usage: tests/boot-test.py [--timeout SECONDS]
 """
@@ -35,6 +37,25 @@ CHECKS = [
     ("network configured", "ip -4 addr show eth0", r"inet 10\.0\.2\.15"),
     ("syslog running", "pidof syslogd", r"^\d+"),
     ("hostname", "hostname", r"^wormos$"),
+]
+
+# Snapshot, change the system, and look at the change.
+SNAPSHOT_CHECKS = [
+    ("snap now", "snap now -c 'test base'", r"^Snapshot 1 created \(system\)$"),
+    ("store stays hidden", "grep -c snapshots /proc/mounts", r"^0$"),
+    ("change the system",
+     "mount -o remount,rw / && echo x > /etc/probe && mount -o remount,ro / && echo ok",
+     r"^ok$"),
+    ("snap diff", "snap diff 1", r"^\+ /etc/probe$"),
+    ("snap list", "snap list", r"^\s+1\s.*system\s+manual\s+test base$"),
+]
+
+# After "snap rewind" and the reboot it causes.
+REWIND_CHECKS = [
+    ("change is gone", "ls /etc/probe 2>&1", r"No such file"),
+    ("previous state saved", "snap list", r"^\s+2\s.*auto\s+Before rewind to 1$"),
+    ("saved state has the change", "snap diff 1 2", r"^\+ /etc/probe$"),
+    ("root still read-only", "grep ' / ' /proc/mounts", r"\sro[,\s]"),
 ]
 
 
@@ -97,24 +118,42 @@ def main():
                             stderr=subprocess.STDOUT)
     failures = 0
     passed = 0
+    total = len(CHECKS) + len(SNAPSHOT_CHECKS) + len(REWIND_CHECKS) + 1
     start = time.time()
+
+    def check(name, ok, out=""):
+        nonlocal passed, failures
+        passed += ok
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}  {name}")
+        if not ok:
+            print(f"      output: {out!r}")
+
+    def run_checks(con, checks):
+        for name, cmd, pattern in checks:
+            out = con.run(cmd)
+            check(name, re.search(pattern, out, re.MULTILINE) is not None, out)
+
+    def login(con, timeout):
+        con.expect("login:", timeout)
+        con.send("root\n")
+        con.expect("# ", 60)
 
     with open(LOG, "wb") as log:
         con = Console(proc, log)
         try:
-            con.expect("login:", args.timeout)
+            login(con, args.timeout)
             print(f"booted to login prompt in {time.time() - start:.0f}s")
+            run_checks(con, CHECKS)
+            run_checks(con, SNAPSHOT_CHECKS)
+
+            con.send("snap rewind -y\n")
+            out = con.expect("login:", args.timeout)
+            check("initramfs applied the rewind",
+                  "rewound system to snapshot 1" in out, out[-500:])
             con.send("root\n")
             con.expect("# ", 60)
-
-            for name, cmd, pattern in CHECKS:
-                out = con.run(cmd)
-                ok = re.search(pattern, out, re.MULTILINE) is not None
-                passed += ok
-                failures += not ok
-                print(f"{'PASS' if ok else 'FAIL'}  {name}")
-                if not ok:
-                    print(f"      output: {out!r}")
+            run_checks(con, REWIND_CHECKS)
 
             con.send("poweroff\n")
             con.expect("Power down", 120)
@@ -127,7 +166,7 @@ def main():
             if proc.poll() is None:
                 proc.kill()
 
-    print(f"{passed}/{len(CHECKS)} checks passed")
+    print(f"{passed}/{total} checks passed")
     return 1 if failures else 0
 
 

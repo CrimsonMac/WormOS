@@ -18,7 +18,7 @@ if [ -z "${FAKEROOTKEY:-}" ]; then
 	exec fakeroot -s "$STATE" -- "$0" "$@"
 fi
 
-PACKAGES=(base-files glibc gcc-libs busybox worminit wormrd linux)
+PACKAGES=(base-files glibc gcc-libs busybox worminit wormrd snap linux)
 
 for p in "${PACKAGES[@]}"; do
 	[ -d "$PKGDIR/$p" ] || die "package $p has not been built"
@@ -70,7 +70,7 @@ mv "$ROOTFS/var" "$FSROOT/@var"
 mkdir "$ROOTFS/var"
 
 chown -R 0:0 "$FSROOT"
-chmod 0700 root "$FSROOT/@var/roothome"
+chmod 0700 root "$FSROOT/@var/roothome" "$FSROOT/@snapshots"
 chmod 1777 tmp
 chmod 0600 etc/shadow
 

@@ -1,0 +1,12 @@
+name=snap
+version=0.1.0
+description="WormOS snapshot tool"
+localsrc=src/snap
+
+build() {
+	make CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
