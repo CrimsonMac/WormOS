@@ -33,7 +33,7 @@ TMP=$BUILD/image
 rm -rf "$TMP"
 mkdir -p "$TMP" "$OUT"
 
-KERNEL_CMDLINE="root=PARTUUID=$ROOT_PARTUUID rootfstype=btrfs rootflags=subvol=@ rw console=tty0 console=ttyS0,115200"
+KERNEL_CMDLINE="root=PARTUUID=$ROOT_PARTUUID rootfstype=btrfs rootflags=subvol=@,compress=zstd rw console=tty0 console=ttyS0,115200"
 
 msg "Creating btrfs root filesystem"
 truncate -s $((root_size * SECTOR)) "$TMP/root.img"

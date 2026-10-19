@@ -53,12 +53,9 @@ for p in "${PACKAGES[@]}"; do
 done
 
 msg "Stripping binaries"
-find "$ROOTFS/usr" -type f \( -perm -u+x -o -name '*.so*' \) ! -name '*.ko*' |
-while read -r f; do
-	if [ "$(head -c4 "$f" | od -An -c | tr -d ' ')" = '177ELF' ]; then
-		"$TARGET-strip" --strip-unneeded "$f" 2>/dev/null || true
-	fi
-done
+# strip skips (and complains about) non-ELF files such as scripts.
+find "$ROOTFS/usr" -type f \( -perm -u+x -o -name '*.so*' \) ! -name '*.ko*' -print0 |
+	xargs -0 -r "$TARGET-strip" --strip-unneeded 2>/dev/null || true
 
 chown -R 0:0 "$FSROOT"
 chmod 0700 root
