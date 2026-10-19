@@ -59,3 +59,21 @@ int subvol_delete(const char *parent, const char *name)
 	errno = err;
 	return ret;
 }
+
+/* 1 if the subvolume at path is read-only, 0 if writable, -1 on error. */
+int subvol_readonly(const char *path)
+{
+	__u64 flags = 0;
+	int fd, ret, err;
+
+	fd = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	if (fd < 0)
+		return -1;
+	ret = ioctl(fd, BTRFS_IOC_SUBVOL_GETFLAGS, &flags);
+	err = errno;
+	close(fd);
+	errno = err;
+	if (ret < 0)
+		return -1;
+	return (flags & BTRFS_SUBVOL_RDONLY) != 0;
+}

@@ -10,6 +10,8 @@
  *             info       metadata, key = value
  *             system     read-only snapshot of @    (when in scope)
  *             home       read-only snapshot of @home (when in scope)
+ *             system.manifest, home.manifest
+ *                        checksummed file lists (see manifest.c)
  *
  * A snapshot is built under .new-<id> and renamed into place once complete,
  * so an interrupted snapshot never shows up as a valid one.
@@ -52,6 +54,14 @@ void store_entry_path(char *out, size_t len, int id, int scope)
 		snprintf(entry, sizeof(entry), "%s", out);
 		path_join(out, len, entry, scope_dir(scope));
 	}
+}
+
+static void manifest_path(char *out, size_t len, const char *dir, int scope)
+{
+	char name[32];
+
+	snprintf(name, sizeof(name), "%s.manifest", scope_dir(scope));
+	path_join(out, len, dir, name);
 }
 
 void store_lock(void)
@@ -144,6 +154,10 @@ static int parse_info(const char *path, struct snapshot *s)
 			s->pinned = strcmp(val, "yes") == 0;
 		else if (strcmp(key, "comment") == 0)
 			snprintf(s->comment, sizeof(s->comment), "%s", val);
+		else if (strcmp(key, "system-sum") == 0)
+			snprintf(s->sum[0], sizeof(s->sum[0]), "%s", val);
+		else if (strcmp(key, "home-sum") == 0)
+			snprintf(s->sum[1], sizeof(s->sum[1]), "%s", val);
 	}
 	fclose(f);
 	return 0;
@@ -223,13 +237,18 @@ int store_list(struct snapshot **out)
 
 static int write_info(const char *dir, const struct snapshot *s)
 {
-	char path[PATH_MAX], buf[COMMENT_MAX + 128];
+	char path[PATH_MAX], buf[COMMENT_MAX + 4 * SHA256_HEX + 128];
+	int n;
 
 	path_join(path, sizeof(path), dir, SNAP_INFO);
-	snprintf(buf, sizeof(buf),
-		 "date = %lld\ntype = %s\npinned = %s\ncomment = %s\n",
-		 (long long)s->date, s->type, s->pinned ? "yes" : "no",
-		 s->comment);
+	n = snprintf(buf, sizeof(buf),
+		     "date = %lld\ntype = %s\npinned = %s\ncomment = %s\n",
+		     (long long)s->date, s->type, s->pinned ? "yes" : "no",
+		     s->comment);
+	for (int i = 0; i < 2; i++)
+		if (s->sum[i][0])
+			n += snprintf(buf + n, sizeof(buf) - n, "%s-sum = %s\n",
+				      i ? SNAP_HOME : SNAP_SYSTEM, s->sum[i]);
 	return write_file(path, buf);
 }
 
@@ -260,8 +279,8 @@ static int next_id(void)
 int store_create(int scope, const char *type, const char *comment)
 {
 	char tmpname[32], tmpdir[PATH_MAX], final[PATH_MAX], buf[32];
-	struct snapshot s;
-	int id = next_id();
+	struct snapshot s, *list;
+	int id = next_id(), n;
 
 	snprintf(tmpname, sizeof(tmpname), ".new-%d", id);
 	store_path(tmpdir, sizeof(tmpdir), tmpname);
@@ -283,6 +302,31 @@ int store_create(int scope, const char *type, const char *comment)
 	}
 
 	memset(&s, 0, sizeof(s));
+	n = store_list(&list);
+	for (int bit = SCOPE_SYSTEM; bit <= SCOPE_HOME; bit <<= 1) {
+		char root[PATH_MAX], out[PATH_MAX], prev[PATH_MAX], edir[PATH_MAX];
+		const char *reuse = NULL;
+
+		if (!(scope & bit))
+			continue;
+		/* The newest earlier snapshot of this scope shares most files. */
+		for (int i = n - 1; i >= 0 && !reuse; i--) {
+			if (list[i].scope & bit) {
+				store_entry_path(edir, sizeof(edir), list[i].id, 0);
+				manifest_path(prev, sizeof(prev), edir, bit);
+				reuse = prev;
+			}
+		}
+		path_join(root, sizeof(root), tmpdir, scope_dir(bit));
+		manifest_path(out, sizeof(out), tmpdir, bit);
+		if (manifest_create(root, out, reuse, s.sum[scope_index(bit)]) < 0) {
+			warn("cannot checksum the %s snapshot", scope_name(bit));
+			free(list);
+			goto fail;
+		}
+	}
+	free(list);
+
 	s.id = id;
 	s.date = time(NULL);
 	snprintf(s.type, sizeof(s.type), "%s", type);
@@ -334,6 +378,14 @@ static int delete_dir(const char *dir)
 			warn("cannot delete %s: %s", path, strerror(errno));
 			return -1;
 		}
+	}
+	for (int bit = SCOPE_SYSTEM; bit <= SCOPE_HOME; bit <<= 1) {
+		char tmp[PATH_MAX + 8];
+
+		manifest_path(path, sizeof(path), dir, bit);
+		unlink(path);
+		snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+		unlink(tmp);
 	}
 	path_join(path, sizeof(path), dir, SNAP_INFO);
 	unlink(path);
@@ -420,4 +472,49 @@ void pending_clear(void)
 
 	store_path(path, sizeof(path), STORE_PENDING);
 	unlink(path);
+}
+
+/*
+ * Check that the parts of snapshot s in scope are intact: still read-only
+ * and matching their manifest checksums. Prints a verdict per part, with
+ * the files that differ.
+ */
+int store_verify(const struct snapshot *s, int scope)
+{
+	char dir[PATH_MAX], root[PATH_MAX], manifest[PATH_MAX];
+	int ret = 0;
+
+	store_entry_path(dir, sizeof(dir), s->id, 0);
+	for (int bit = SCOPE_SYSTEM; bit <= SCOPE_HOME; bit <<= 1) {
+		const char *sum = s->sum[scope_index(bit)];
+		char *report = NULL;
+		size_t len = 0;
+		FILE *out;
+		int ro, ok;
+
+		if (!(scope & bit) || !(s->scope & bit))
+			continue;
+		path_join(root, sizeof(root), dir, scope_dir(bit));
+		manifest_path(manifest, sizeof(manifest), dir, bit);
+		if (!(out = open_memstream(&report, &len)))
+			die("out of memory");
+		ro = subvol_readonly(root) == 1;
+		ok = sum[0] && manifest_verify(root, manifest, sum, out) == 0;
+		fclose(out);
+
+		printf("snapshot %d (%s): ", s->id, scope_name(bit));
+		if (!sum[0])
+			printf("FAILED, no checksum was recorded\n");
+		else if (!ok)
+			printf("FAILED, the contents do not match the checksum\n");
+		else if (!ro)
+			printf("FAILED, it was made writable\n");
+		else
+			printf("ok\n");
+		fputs(report, stdout);
+		free(report);
+		if (!sum[0] || !ok || !ro)
+			ret = -1;
+	}
+	return ret;
 }

@@ -4,8 +4,11 @@
 #define SNAP_H
 
 #include <stddef.h>
+#include <stdio.h>
 #include <sys/types.h>
 #include <time.h>
+
+#include "sha256.h"
 
 /* Subvolumes on the top level of the btrfs filesystem. */
 #define SUBVOL_SYSTEM    "@"
@@ -35,6 +38,13 @@ struct snapshot {
 	char type[16];                  /* manual, auto */
 	int pinned;
 	char comment[COMMENT_MAX];
+	char sum[2][SHA256_HEX];        /* manifest checksums: system, home */
+};
+
+/* Sorted directory entries, from read_names(). */
+struct names {
+	char **v;
+	int n;
 };
 
 /* Path of the mounted top-level subvolume. */
@@ -49,12 +59,16 @@ const char *scope_desc(int scope);
 const char *scope_path(int scope);   /* "/" or "/home" */
 const char *scope_subvol(int scope); /* @ or @home */
 const char *scope_dir(int scope);    /* system or home */
+int scope_index(int scope);          /* 0 for system, 1 for home */
 int remove_tree_at(int dfd, const char *name);
+void read_names(int dfd, struct names *out);
+void free_names(struct names *n);
 
 /* btrfs.c */
 int subvol_snapshot(const char *src, const char *dstdir, const char *name,
 		    int readonly);
 int subvol_delete(const char *parent, const char *name);
+int subvol_readonly(const char *path);
 
 /* store.c */
 void store_lock(void);
@@ -70,6 +84,13 @@ void config_set_auto(int on);
 int pending_write(int id, int scope);
 void pending_clear(void);
 int pending_read(int *id, int *scope);
+int store_verify(const struct snapshot *s, int scope);
+
+/* manifest.c */
+int manifest_create(const char *root, const char *out, const char *prev,
+		    char sum[SHA256_HEX]);
+int manifest_verify(const char *root, const char *manifest, const char *expected,
+		    FILE *report);
 
 /* diff.c */
 int diff_trees(const char *a, const char *b, const char *prefix);

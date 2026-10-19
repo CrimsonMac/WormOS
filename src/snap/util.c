@@ -73,6 +73,11 @@ const char *scope_dir(int scope)
 	return scope == SCOPE_HOME ? SNAP_HOME : SNAP_SYSTEM;
 }
 
+int scope_index(int scope)
+{
+	return scope == SCOPE_HOME ? 1 : 0;
+}
+
 /* Remove name (a file or a whole directory tree) relative to dfd. */
 int remove_tree_at(int dfd, const char *name)
 {
@@ -101,4 +106,47 @@ int remove_tree_at(int dfd, const char *name)
 	if (unlinkat(dfd, name, AT_REMOVEDIR) < 0)
 		ret = -1;
 	return ret;
+}
+
+/* Read the entries of a directory, sorted by name. */
+static int cmp_names(const void *a, const void *b)
+{
+	return strcmp(*(char *const *)a, *(char *const *)b);
+}
+
+void read_names(int dfd, struct names *out)
+{
+	int fd = dup(dfd), cap = 0;
+	struct dirent *e;
+	DIR *d;
+
+	out->v = NULL;
+	out->n = 0;
+	if (fd < 0 || !(d = fdopendir(fd))) {
+		if (fd >= 0)
+			close(fd);
+		return;
+	}
+	while ((e = readdir(d))) {
+		if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
+			continue;
+		if (out->n == cap) {
+			cap = cap ? cap * 2 : 64;
+			out->v = realloc(out->v, cap * sizeof(char *));
+			if (!out->v)
+				die("out of memory");
+		}
+		if (!(out->v[out->n++] = strdup(e->d_name)))
+			die("out of memory");
+	}
+	closedir(d);
+	if (out->n)
+		qsort(out->v, out->n, sizeof(char *), cmp_names);
+}
+
+void free_names(struct names *n)
+{
+	for (int i = 0; i < n->n; i++)
+		free(n->v[i]);
+	free(n->v);
 }

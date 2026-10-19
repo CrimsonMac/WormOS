@@ -50,6 +50,7 @@ static void usage(FILE *out)
 "  prune --keep N           delete all but the newest N unpinned snapshots\n"
 "  pin ID / unpin ID        protect a snapshot from prune\n"
 "  comment ID TEXT          set a snapshot's comment\n"
+"  verify [ID...]           check snapshots have not been tampered with\n"
 "  auto [on|off]            snapshots before package changes (default on)\n"
 "\n"
 "Scope (now, rewind, diff, browse): --system (default), --home or --all.\n",
@@ -258,6 +259,9 @@ static int cmd_rewind(int argc, char **argv)
 		die("snapshot %d does not include %s (it is a %s snapshot)",
 		    s.id, scope_name(o.scope), scope_name(s.scope));
 
+	if (store_verify(&s, o.scope) < 0)
+		die("snapshot %d failed verification, not rewinding to it", s.id);
+
 	format_date(s.date, date, sizeof(date));
 	printf("Rewind %s to snapshot %d (%s%s%s%s).\n",
 	       scope_desc(o.scope),
@@ -463,6 +467,36 @@ static int cmd_comment(int argc, char **argv)
 	return 0;
 }
 
+static int cmd_verify(int argc, char **argv)
+{
+	struct snapshot s, *list;
+	int n, ret = 0;
+
+	for (int i = 1; i < argc; i++)
+		parse_id_arg(argv[i]);
+	open_store();
+	if (argc > 1) {
+		for (int i = 1; i < argc; i++) {
+			if (store_get(parse_id_arg(argv[i]), &s) < 0) {
+				warn("no snapshot %s", argv[i]);
+				ret = 1;
+			} else if (store_verify(&s, SCOPE_ALL) < 0) {
+				ret = 1;
+			}
+		}
+		return ret;
+	}
+
+	n = store_list(&list);
+	if (n == 0)
+		printf("No snapshots to verify.\n");
+	for (int i = 0; i < n; i++)
+		if (store_verify(&list[i], SCOPE_ALL) < 0)
+			ret = 1;
+	free(list);
+	return ret;
+}
+
 static int cmd_auto(int argc, char **argv)
 {
 	if (argc == 1) {
@@ -508,6 +542,7 @@ static const struct command {
 	{ "pin",     cmd_pin },
 	{ "unpin",   cmd_pin },
 	{ "comment", cmd_comment },
+	{ "verify",  cmd_verify },
 	{ "auto",    cmd_auto },
 	{ "boot",    cmd_boot },
 	{ NULL, NULL },

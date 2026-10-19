@@ -22,53 +22,6 @@
 
 #include "snap.h"
 
-struct names {
-	char **v;
-	int n;
-};
-
-static int cmp_names(const void *a, const void *b)
-{
-	return strcmp(*(char *const *)a, *(char *const *)b);
-}
-
-static void read_names(int dfd, struct names *out)
-{
-	int fd = dup(dfd), cap = 0;
-	struct dirent *e;
-	DIR *d;
-
-	out->v = NULL;
-	out->n = 0;
-	if (fd < 0 || !(d = fdopendir(fd))) {
-		if (fd >= 0)
-			close(fd);
-		return;
-	}
-	while ((e = readdir(d))) {
-		if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
-			continue;
-		if (out->n == cap) {
-			cap = cap ? cap * 2 : 64;
-			out->v = realloc(out->v, cap * sizeof(char *));
-			if (!out->v)
-				die("out of memory");
-		}
-		if (!(out->v[out->n++] = strdup(e->d_name)))
-			die("out of memory");
-	}
-	closedir(d);
-	if (out->n)
-		qsort(out->v, out->n, sizeof(char *), cmp_names);
-}
-
-static void free_names(struct names *n)
-{
-	for (int i = 0; i < n->n; i++)
-		free(n->v[i]);
-	free(n->v);
-}
-
 static int same_time(const struct timespec *a, const struct timespec *b)
 {
 	return a->tv_sec == b->tv_sec && a->tv_nsec == b->tv_nsec;

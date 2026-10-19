@@ -2,7 +2,8 @@
  * Boot-time tasks, run by the initramfs before the system root is mounted:
  * clean up interrupted operations and apply a pending rewind.
  *
- * A rewind first snapshots the current state, so it can itself be undone.
+ * The target snapshot is verified against its checksums first. A rewind
+ * then snapshots the current state, so it can itself be undone.
  * The live subvolume is then moved aside to <subvol>.old, replaced by a
  * writable snapshot of the target, and deleted.
  */
@@ -63,6 +64,12 @@ static int apply_rewind(int id, int scope)
 	if (store_get(id, &s) < 0 || (s.scope & scope) != scope) {
 		warn("pending rewind to snapshot %d (%s) is no longer possible",
 		     id, scope_name(scope));
+		return -1;
+	}
+
+	/* Never rewind into a snapshot that was tampered with. */
+	if (store_verify(&s, scope) < 0) {
+		warn("snapshot %d failed verification, rewind cancelled", id);
 		return -1;
 	}
 

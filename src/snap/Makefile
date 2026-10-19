@@ -6,14 +6,14 @@ LDFLAGS += -Wl,-z,relro,-z,now
 PREFIX  ?= /usr
 BINDIR  ?= $(PREFIX)/bin
 
-OBJS = snap.o store.o btrfs.o diff.o restore.o boot.o util.o
+OBJS = snap.o store.o btrfs.o diff.o restore.o boot.o manifest.o sha256.o util.o
 
 all: snap
 
 snap: $(OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS)
 
-$(OBJS): snap.h
+$(OBJS): snap.h sha256.h
 
 install: snap
 	install -Dm755 snap $(DESTDIR)$(BINDIR)/snap
