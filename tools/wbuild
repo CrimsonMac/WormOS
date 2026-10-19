@@ -23,6 +23,11 @@
 # Recipes can use $recipedir (the recipe's directory, for extra files),
 # $srcdir, $pkgdir, $TARGET, $SYSROOT and $JOBS. CC, CXX and friends point
 # at the WormOS cross toolchain.
+#
+# A source that is not an archive is copied into $srcdir instead of being
+# unpacked. After packaging, the package's headers and libraries are added
+# to the sysroot so later recipes can build against them; build packages in
+# dependency order.
 
 . "$(dirname "$0")/../scripts/env.sh"
 
@@ -35,6 +40,8 @@ export STRIP="$TARGET-strip" OBJCOPY="$TARGET-objcopy"
 export CFLAGS="-O2 -pipe -fstack-protector-strong -fstack-clash-protection -fcf-protection -D_FORTIFY_SOURCE=3"
 export CXXFLAGS="$CFLAGS"
 export LDFLAGS="-Wl,-O1,--as-needed,-z,relro,-z,now"
+export PKG_CONFIG_SYSROOT_DIR=$SYSROOT
+export PKG_CONFIG_LIBDIR=$SYSROOT/usr/lib/pkgconfig:$SYSROOT/usr/share/pkgconfig
 
 build_one() (
 	local recipedir=$WORMOS_ROOT/recipes/$1
@@ -59,7 +66,14 @@ build_one() (
 		rm -rf "$srcdir"
 		cp -r "$WORMOS_ROOT/$localsrc" "$srcdir"
 	elif [ ${#source[@]} -gt 0 ]; then
-		unpack "$SOURCES/$(basename "${source[0]}")" "$srcdir"
+		case ${source[0]} in
+		*.tar.*|*.tgz)
+			unpack "$SOURCES/$(basename "${source[0]}")" "$srcdir" ;;
+		*)
+			rm -rf "$srcdir"
+			mkdir -p "$srcdir"
+			cp "$SOURCES/$(basename "${source[0]}")" "$srcdir/" ;;
+		esac
 	else
 		mkdir -p "$srcdir"
 	fi
@@ -77,6 +91,15 @@ build_one() (
 		for c in "${caps[@]}"; do echo "cap = $c"; done
 		for g in "${groups[@]}"; do echo "group = $g"; done
 	} >> "$BUILD/pkginfo/$name.info"
+
+	# Make headers and libraries available to later builds.
+	local d
+	for d in usr/include usr/lib usr/share/pkgconfig; do
+		if [ -d "$pkgdir/$d" ]; then
+			mkdir -p "$SYSROOT/$d"
+			cp -a "$pkgdir/$d/." "$SYSROOT/$d/"
+		fi
+	done
 
 	msg "Packaged $name $version"
 )

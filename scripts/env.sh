@@ -21,6 +21,9 @@ ROOTFS=$FSROOT/@            # assembled root filesystem (the @ subvolume)
 
 export PATH=$TOOLS/bin:/usr/sbin:/sbin:$PATH
 export LC_ALL=C
+# Files and directories built here end up in the system: never group- or
+# world-writable unless a recipe says so.
+umask 022
 
 msg() { printf '\033[1;35m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
