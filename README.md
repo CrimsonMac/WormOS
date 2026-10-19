@@ -63,6 +63,7 @@ sudo apt install build-essential bison flex gawk texinfo m4 help2man \
 make            # toolchain, kernel, packages, root filesystem and disk image
 make run        # boot the image in QEMU on the serial console (Ctrl-A X quits)
 make run-gui    # boot the image in a QEMU window
+make test       # boot the image and run automated checks
 ```
 
 The first build compiles the toolchain and takes a while. Later builds reuse

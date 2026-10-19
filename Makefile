@@ -25,10 +25,13 @@ run:
 run-gui:
 	scripts/run-qemu.sh --gui
 
+test:
+	tests/boot-test.py
+
 clean:
 	rm -rf build/work build/pkgs build/pkginfo build/fsroot build/kernel build/image out
 
 distclean:
 	rm -rf build out
 
-.PHONY: all toolchain kernel packages rootfs image run run-gui clean distclean
+.PHONY: all toolchain kernel packages rootfs image run run-gui test clean distclean
