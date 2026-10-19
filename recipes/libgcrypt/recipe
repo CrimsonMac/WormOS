@@ -1,0 +1,20 @@
+name=libgcrypt
+version=1.12.4
+description="Cryptographic library used by GnuPG"
+depends=(glibc libgpg-error)
+# Signed by a GnuPG release key (6DAA6E64A76D2840571B4902528897B826403ADA).
+source=(https://gnupg.org/ftp/gcrypt/libgcrypt/libgcrypt-$version.tar.bz2)
+sha256=(d77f68f48879510e79a2f65977ccc68981781ea0923e5bdffac2a193ea3d660e)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--with-libgpg-error-prefix="$SYSROOT/usr" \
+		--disable-doc --disable-static
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/info" "$pkgdir/usr/share/doc"
+}

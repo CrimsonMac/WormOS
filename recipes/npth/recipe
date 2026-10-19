@@ -1,0 +1,20 @@
+name=npth
+version=1.8
+description="Portable threads library for GnuPG"
+depends=(glibc)
+# Signed by a GnuPG release key (6DAA6E64A76D2840571B4902528897B826403ADA).
+source=(https://gnupg.org/ftp/gcrypt/npth/npth-$version.tar.bz2)
+sha256=(8bd24b4f23a3065d6e5b26e98aba9ce783ea4fd781069c1b35d149694e90ca3e)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-tests \
+		--disable-doc --disable-static
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/info" "$pkgdir/usr/share/doc"
+}

@@ -1,0 +1,28 @@
+name=gnupg
+version=2.5.24
+description="OpenPGP signatures and encryption (gpg, gpgv)"
+depends=(glibc zlib libgpg-error libgcrypt libassuan libksba npth)
+# Signed by a GnuPG release key (6DAA6E64A76D2840571B4902528897B826403ADA).
+source=(https://gnupg.org/ftp/gcrypt/gnupg/gnupg-$version.tar.bz2)
+sha256=(bf149d01a2b9fcc0e4589b8ae8697d3d5c557ea48ed95a3fa55dd3b1187e6039)
+
+build() {
+	# The library checks go through gpgrt-config, which reads the
+	# pkg-config files in the sysroot.
+	GPGRT_CONFIG="$SYSROOT/usr/bin/gpgrt-config --libdir=$SYSROOT/usr/lib" \
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--with-libgpg-error-prefix="$SYSROOT/usr" \
+		--disable-gpgsm --disable-scdaemon --disable-dirmngr \
+		--disable-keyboxd --disable-tpm2d --disable-gpgtar \
+		--disable-wks-tools --disable-ldap --disable-sqlite \
+		--disable-gnutls --disable-ntbtls --disable-card-support \
+		--disable-bzip2 --disable-nls --without-readline \
+		--disable-doc --disable-static
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/info" "$pkgdir/usr/share/doc"
+}

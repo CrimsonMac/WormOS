@@ -1,0 +1,22 @@
+name=libgpg-error
+version=1.61
+description="Error codes and runtime for GnuPG libraries"
+depends=(glibc)
+# Later builds find the library with these; they honour PKG_CONFIG_SYSROOT_DIR.
+sysroot_files=(usr/bin/gpgrt-config usr/bin/gpg-error-config)
+# Signed by a GnuPG release key (6DAA6E64A76D2840571B4902528897B826403ADA).
+source=(https://gnupg.org/ftp/gcrypt/libgpg-error/libgpg-error-$version.tar.bz2)
+sha256=(7a85413f2bc354f4f8aa832b718af122e48965e9e0eb9012ee659c13c6385c93)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-nls --disable-tests --enable-install-gpg-error-config \
+		--disable-doc --disable-static
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/info" "$pkgdir/usr/share/doc"
+}

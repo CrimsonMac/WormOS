@@ -1,0 +1,20 @@
+name=libassuan
+version=3.0.2
+description="IPC library used by GnuPG"
+depends=(glibc libgpg-error)
+# Signed by a GnuPG release key (6DAA6E64A76D2840571B4902528897B826403ADA).
+source=(https://gnupg.org/ftp/gcrypt/libassuan/libassuan-$version.tar.bz2)
+sha256=(d2931cdad266e633510f9970e1a2f346055e351bb19f9b78912475b8074c36f6)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--with-libgpg-error-prefix="$SYSROOT/usr" \
+		--disable-doc --disable-static
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/info" "$pkgdir/usr/share/doc"
+}

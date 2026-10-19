@@ -1,0 +1,20 @@
+name=libksba
+version=1.8.1
+description="X.509 and CMS library used by GnuPG"
+depends=(glibc libgpg-error)
+# Signed by a GnuPG release key (6DAA6E64A76D2840571B4902528897B826403ADA).
+source=(https://gnupg.org/ftp/gcrypt/libksba/libksba-$version.tar.bz2)
+sha256=(c2f84393011827219ae117131dba8e7684c2bed0961eed11b0642c2acba440b5)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--with-libgpg-error-prefix="$SYSROOT/usr" \
+		--disable-doc --disable-static
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/info" "$pkgdir/usr/share/doc"
+}
