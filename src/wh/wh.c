@@ -50,7 +50,7 @@ static int kernel_changed;
 static const char *const essential[] = {
 	"base-files", "glibc", "gcc-libs", "busybox", "worminit", "wormrd",
 	"snap", "wh", "linux", "zstd", "zlib", "openssl", "curl",
-	"ca-certificates", NULL,
+	"ca-certificates", "worm", NULL,
 };
 
 static void usage(FILE *out)
@@ -151,6 +151,20 @@ static void stage_abort(void)
 	warn("nothing was changed");
 }
 
+/* Changes wait until manual edits are locked in (and snapshotted). */
+static void require_locked(void)
+{
+	char dev[PATH_MAX], super[1024];
+	int rw;
+
+	if (direct)
+		return;
+	root_mount(dev, sizeof(dev), super, sizeof(super), &rw);
+	if (rw)
+		die("the system is unlocked; run 'worm lock' first so manual "
+		    "changes are saved");
+}
+
 /* Mount a fresh copy of the system where only this process sees it. */
 static void stage_begin(void)
 {
@@ -160,10 +174,8 @@ static void stage_begin(void)
 
 	if (direct)
 		return;
+	require_locked();
 	root_mount(dev, sizeof(dev), super, sizeof(super), &rw);
-	if (rw)
-		die("the system is unlocked; run 'worm lock' first so manual "
-		    "changes are saved");
 
 	snap_cmd((char *[]){ "snap", "stage", "begin", NULL }, NULL, 0);
 	staging = 1;
@@ -251,9 +263,12 @@ static void stage_commit(const char *action, const char *packages)
 
 	if (direct)
 		return;
-	if (fsync(root_fd) < 0 || umount(STAGE_MNT) < 0)
+	/* Let go of the staged copy (no open directory may keep it busy). */
+	if (syncfs(root_fd) < 0)
 		die("cannot finish the staged system: %s", strerror(errno));
 	set_root("/");
+	if (umount(STAGE_MNT) < 0)
+		die("cannot finish the staged system: %s", strerror(errno));
 
 	snprintf(comment, sizeof(comment), "wh %s %s", action, packages);
 	snap_cmd(opt_try ? (char *[]){ "snap", "stage", "commit", "--try", "-c", comment, NULL }
@@ -398,6 +413,7 @@ static int cmd_install(int argc, char **argv, int reinstall)
 	if (argc < 2)
 		die("usage: wh install [--try] [--later] PACKAGE...");
 	lock_wh();
+	require_locked();
 	repo_load(&idx);
 	for (int i = 1; i < argc; i++)
 		resolve(&idx, &pl, argv[i], 0, reinstall);
@@ -429,6 +445,7 @@ static int cmd_remove(int argc, char **argv)
 	if (argc < 2)
 		die("usage: wh remove PACKAGE...");
 	lock_wh();
+	require_locked();
 	n = db_list(&installed);
 	for (int i = 1; i < argc; i++) {
 		if (!db_installed(argv[i], NULL))
@@ -479,6 +496,7 @@ static int cmd_upgrade(int argc, char **argv)
 	if (argc != 1)
 		die("usage: wh upgrade");
 	lock_wh();
+	require_locked();
 	repo_load(&idx);
 	n = db_list(&installed);
 	for (int i = 0; i < n; i++) {

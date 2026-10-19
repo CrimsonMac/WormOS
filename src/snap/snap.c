@@ -53,7 +53,7 @@ static void usage(FILE *out)
 "  comment ID TEXT          set a snapshot's comment\n"
 "  verify [ID...]           check snapshots have not been tampered with\n"
 "  auto [on|off]            snapshots before package changes (default on)\n"
-"  stage begin|commit|abort|keep\n"
+"  stage begin|commit|abort|keep|status\n"
 "                           staged system changes, used by wh\n"
 "\n"
 "Scope (now, rewind, diff, browse): --system (default), --home or --all.\n",
@@ -570,6 +570,18 @@ static int cmd_stage(int argc, char **argv)
 		stage_discard();
 		return 0;
 	}
+	if (strcmp(sub, "status") == 0 && argc == 2) {
+		/* For scripts: "pending" and/or "trial ID", or "none". */
+		int trial = stage_trial();
+
+		if (stage_pending())
+			printf("pending\n");
+		if (trial)
+			printf("trial %d\n", trial);
+		if (!trial && !stage_pending())
+			printf("none\n");
+		return 0;
+	}
 	if (strcmp(sub, "keep") == 0 && argc == 2) {
 		if (stage_keep() < 0)
 			die("no trial is running");
@@ -583,7 +595,7 @@ static int cmd_stage(int argc, char **argv)
 		printf("%d\n", id);
 		return 0;
 	}
-	die("usage: snap stage begin | commit [--try] [-c COMMENT] | abort | keep");
+	die("usage: snap stage begin | commit [--try] [-c COMMENT] | abort | keep | status");
 }
 
 static int cmd_boot(int argc, char **argv)
