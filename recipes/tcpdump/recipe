@@ -1,0 +1,22 @@
+name=tcpdump
+version=4.99.7
+description="Command-line network traffic analyzer"
+depends=(glibc libpcap)
+# Signed by the Tcpdump Group (1F166A5742ABB9E0249A8D30E089DEF1D9C15D0D).
+source=(https://www.tcpdump.org/release/tcpdump-$version.tar.xz)
+sha256=(39675dfa06fb0e99be8da5d4a1784acbaab58ae0870231d956ff7870cb99eec1)
+
+build() {
+	# --disable-local-libpcap: otherwise configure links the libpcap build
+	# tree it finds next to its own statically.
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-local-libpcap --without-crypto --disable-smb
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	# The versioned copy is identical to tcpdump itself.
+	rm -f "$pkgdir/usr/bin/tcpdump.$version"
+	rm -rf "$pkgdir/usr/share/man"
+}

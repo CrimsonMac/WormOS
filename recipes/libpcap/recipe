@@ -1,0 +1,21 @@
+name=libpcap
+version=1.11.0
+description="Packet capture library"
+depends=(glibc)
+# Signed by the Tcpdump Group (1F166A5742ABB9E0249A8D30E089DEF1D9C15D0D).
+source=(https://www.tcpdump.org/release/libpcap-$version.tar.xz)
+sha256=(9237f5bae9dcf3a91823d9963ec43b7c0e2e3374ef2ad57d92c8cd39530f4723)
+
+build() {
+	# --build keeps configure in cross mode (see the curl recipe).
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--with-pcap=linux --without-libnl --disable-dbus --disable-rdma \
+		--disable-bluetooth --disable-usb --disable-netmap
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.a
+	rm -rf "$pkgdir/usr/share/man"
+}
