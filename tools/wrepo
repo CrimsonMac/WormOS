@@ -21,8 +21,9 @@ SECRET=${WORMOS_SIGNING_KEY:-$HOME/.config/wormos/core.key}
 PUBLIC=$WORMOS_ROOT/keys/core.pub
 WSIGN=$BUILD/host/wsign
 
-# Build wsign for the build host, with Monocypher from its recipe's pinned source.
-build_wsign() {
+# Build wsign and wh for the build host, with Monocypher from its recipe's
+# pinned source. The host wh assembles the root filesystem (wh --root).
+build_host_tools() {
 	local name version
 	local -a source sha256
 	eval "$(sed -n '/^\(name\|version\|source\|sha256\)=/p' "$WORMOS_ROOT/recipes/monocypher/recipe")"
@@ -32,13 +33,17 @@ build_wsign() {
 	cc -O2 -std=gnu17 -Wall -Wextra -I"$mono/src" -I"$mono/src/optional" \
 		-o "$WSIGN" "$WORMOS_ROOT/src/wh/wsign.c" "$WORMOS_ROOT/src/wh/sig.c" \
 		"$mono/src/monocypher.c" "$mono/src/optional/monocypher-ed25519.c"
+	rm -rf "$BUILD/host/src"
+	mkdir -p "$BUILD/host/src"
+	cp -r "$WORMOS_ROOT/src/wh" "$WORMOS_ROOT/src/snap" "$BUILD/host/src/"
+	make -s -C "$BUILD/host/src/wh" -B CC=cc \
+		MONO_CFLAGS="-I$mono/src -I$mono/src/optional" \
+		MONO_LIBS="$mono/src/monocypher.c $mono/src/optional/monocypher-ed25519.c"
+	cp "$BUILD/host/src/wh/wh" "$BUILD/host/wh"
 }
 
-if [ ! -x "$WSIGN" ] || [ "$WORMOS_ROOT/src/wh/wsign.c" -nt "$WSIGN" ] ||
-   [ "$WORMOS_ROOT/src/wh/sig.c" -nt "$WSIGN" ]; then
-	mkdir -p "$BUILD/host"
-	build_wsign
-fi
+mkdir -p "$BUILD/host"
+build_host_tools
 
 if [ ! -f "$SECRET" ]; then
 	[ -f "$PUBLIC" ] && die "signing key $SECRET is missing (keys/core.pub exists)"

@@ -1,0 +1,19 @@
+name=wh
+version=0.1.0
+description="WormOS package manager"
+depends=(glibc zstd curl snap)
+# Builds src/wh, which also uses sources from src/snap.
+localsrc=src
+
+build() {
+	make -C wh CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+}
+
+package() {
+	make -C wh DESTDIR="$pkgdir" install
+	install -Dm644 "$WORMOS_ROOT/keys/core.pub" "$pkgdir/usr/share/wh/keys/core.pub"
+	install -Dm644 /dev/stdin "$pkgdir/etc/wh/repo" <<-END
+	# The WormOS core package repository.
+	https://github.com/CrimsonMac/WormOS/releases/download/core/
+	END
+}

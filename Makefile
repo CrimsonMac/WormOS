@@ -1,6 +1,8 @@
 # WormOS build entry points. See README.md for details.
 
-PACKAGES := base-files busybox worminit wormrd snap
+# In build order: later packages build against earlier ones.
+PACKAGES := base-files busybox worminit wormrd snap \
+	zlib zstd openssl ca-certificates curl monocypher wh
 
 all: image
 
@@ -13,7 +15,10 @@ kernel: toolchain
 packages: toolchain
 	tools/wbuild $(PACKAGES)
 
-rootfs: packages kernel
+repo: packages kernel
+	tools/wrepo
+
+rootfs: repo
 	scripts/build-rootfs.sh
 
 image: rootfs
@@ -29,9 +34,9 @@ test:
 	tests/boot-test.py
 
 clean:
-	rm -rf build/work build/pkgs build/pkginfo build/fsroot build/kernel build/image out
+	rm -rf build/work build/pkgs build/pkginfo build/fsroot build/kernel build/image build/host out
 
 distclean:
 	rm -rf build out
 
-.PHONY: all toolchain kernel packages rootfs image run run-gui test clean distclean
+.PHONY: all toolchain kernel packages repo rootfs image run run-gui test clean distclean

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Assemble the root filesystem from staged packages.
+# Assemble the root filesystem by installing packages from the repository.
 #
 # Runs under fakeroot so files can be owned by root without real privileges.
 # The ownership database is saved to build/fakeroot.state for mkimage.sh.
@@ -18,11 +18,13 @@ if [ -z "${FAKEROOTKEY:-}" ]; then
 	exec fakeroot -s "$STATE" -- "$0" "$@"
 fi
 
-PACKAGES=(base-files glibc gcc-libs busybox worminit wormrd snap linux)
+# The base system. Packages come from the signed repository (tools/wrepo)
+# and are installed with wh, as on a running system.
+PACKAGES=(base-files glibc gcc-libs busybox worminit wormrd snap wh linux
+	zstd curl)
+WH=$BUILD/host/wh
 
-for p in "${PACKAGES[@]}"; do
-	[ -d "$PKGDIR/$p" ] || die "package $p has not been built"
-done
+[ -x "$WH" ] && [ -f "$REPO/index" ] || die "run tools/wrepo first"
 
 msg "Assembling root filesystem"
 rm -rf "$FSROOT"
@@ -41,27 +43,12 @@ ln -s ../run var/run
 ln -s ../run/lock var/lock
 ln -s ../tmp var/tmp
 
-for p in "${PACKAGES[@]}"; do
-	case $p in
-	glibc)
-		# Runtime only: headers, static libraries and docs stay in the sysroot.
-		rsync -a \
-			--exclude=/usr/include \
-			--exclude='*.a' --exclude='*.o' \
-			--exclude=/usr/share/info --exclude=/usr/share/man \
-			--exclude=/usr/share/i18n \
-			"$PKGDIR/$p/" "$ROOTFS/"
-		;;
-	*)
-		rsync -a "$PKGDIR/$p/" "$ROOTFS/"
-		;;
-	esac
-done
-
-msg "Stripping binaries"
-# strip skips (and complains about) non-ELF files such as scripts.
-find "$ROOTFS/usr" -type f \( -perm -u+x -o -name '*.so*' \) ! -name '*.ko*' -print0 |
-	xargs -0 -r "$TARGET-strip" --strip-unneeded 2>/dev/null || true
+wh() { "$WH" --root "$ROOTFS" --repo "file://$REPO/" --key "$WORMOS_ROOT/keys/core.pub" "$@"; }
+wh update
+wh install "${PACKAGES[@]}"
+# The image keeps the index (newer ones must be at least as recent) but not
+# the downloaded packages.
+rm -rf "$ROOTFS/var/cache/wh"
 
 "$WORMOS_ROOT/scripts/build-initramfs.sh"
 
