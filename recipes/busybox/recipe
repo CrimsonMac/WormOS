@@ -24,6 +24,7 @@ build() {
 	make oldconfig < /dev/null > /dev/null
 
 	make CROSS_COMPILE="$TARGET-" CONFIG_EXTRA_LDFLAGS="$LDFLAGS" -j"$JOBS"
+	make CROSS_COMPILE="$TARGET-" busybox.links
 }
 
 package() {

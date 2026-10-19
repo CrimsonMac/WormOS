@@ -36,7 +36,7 @@ build_one() (
 	local recipedir=$WORMOS_ROOT/recipes/$1
 	[ -f "$recipedir/recipe" ] || die "no recipe for $1"
 
-	local name version description localsrc
+	local name="" version="" description="" localsrc=""
 	local -a source=() sha256=()
 	. "$recipedir/recipe"
 	[ "$name" = "$1" ] || die "$1: recipe declares name '$name'"
