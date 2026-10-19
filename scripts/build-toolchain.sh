@@ -102,11 +102,11 @@ if ! done_step linux-headers; then
 	cd "$WORK/linux"
 	make mrproper
 	make ARCH=$ARCH headers
-	find usr/include -type f ! -name '*.h' -delete
 	rm -rf "$PKGDIR/linux-headers"
 	mkdir -p "$PKGDIR/linux-headers/usr"
 	cp -r usr/include "$PKGDIR/linux-headers/usr/"
-	cp -r usr/include "$SYSROOT/usr/"
+	find "$PKGDIR/linux-headers/usr/include" -type f ! -name '*.h' -delete
+	cp -r "$PKGDIR/linux-headers/usr/include" "$SYSROOT/usr/"
 	stamp linux-headers
 fi
 

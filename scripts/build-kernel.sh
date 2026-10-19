@@ -17,6 +17,8 @@ kmake() {
 }
 
 msg "Configuring $LINUX"
+# Out-of-tree builds need a clean source tree (the headers step builds in it).
+make -C "$WORK/linux" ARCH=$ARCH mrproper
 mkdir -p "$KOBJ"
 kmake x86_64_defconfig
 "$WORK/linux/scripts/kconfig/merge_config.sh" -m -O "$KOBJ" \
