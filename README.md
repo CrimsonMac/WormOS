@@ -144,6 +144,9 @@ WormOS is built entirely from source with its own cross toolchain
 (`x86_64-wormos-linux-gnu`). Development targets x86_64 and is tested in
 QEMU with UEFI firmware.
 
+How the pieces fit together (image, boot, snapshots, packages, wormholes)
+is described in [docs/internals.md](docs/internals.md).
+
 ### Requirements
 
 A Debian 13 (or similar) host with roughly 25 GB of free disk space:
