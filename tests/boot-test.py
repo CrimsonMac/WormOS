@@ -47,6 +47,23 @@ CHECKS = [
     ("shadow is private", "stat -c '%a %u' /etc/shadow", r"^600 0$"),
 ]
 
+# Kernel security features (kernel/wormos.config).
+KERNEL_CHECKS = [
+    ("lockdown in integrity mode", "cat /sys/kernel/security/lockdown", r"\[integrity\]"),
+    ("security modules active", "cat /sys/kernel/security/lsm", r"lockdown.*yama.*landlock"),
+    ("landlock running", "dmesg | grep -c 'landlock: Up and running'", r"^1$"),
+    ("seccomp filters available", "cat /proc/sys/kernel/seccomp/actions_avail", r"kill_process"),
+    ("module signatures enforced", "cat /sys/module/module/parameters/sig_enforce", r"^Y$"),
+    ("no raw kernel memory access", "ls /dev/mem /dev/port /proc/kcore 2>&1 | grep -c 'No such'", r"^3$"),
+    ("sysrq off", "cat /proc/sys/kernel/sysrq", r"^0$"),
+    ("nftables built in",
+     "grep -cE '^CONFIG_(NF_TABLES_INET|NFT_CT|NFT_NAT|NFT_MASQ|NFT_REDIR|NFT_FIB_INET)=y' /boot/config-$(uname -r)",
+     r"^6$"),
+    ("no iptables", "grep -c '^CONFIG_IP_NF_IPTABLES=' /boot/config-$(uname -r)", r"^0$"),
+    ("sandbox filesystems", "grep -cwE 'overlay|fuse' /proc/filesystems", r"^2$"),
+    ("vm and tunnel devices", "ls /dev/vhost-net /dev/vhost-vsock /dev/vsock /dev/net/tun | wc -l", r"^4$"),
+]
+
 # Snapshot, change the system, and look at the change.
 SNAPSHOT_CHECKS = [
     ("snap now", "snap now -c 'test base'", r"^Snapshot 1 created \(system\)$"),
@@ -218,8 +235,8 @@ def main():
     passed = 0
     repo = serve_repo()
     worm_checks = [(n, c.format(repo=repo), p) for n, c, p in WORM_CHECKS]
-    total = (len(CHECKS) + len(SNAPSHOT_CHECKS) + len(BROWSE_CHECKS) +
-             len(REWIND_CHECKS) + len(HOME_CHECKS) + len(MENU_CHECKS) +
+    total = (len(CHECKS) + len(KERNEL_CHECKS) + len(SNAPSHOT_CHECKS) +
+             len(BROWSE_CHECKS) + len(REWIND_CHECKS) + len(HOME_CHECKS) + len(MENU_CHECKS) +
              len(worm_checks) + len(AFTER_INSTALL_CHECKS) +
              len(AFTER_TRIAL_CHECKS) + len(AFTER_TRIAL_END_CHECKS) +
              len(AFTER_REMOVE_CHECKS) + len(AFTER_UNDO_CHECKS) + 9)
@@ -257,6 +274,7 @@ def main():
             login(con, args.timeout)
             print(f"booted to login prompt in {time.time() - start:.0f}s")
             run_checks(con, CHECKS)
+            run_checks(con, KERNEL_CHECKS)
             run_checks(con, SNAPSHOT_CHECKS)
             con.send("snap browse 1\n")
             con.expect("Exit the shell to leave.", 60)

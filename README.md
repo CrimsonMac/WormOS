@@ -153,7 +153,7 @@ A Debian 13 (or similar) host with roughly 25 GB of free disk space:
 
 ```
 sudo apt install build-essential bison flex gawk texinfo m4 help2man \
-    libncurses-dev libssl-dev libelf-dev rsync curl xz-utils bzip2 \
+    libncurses-dev libssl-dev libelf-dev libgmp-dev libmpc-dev rsync curl xz-utils bzip2 \
     btrfs-progs dosfstools mtools fakeroot grub-efi-amd64-bin \
     qemu-system-x86 ovmf
 ```

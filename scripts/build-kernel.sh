@@ -31,11 +31,17 @@ kmake olddefconfig
 # Report any requested option that did not survive dependency resolution.
 missing=0
 while IFS= read -r line; do
-	case $line in CONFIG_*) ;; *) continue ;; esac
-	if ! grep -qxF "$line" "$KOBJ/.config"; then
-		echo "warning: not applied: $line"
-		missing=1
-	fi
+	case $line in
+	CONFIG_*)
+		grep -qxF "$line" "$KOBJ/.config" && continue ;;
+	"# CONFIG_"*" is not set")
+		opt=${line#\# }; opt=${opt%% *}
+		! grep -q "^$opt=" "$KOBJ/.config" && continue ;;
+	*)
+		continue ;;
+	esac
+	echo "warning: not applied: $line"
+	missing=1
 done < "$WORMOS_ROOT/kernel/wormos.config"
 
 msg "Building $LINUX"
@@ -49,7 +55,7 @@ cp "$KOBJ/.config" "$PKGDIR/linux/boot/config-$kver"
 ln -sfn "vmlinuz-$kver" "$PKGDIR/linux/boot/vmlinuz"
 kmake INSTALL_MOD_PATH="$PKGDIR/linux/usr" INSTALL_MOD_STRIP=1 modules_install
 rm -f "$PKGDIR/linux/usr/lib/modules/$kver/build"
-pkginfo linux "${LINUX#linux-}" 1 "The Linux kernel and modules"
+pkginfo linux "${LINUX#linux-}" 2 "The Linux kernel and modules"
 
 msg "Kernel $kver ready"
 [ $missing -eq 0 ] || msg "Some config options were not applied (see warnings above)"

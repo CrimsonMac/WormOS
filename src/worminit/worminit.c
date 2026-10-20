@@ -105,6 +105,8 @@ static void mount_pseudo_filesystems(void)
 
 	mount_fs("proc", "/proc", "proc", nosuid_nodev_noexec, NULL);
 	mount_fs("sysfs", "/sys", "sysfs", nosuid_nodev_noexec, NULL);
+	mount_fs("securityfs", "/sys/kernel/security", "securityfs",
+		 nosuid_nodev_noexec, NULL);
 	mount_fs("devtmpfs", "/dev", "devtmpfs", MS_NOSUID, "mode=0755");
 	mount_fs("devpts", "/dev/pts", "devpts", MS_NOSUID | MS_NOEXEC,
 		 "gid=5,mode=0620,ptmxmode=0666");

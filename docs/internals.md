@@ -11,7 +11,16 @@ in the README.
   6.18.57 headers). Finished steps are stamped in `build/stamps/`.
 - `scripts/build-kernel.sh` builds Linux 6.18.57 LTS: x86_64_defconfig with
   `kernel/wormos.config` merged on top, out of tree in `build/kernel`, staged
-  as the package `build/pkgs/linux`.
+  as the package `build/pkgs/linux`. The build warns about any option in the
+  fragment that did not survive dependency resolution.
+- Kernel security: nftables only (built in, no iptables or xtables), lockdown
+  forced to integrity mode, LSMs `lockdown,yama,integrity,landlock` (AppArmor
+  is built but only enabled with `lsm=`), and modules must be signed with the
+  key generated in `build/kernel/certs`, which is never packaged. KVM, vhost
+  and vsock serve later microVM blackholes; virtio-mmio and virtio-fs let the
+  same kernel run inside one. `/dev/mem`, `/proc/kcore`, kexec and
+  hibernation are compiled out. The stack-erase GCC plugin needs the host's
+  GMP and MPC headers.
 - `tools/wbuild NAME` builds `recipes/NAME/recipe` (PKGBUILD-like) into
   `build/pkgs/NAME`, with metadata in `build/pkginfo/NAME.info`. It copies each
   package's `usr/include` and `usr/lib` into the sysroot, so `PACKAGES` in the
