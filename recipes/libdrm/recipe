@@ -1,0 +1,22 @@
+name=libdrm
+version=2.4.134
+description="Userspace interface to kernel graphics drivers (DRM)"
+depends=(glibc)
+# Signed by Simon Ser (34FF9526CFEF0E97A340E2E40FDE7BE0E88F5E48).
+source=(https://dri.freedesktop.org/libdrm/libdrm-$version.tar.xz)
+sha256=(ac5e74d157830eb8bee44c6a6bf3ad49774ef0dd2a72bdad74a8f20308b52a95)
+
+build() {
+	# Mesa's Intel drivers talk to the kernel directly; libdrm_intel (which
+	# would need libpciaccess) is not used.
+	meson_build -Dintel=disabled -Dradeon=disabled -Damdgpu=disabled \
+		-Dnouveau=disabled -Dvmwgfx=enabled -Domap=disabled -Dexynos=disabled \
+		-Dfreedreno=disabled -Dtegra=disabled -Dvc4=disabled -Detnaviv=disabled \
+		-Dcairo-tests=disabled -Dman-pages=disabled -Dvalgrind=disabled \
+		-Dinstall-test-programs=false -Dtests=false -Dudev=true
+}
+
+package() {
+	meson_package
+	rm -rf "$pkgdir/usr/share/libdrm"
+}

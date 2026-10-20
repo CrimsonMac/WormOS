@@ -1,0 +1,15 @@
+name=libevdev
+version=1.14.0
+description="Wrapper library for evdev input devices"
+depends=(glibc)
+# Signed by Peter Hutterer (3C2C43D9447D5938EF4551EBE23B7E70B467F0BF).
+source=(https://www.freedesktop.org/software/libevdev/libevdev-$version.tar.xz)
+sha256=(5a0966c7110648665983848bad696c7acba614a2160d2865d535397101007332)
+
+build() {
+	meson_build -Dtests=disabled -Ddocumentation=disabled -Dtools=disabled
+}
+
+package() {
+	meson_package
+}

@@ -1,0 +1,15 @@
+name=xkeyboard-config
+version=2.48
+description="Keyboard layouts and rules (XKB data)"
+# Signed by Sergey Udaltsov (FFB4CCD275AAA422F5F9808E0661D98FC933A145).
+source=(https://www.x.org/releases/individual/data/xkeyboard-config/xkeyboard-config-$version.tar.xz)
+sha256=(b77041324f0109f77161ee43743fe04baa485866af8460d31e476ad3f7648fd5)
+
+build() {
+	meson_build -Dnls=false
+}
+
+package() {
+	meson_package
+	rm -rf "$pkgdir/usr/share/man"
+}

@@ -1,0 +1,42 @@
+name=mesa
+version=26.2.5
+description="OpenGL (ES) and EGL drivers: Intel (iris, crocus), virtual GPUs (virgl, svga) and softpipe"
+depends=(glibc gcc-libs zlib zstd expat libdrm wayland)
+# Signed by Eric Engestrom (57551DE15B968F6341C248F68D8E31AFC32428A6).
+source=(https://archive.mesa3d.org/mesa-$version.tar.xz)
+sha256=(794b3d1729075dae7ebd47c7283b7ca0cdb5dec668f7f11cc0a5d82f6138a0a5)
+
+build() {
+	# The Intel drivers compile OpenCL kernels while building, with
+	# mesa_clc. It needs LLVM, so it is built for this machine only (from
+	# the build host's LLVM) and never shipped.
+	if [ ! -x "$NATIVE/bin/mesa_clc" ] || [ ! -x "$NATIVE/bin/vtn_bindgen2" ] ||
+	   [ "$(cat "$NATIVE/bin/mesa_clc.version" 2>/dev/null)" != "$version" ]; then
+		host_env meson setup native-build --prefix="$NATIVE" --buildtype=release \
+			-Dplatforms= -Dgallium-drivers= -Dvulkan-drivers= -Dglx=disabled \
+			-Degl=disabled -Dgbm=disabled -Dopengl=false -Dgles1=disabled \
+			-Dgles2=disabled -Dllvm=enabled -Dshared-llvm=enabled \
+			-Dmesa-clc=enabled -Dinstall-mesa-clc=true -Dvalgrind=disabled \
+			-Dlibunwind=disabled -Dbuild-tests=false -Dxmlconfig=disabled
+		host_env ninja -C native-build -j"$JOBS" \
+			src/compiler/clc/mesa_clc src/compiler/spirv/vtn_bindgen2
+		install -m755 native-build/src/compiler/clc/mesa_clc \
+			native-build/src/compiler/spirv/vtn_bindgen2 "$NATIVE/bin/"
+		echo "$version" > "$NATIVE/bin/mesa_clc.version"
+	fi
+
+	meson_build -Dplatforms=wayland \
+		-Dgallium-drivers=iris,crocus,virgl,svga,softpipe -Dvulkan-drivers= \
+		-Dllvm=disabled -Dmesa-clc=system -Dintel-elk=true \
+		-Dglx=disabled -Degl=enabled -Dgbm=enabled -Dgles1=disabled \
+		-Dgles2=enabled -Dopengl=true -Dglvnd=disabled \
+		-Dgallium-va=disabled -Dvideo-codecs= -Dgallium-rusticl=false \
+		-Dmicrosoft-clc=disabled -Dvalgrind=disabled -Dlibunwind=disabled \
+		-Dlmsensors=disabled -Dandroid-libbacktrace=disabled -Dperfetto=false \
+		-Dzstd=enabled -Dexpat=enabled -Dxmlconfig=enabled -Dtools= \
+		-Dbuild-tests=false -Dhtml-docs=disabled -Dgallium-extra-hud=false
+}
+
+package() {
+	meson_package
+}

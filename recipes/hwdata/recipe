@@ -1,0 +1,22 @@
+name=hwdata
+version=0.412
+description="Display vendor IDs (PNP IDs), used when building display libraries"
+# Upstream publishes no signature: checksum pinned from the release download.
+source=(hwdata-$version.tar.gz::https://github.com/vcrhonek/hwdata/archive/refs/tags/v$version.tar.gz)
+sha256=(f0c64cd7e31d70a5fb3a52e53ab50a61e74c0421a6381eaa45114eec3bde5fe7)
+sysroot_files=(usr/share/hwdata/pnp.ids)
+
+package() {
+	install -Dm644 pnp.ids "$pkgdir/usr/share/hwdata/pnp.ids"
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/hwdata/LICENSE"
+	# Builds look the file up through a pkg-config file for this machine.
+	cat > "$NATIVE/share/pkgconfig/hwdata.pc" <<-PC
+	prefix=$SYSROOT/usr
+	datadir=\${prefix}/share
+	pkgdatadir=\${datadir}/hwdata
+
+	Name: hwdata
+	Description: Hardware identification databases
+	Version: $version
+	PC
+}

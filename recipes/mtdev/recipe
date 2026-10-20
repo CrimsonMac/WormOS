@@ -1,0 +1,19 @@
+name=mtdev
+version=1.1.7
+description="Multitouch protocol translation library"
+depends=(glibc)
+# Upstream publishes no signature: checksum pinned from the release download.
+source=(https://bitmath.org/code/mtdev/mtdev-$version.tar.bz2)
+sha256=(a107adad2101fecac54ac7f9f0e0a0dd155d954193da55c2340c97f2ff1d814e)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-static
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/bin"
+}

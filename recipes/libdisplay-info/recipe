@@ -1,0 +1,16 @@
+name=libdisplay-info
+version=0.4.0
+description="EDID and DisplayID parsing library"
+depends=(glibc)
+# Signed by Simon Ser (34FF9526CFEF0E97A340E2E40FDE7BE0E88F5E48).
+source=(https://gitlab.freedesktop.org/emersion/libdisplay-info/-/releases/$version/downloads/libdisplay-info-$version.tar.xz)
+sha256=(43b180baa143e2035654759d84e2b2f5ee77d5fe817c423838c7fe59c0d68459)
+
+build() {
+	meson_build
+}
+
+package() {
+	meson_package
+	rm -rf "$pkgdir/usr/bin"
+}

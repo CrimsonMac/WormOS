@@ -1,0 +1,25 @@
+name=libinput
+version=1.32.0
+description="Input device handling for Wayland compositors"
+depends=(glibc eudev libevdev mtdev)
+# Upstream publishes no signature: checksum pinned from the release download.
+source=(https://gitlab.freedesktop.org/libinput/libinput/-/archive/$version/libinput-$version.tar.gz)
+sha256=(7dd6c1ca964c86eb6810ccd6639cda634e68bdca43bf3afec39e94e942fac8d4)
+
+build() {
+	meson_build -Dlibwacom=false -Ddebug-gui=false -Dtests=false \
+		-Dinstall-tests=false -Ddocumentation=false -Dmtdev=true \
+		-Dlua-plugins=disabled -Dudev-dir=/usr/lib/udev \
+		-Dzshcompletiondir=no
+}
+
+package() {
+	meson_package
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/zsh"
+	# The Python helpers of the libinput tool need an interpreter.
+	local f
+	for f in "$pkgdir"/usr/libexec/libinput/*; do
+		head -n1 "$f" | grep -aq python && rm "$f"
+	done
+	true
+}

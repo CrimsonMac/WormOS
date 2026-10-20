@@ -1,0 +1,23 @@
+name=wayland
+version=1.26.0
+description="Wayland display protocol libraries"
+depends=(glibc libffi expat)
+# Signed by Simon Ser (34FF9526CFEF0E97A340E2E40FDE7BE0E88F5E48).
+source=(https://gitlab.freedesktop.org/wayland/wayland/-/releases/$version/downloads/wayland-$version.tar.xz)
+sha256=(64176eaa46e4969903e286f8e5ef8331affc17fdf03ac9b58381d2b23162b7a3)
+
+build() {
+	# wayland-scanner generates code during later builds: build it for this
+	# machine first, into $NATIVE.
+	host_env meson setup native-build --prefix="$NATIVE" --libdir=lib \
+		-Dlibraries=false -Dscanner=true -Dtests=false -Ddocumentation=false \
+		-Ddtd_validation=false
+	host_env ninja -C native-build install
+
+	meson_build -Dscanner=false -Dtests=false -Ddocumentation=false \
+		-Ddtd_validation=false
+}
+
+package() {
+	meson_package
+}

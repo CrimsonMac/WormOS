@@ -1,0 +1,16 @@
+name=pixman
+version=0.46.4
+description="Low-level pixel manipulation library"
+depends=(glibc)
+# No signature published for this release: checksum pinned from the download.
+source=(https://www.x.org/releases/individual/lib/pixman-$version.tar.xz)
+sha256=(a098c33924754ad43f981b740f6d576c70f9ed1006e12221b1845431ebce1239)
+
+build() {
+	meson_build -Dtests=disabled -Ddemos=disabled -Dgtk=disabled \
+		-Dlibpng=disabled -Dopenmp=disabled
+}
+
+package() {
+	meson_package
+}

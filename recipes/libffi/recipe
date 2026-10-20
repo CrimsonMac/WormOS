@@ -1,0 +1,19 @@
+name=libffi
+version=3.8.0
+description="Portable foreign function interface library"
+depends=(glibc)
+# Upstream publishes no signature: checksum pinned from the release download.
+source=(https://github.com/libffi/libffi/releases/download/v$version/libffi-$version.tar.gz)
+sha256=(7da3e2d9a171eb0a038f592ecad3ff2bb2550f3496d87b3b29ad0cf4430c0db4)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-static --disable-docs --disable-multi-os-directory
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share"
+}
