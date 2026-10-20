@@ -35,7 +35,7 @@ build_host_tools() {
 		"$mono/src/monocypher.c" "$mono/src/optional/monocypher-ed25519.c"
 	rm -rf "$BUILD/host/src"
 	mkdir -p "$BUILD/host/src"
-	cp -r "$WORMOS_ROOT/src/wh" "$WORMOS_ROOT/src/snap" "$BUILD/host/src/"
+	cp -r "$WORMOS_ROOT/src/wh" "$WORMOS_ROOT/src/snap" "$WORMOS_ROOT/src/common" "$BUILD/host/src/"
 	make -s -C "$BUILD/host/src/wh" -B CC=cc \
 		MONO_CFLAGS="-I$mono/src -I$mono/src/optional" \
 		MONO_LIBS="$mono/src/monocypher.c $mono/src/optional/monocypher-ed25519.c"

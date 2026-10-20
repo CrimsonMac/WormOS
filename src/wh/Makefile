@@ -1,7 +1,7 @@
 CC      ?= cc
 CFLAGS  ?= -O2
 # override: these must survive a CFLAGS given on the command line.
-override CFLAGS += -std=gnu17 -Wall -Wextra -I../snap
+override CFLAGS += -std=gnu17 -Wall -Wextra -I../snap -I../common
 LDFLAGS += -Wl,-z,relro,-z,now
 
 # Monocypher: the static library by default. A build for the build host
@@ -19,8 +19,8 @@ all: wh whc
 wh: $(SRCS) wh.h sig.h
 	$(CC) $(CFLAGS) $(MONO_CFLAGS) $(LDFLAGS) -o $@ $(SRCS) $(MONO_LIBS)
 
-whc: whc.c
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ whc.c
+whc: whc.c ../common/ns.c ../common/ns.h
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ whc.c ../common/ns.c
 
 install: wh whc
 	install -Dm755 wh $(DESTDIR)$(BINDIR)/wh

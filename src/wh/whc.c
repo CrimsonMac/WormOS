@@ -20,7 +20,6 @@
 
 #define _GNU_SOURCE
 #include <errno.h>
-#include <fcntl.h>
 #include <limits.h>
 #include <sched.h>
 #include <stdarg.h>
@@ -29,8 +28,9 @@
 #include <string.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
-#include <sys/syscall.h>
 #include <unistd.h>
+
+#include "ns.h"
 
 #define WORMHOLES  "/var/lib/wormholes"
 #define MAX_BINDS  16
@@ -49,59 +49,11 @@ static void die(const char *fmt, ...)
 	exit(127);
 }
 
-static void write_file(const char *path, const char *data)
-{
-	int fd = open(path, O_WRONLY | O_CLOEXEC);
-
-	if (fd < 0 || write(fd, data, strlen(data)) != (ssize_t)strlen(data))
-		die("cannot write %s: %s", path, strerror(errno));
-	close(fd);
-}
-
-/* Bind src onto dst inside the container root, creating dst if needed. */
+/* Bind src onto dst inside the container root. */
 static void bind(const char *src, const char *dst, unsigned long flags, int optional)
 {
-	char target[PATH_MAX];
-	struct stat st;
-
-	if (stat(src, &st) < 0) {
-		if (optional)
-			return;
-		die("%s is missing: %s", src, strerror(errno));
-	}
-	snprintf(target, sizeof(target), "%s%s", root_dir, dst);
-	if (S_ISDIR(st.st_mode)) {
-		mkdir(target, 0755);
-	} else {
-		int fd = open(target, O_WRONLY | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0644);
-
-		if (fd >= 0)
-			close(fd);
-	}
-	if (mount(src, target, NULL, MS_BIND | MS_REC, NULL) < 0) {
-		if (optional)
-			return;
+	if (ns_bind(root_dir, src, dst, flags) < 0 && !optional)
 		die("cannot mount %s in the wormhole: %s", dst, strerror(errno));
-	}
-	if ((flags & MS_RDONLY) &&
-	    mount(NULL, target, NULL, MS_REMOUNT | MS_BIND | MS_RDONLY, NULL) < 0 &&
-	    !optional)
-		die("cannot make %s read-only: %s", dst, strerror(errno));
-}
-
-static void enter_user_namespace(void)
-{
-	char map[64];
-	uid_t uid = getuid();
-	gid_t gid = getgid();
-
-	if (unshare(CLONE_NEWUSER | CLONE_NEWNS) < 0)
-		die("cannot create a user namespace: %s", strerror(errno));
-	write_file("/proc/self/setgroups", "deny");
-	snprintf(map, sizeof(map), "%u %u 1\n", uid, uid);
-	write_file("/proc/self/uid_map", map);
-	snprintf(map, sizeof(map), "%u %u 1\n", gid, gid);
-	write_file("/proc/self/gid_map", map);
 }
 
 int main(int argc, char **argv)
@@ -150,7 +102,14 @@ int main(int argc, char **argv)
 		if (unshare(CLONE_NEWNS) < 0)
 			die("cannot create a mount namespace: %s", strerror(errno));
 	} else {
-		enter_user_namespace();
+		uid_t uid = getuid();
+		gid_t gid = getgid();
+
+		/* Only the caller's own IDs, read before they become unmapped. */
+		if (unshare(CLONE_NEWUSER | CLONE_NEWNS) < 0)
+			die("cannot create a user namespace: %s", strerror(errno));
+		if (ns_map_ids(0, uid, uid, gid, gid) < 0)
+			die("cannot map user IDs: %s", strerror(errno));
 	}
 	if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) < 0)
 		die("cannot make mounts private: %s", strerror(errno));
@@ -182,8 +141,7 @@ int main(int argc, char **argv)
 		bind(src, colon + 1, 0, 0);
 	}
 
-	if (chdir(root_dir) < 0 || syscall(SYS_pivot_root, ".", ".") < 0 ||
-	    umount2(".", MNT_DETACH) < 0)
+	if (ns_pivot(root_dir) < 0)
 		die("cannot enter the wormhole: %s", strerror(errno));
 
 	/* Stay in the same folder when it exists inside (home, /tmp). */
