@@ -46,6 +46,16 @@ pack_one() {
 			xargs -0 -r "$TARGET-strip" --strip-unneeded 2>/dev/null || true
 	fi
 
+	# Nothing shipped may name the build machine: paths under the build
+	# tree or the builder's home directory give away who built it, and a
+	# run path there would let whoever owns that path on a target inject
+	# libraries.
+	local leaks
+	local -a machine=(-e "$WORMOS_ROOT")
+	case ${HOME:-/} in /|/root) ;; *) machine+=(-e "$HOME/") ;; esac
+	leaks=$(grep -rlaF "${machine[@]}" "$stage/root" | sed "s|^$stage/root/||") || true
+	[ -z "$leaks" ] || die "$name: build machine paths in $(echo $leaks)"
+
 	{
 		grep -v '^exclude = ' "$info"
 		echo "size = $(du -sb "$stage/root" | cut -f1)"

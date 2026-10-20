@@ -28,6 +28,15 @@ in the README.
   `caps`, `groups`, `users` and `sysroot_files`.
 - Autotools recipes must pass `--build="$(gcc -dumpmachine)"`; otherwise
   configure runs our cross binaries' host tools against the target libc.
+- Nothing shipped names the build machine. wbuild compiles through small
+  wrappers in `build/host/cc` that add `-ffile-prefix-map` (sources appear as
+  `/usr/src/NAME`, sysroot headers as `/usr/include`); the flags stay out of
+  CFLAGS because some packages, such as OpenSSL, record their CFLAGS. wbuild
+  also rewrites sysroot paths in a package's text files
+  (pkg-config files, `*-config` scripts) to plain target paths. wpack refuses
+  a package in which any file still contains the repository path or the
+  builder's home directory. Recipes whose configure scripts add run paths or
+  record their command line (unbound) fix that themselves.
 - `tools/wpack` writes `out/repo/NAME-VER-REL.wpkg`: a zstd pax tar with
   `.PKGINFO` first, stripped, root-owned, `go-w`.
 - `tools/wrepo` packs everything, writes `out/repo/index` (with a `date`) and

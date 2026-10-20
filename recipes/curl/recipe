@@ -1,5 +1,6 @@
 name=curl
 version=8.23.0
+release=2
 description="Command-line tool and library for transferring data with URLs"
 depends=(glibc zlib zstd openssl ca-certificates)
 # Signed by Daniel Stenberg (27EDEAF22F3ABCEB50DB9A125CC908FDB71E12C2).

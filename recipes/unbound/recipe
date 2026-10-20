@@ -1,5 +1,6 @@
 name=unbound
 version=1.26.1
+release=2
 description="Validating, caching DNS resolver (encrypted upstream queries)"
 depends=(glibc openssl expat ca-certificates)
 users=(unbound)
@@ -14,6 +15,10 @@ build() {
 		--with-rootkey-file=/var/lib/unbound/root.key --with-chroot-dir= \
 		--with-pidfile= --with-username=unbound --disable-static \
 		--without-pythonmodule --without-pyunbound --disable-flto
+	# --with-ssl and --with-libexpat add a run path into the sysroot and
+	# end up in the configure line 'unbound -V' prints.
+	sed -i 's|^RUNTIME_PATH=.*|RUNTIME_PATH=|' Makefile
+	sed -i "s|$SYSROOT||g" config.h
 	make -j"$JOBS"
 }
 

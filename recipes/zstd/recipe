@@ -1,5 +1,6 @@
 name=zstd
 version=1.5.7
+release=2
 description="Zstandard compression library and tool"
 depends=(glibc)
 # Signed by the Zstandard release key (4EF4AC63455FC9F4545D9B7DEF8FE99528B52FFD).

@@ -37,6 +37,23 @@
 [ $# -gt 0 ] || die "usage: wbuild NAME..."
 [ -x "$TOOLS/bin/$TARGET-gcc" ] || die "toolchain missing, run scripts/build-toolchain.sh first"
 
+# Source paths end up in binaries (__FILE__ in asserts): record them as
+# /usr/src/NAME and /usr/include rather than paths on the build machine.
+# The flags go in through wrappers, not CFLAGS, because some packages
+# (OpenSSL, curl-config) record their CFLAGS.
+wrapdir=$BUILD/host/cc
+mkdir -p "$wrapdir"
+for tool in gcc g++ c++ cpp; do
+	cat > "$wrapdir/$TARGET-$tool.new" <<-EOF
+	#!/bin/sh
+	exec "$TOOLS/bin/$TARGET-$tool" -ffile-prefix-map="$WORK"=/usr/src \\
+		-ffile-prefix-map="$SYSROOT"= "\$@"
+	EOF
+	chmod 755 "$wrapdir/$TARGET-$tool.new"
+	mv "$wrapdir/$TARGET-$tool.new" "$wrapdir/$TARGET-$tool"
+done
+export PATH=$wrapdir:$PATH
+
 export CC="$TARGET-gcc" CXX="$TARGET-g++" AR="$TARGET-ar" AS="$TARGET-as"
 export LD="$TARGET-ld" NM="$TARGET-nm" RANLIB="$TARGET-ranlib"
 export STRIP="$TARGET-strip" OBJCOPY="$TARGET-objcopy"
@@ -87,6 +104,11 @@ build_one() (
 	if declare -F build >/dev/null; then build; fi
 	cd "$srcdir"
 	package
+
+	# pkg-config files and *-config scripts record the sysroot paths the
+	# package was built against; on the target they are plain /usr paths.
+	# (wpack rejects anything that still names the build machine.)
+	{ grep -rlIZF -- "$SYSROOT" "$pkgdir" || true; } | xargs -0 -r sed -i "s|$SYSROOT||g"
 
 	# Record what the package installed.
 	pkginfo "$name" "$version" "$release" "$description" "${depends[@]}"
