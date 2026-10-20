@@ -1,0 +1,5 @@
+# Tor, when anonymous mode is on (worm anon); the firewall already sends
+# all traffic to it.
+type = oneshot
+exec = worm anon start
+safe = no

@@ -6,6 +6,7 @@
  *     worm fw ...             the firewall (see fw.c)
  *     worm status             the state of the system's protections
  *     worm panic [off]        cut the network, stop blackholes, snapshot
+ *     worm anon on|off|status all traffic through Tor (see anon.c)
  *
  * Only the mount of / changes (a bind remount), never the filesystem, so
  * /var and /home are not affected. Unlocking is a guard against accidents,
@@ -274,7 +275,7 @@ static int cmd_lock(const char *comment)
 
 static void usage(FILE *out)
 {
-	fputs("usage: worm status | panic [off] | unlock | lock [-c COMMENT]\n"
+	fputs("usage: worm status | panic [off] | anon on|off|status | unlock | lock [-c COMMENT]\n"
 	      "       worm fw status | allow PORT[/tcp|/udp] | deny PORT[/tcp|/udp] | load\n"
 	      "PORT is a number or a range such as 6000-6010; tcp is the default.\n", out);
 }
@@ -300,6 +301,13 @@ int main(int argc, char **argv)
 	}
 	if (!strcmp(argv[1], "status") && argc == 2)
 		return cmd_status();
+	if (!strcmp(argv[1], "anon")) {
+		int r = cmd_anon(argc - 2, argv + 2);
+
+		if (r == 2)
+			usage(stderr);
+		return r;
+	}
 	if (!strcmp(argv[1], "panic")) {
 		int r = cmd_panic(argc - 2, argv + 2);
 

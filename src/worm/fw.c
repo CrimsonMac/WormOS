@@ -16,6 +16,11 @@
  * /run/worm/firewall.nft and loaded with nft as one transaction, which
  * replaces the whole "inet worm" table at once.
  *
+ * In anonymous mode (anon.c) the table also filters output: only Tor's
+ * user may reach the network, other TCP connections are redirected to
+ * Tor's TransPort and DNS queries to its DNSPort, and everything else is
+ * rejected. Without a tor user, nothing but loopback gets out.
+ *
  * The network can also be cut (worm panic, and safe mode from boot): a
  * table that drops everything but loopback, in and out, until 'worm panic
  * off'. The marker /run/worm/network-cut keeps it in force across reloads.
@@ -179,6 +184,39 @@ static void write_set(FILE *f, const char *name, const char *proto,
 	fprintf(f, "%s\t}\n", first ? "" : " }\n");
 }
 
+/* Anonymous mode: only Tor reaches the network, everything else goes to it. */
+static void write_anon(FILE *f, long tor)
+{
+	char skuid[64] = "";
+
+	if (tor >= 0)
+		snprintf(skuid, sizeof(skuid), "\t\tmeta skuid %ld accept\n", tor);
+	fprintf(f, "\tchain output {\n"
+		"\t\ttype filter hook output priority filter; policy drop;\n"
+		"\t\toif lo accept\n"
+		/*
+		 * What the NAT chain sent to Tor: the packet now goes to
+		 * loopback, but oif still names the original device.
+		 */
+		"\t\tip daddr 127.0.0.0/8 accept\n"
+		"\t\tip6 daddr ::1 accept\n"
+		"%s"
+		/* DHCP renewals; the first lease uses a raw socket anyway. */
+		"\t\tudp sport 68 udp dport 67 accept\n"
+		"\t\tmeta l4proto tcp reject with tcp reset\n"
+		"\t\treject with icmpx admin-prohibited\n"
+		"\t}\n", skuid);
+	if (tor >= 0)
+		snprintf(skuid, sizeof(skuid), "\t\tmeta skuid %ld return\n", tor);
+	fprintf(f, "\tchain anon_nat {\n"
+		"\t\ttype nat hook output priority -100;\n"
+		"%s"
+		"\t\tudp dport 53 redirect to :5353\n"
+		"\t\tip daddr 127.0.0.0/8 return\n"
+		"\t\tmeta nfproto ipv4 meta l4proto tcp redirect to :9040\n"
+		"\t}\n", skuid);
+}
+
 static int write_rules(const struct port *ports, int n)
 {
 	FILE *f;
@@ -214,8 +252,10 @@ static int write_rules(const struct port *ports, int n)
 	      "\t}\n"
 	      "\tchain forward {\n"
 	      "\t\ttype filter hook forward priority filter; policy drop;\n"
-	      "\t}\n"
-	      "}\n", f);
+	      "\t}\n", f);
+	if (anon_enabled())
+		write_anon(f, anon_tor_uid());
+	fputs("}\n", f);
 	if (fclose(f) != 0) {
 		fprintf(stderr, "worm: cannot write %s: %s\n", FW_RULES, strerror(errno));
 		return -1;
@@ -298,6 +338,11 @@ static int cmd_load(void)
 	}
 	fprintf(stderr, "worm: the firewall is NOT active\n");
 	return 1;
+}
+
+int fw_reload(void)
+{
+	return cmd_load();
 }
 
 int fw_restore(void)

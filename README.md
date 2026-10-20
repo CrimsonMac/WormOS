@@ -144,6 +144,26 @@ worm fw deny 22           # close it again
 Open ports are stored in `/etc/worm/firewall`, so they are part of system
 snapshots: rewinding brings back the firewall of that time.
 
+## Anonymous mode
+
+```
+worm anon on              # all traffic of the machine through Tor
+worm anon status          # is it on, has Tor connected yet?
+worm anon off
+```
+
+In anonymous mode only Tor itself reaches the network. Every other TCP
+connection, from any program, user, wormhole or root, is sent through
+Tor, DNS queries are answered by Tor, and everything Tor cannot carry
+(UDP, ICMP, IPv6) is blocked. The rules load before the network comes
+up and stay in place while Tor connects, so nothing leaks in between.
+The setting is kept across restarts and is part of system snapshots.
+Programs can also use Tor's SOCKS port directly (127.0.0.1:9050).
+
+Anonymous mode hides where traffic comes from, not who you are: logging
+in to an account still identifies you. For browsing, Tor Browser (planned)
+protects against much more than routing alone.
+
 ## When something goes wrong
 
 ```
@@ -251,8 +271,10 @@ the system and of `/home`, and a rewind from the boot menu), then
 the VM over HTTP (install, a trial that rolls back, remove and undo). It
 also opens and closes a firewall port and checks it from the host through a
 QEMU port forward (`QEMU_HOSTFWD`), tries to escape from a blackhole (as
-root and as a normal user), runs `worm panic` and boots safe mode from the
-menu.
+root and as a normal user), switches anonymous mode on and off (checking
+that nothing reaches the host directly), runs `worm panic` and boots safe
+mode from the menu. `make test-wormholes` also checks that Tor connects and
+traffic really goes through it.
 
 Building the disk image uses `sudo` for one step (applying file ownership
 before `mkfs.btrfs`); everything else runs as a normal user.

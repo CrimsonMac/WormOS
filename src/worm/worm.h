@@ -26,9 +26,16 @@ int safe_mode(void);
 int cmd_fw(int argc, char **argv);
 int cmd_panic(int argc, char **argv);
 int cmd_status(void);
+int cmd_anon(int argc, char **argv);
+
+/* Anonymous mode (anon.c). */
+int anon_enabled(void);
+long anon_tor_uid(void);
+const char *anon_summary(void);
 
 /* The firewall (fw.c): cutting the network and bringing it back. */
 int fw_cut(void);
+int fw_reload(void);
 int fw_restore(void);
 int fw_network_cut(void);
 const char *fw_summary(void);

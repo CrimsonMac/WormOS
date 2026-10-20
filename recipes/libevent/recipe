@@ -1,0 +1,21 @@
+name=libevent
+version=2.1.13
+description="Event notification library"
+depends=(glibc)
+# Signed by Nick Mathewson (2133BC600AB133E1D826D173FE43009C4607B1FB).
+source=(https://github.com/libevent/libevent/releases/download/release-$version-stable/libevent-$version-stable.tar.gz)
+sha256=(f7e9383b8c0baa81b687e5b5eecc01beefaf1b19b64151d95ed61647fe7a315c)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-openssl --disable-mbedtls --disable-samples \
+		--disable-libevent-regress --disable-debug-mode --disable-static
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	# event_rpcgen.py, for building RPC code; not needed at run time.
+	rm -rf "$pkgdir/usr/bin"
+}

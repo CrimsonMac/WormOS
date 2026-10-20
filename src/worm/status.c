@@ -115,8 +115,12 @@ int cmd_status(void)
 		row("Packages", "no change waiting");
 
 	row("Firewall", "%s", fw_summary());
-	row("DNS", "%s", process_running("unbound") ? "encrypted (local resolver running)" :
-	    "local resolver NOT RUNNING");
+	if (anon_enabled())
+		row("DNS", "through Tor (anonymous mode)");
+	else
+		row("DNS", "%s", process_running("unbound") ? "encrypted (local resolver running)" :
+		    "local resolver NOT RUNNING");
+	row("Anonymity", "%s", anon_summary());
 	running = blackholes_each(0, &total);
 	row("Blackholes", "%d running, %d in total", running, total);
 

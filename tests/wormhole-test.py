@@ -31,7 +31,10 @@ boot_test = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(boot_test)
 
 CHECKS = [
-    ("encrypted DNS resolves", "nslookup deb.debian.org 2>&1 | tail -3", r"Address:?\s+[0-9a-f.:]+"),
+    # The first answer needs a TLS handshake and DNSSEC priming: slow under TCG.
+    ("encrypted DNS resolves",
+     "i=0; until nslookup deb.debian.org >/dev/null 2>&1 || [ $i -ge 30 ]; do sleep 2; i=$((i+1)); done; "
+     "nslookup deb.debian.org 2>&1 | tail -3", r"Address:?\s+[0-9a-f.:]+"),
     ("debian install", "wh -y install --from debian htop 2>&1 | tail -3",
      r"htop -> /usr/bin/htop \(debian\)"),
     ("debian wormhole ready", "cat /var/lib/wormholes/debian/etc/os-release",
@@ -58,6 +61,15 @@ CHECKS = [
     ("kali tool runs", "hashid --version 2>&1", r"^(?i:hashid) v\d"),
     ("kali wormhole", "cat /var/lib/wormholes/kali/etc/os-release", r"Kali GNU/Linux"),
     ("system still read-only", "touch /usr/x 2>&1", r"Read-only file system"),
+    ("anonymous mode on", "worm anon on", r"^Anonymous mode is on"),
+    ("tor connects",
+     "i=0; until worm anon status | grep -q connected || [ $i -ge 300 ]; do sleep 2; i=$((i+1)); done; "
+     "worm anon status", r"connected"),
+    ("traffic goes through Tor",
+     "curl -s -m 60 https://check.torproject.org/api/ip", r'"IsTor":\s*true'),
+    ("names resolve through Tor", "nslookup deb.debian.org 2>&1 | tail -2", r"Address"),
+    ("anonymous mode off", "worm anon off", r"^Anonymous mode is off"),
+    ("direct again", "curl -s -m 60 https://check.torproject.org/api/ip", r'"IsTor":\s*false'),
 ]
 
 

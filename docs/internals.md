@@ -130,7 +130,7 @@ in the README.
 
 - Services in order: `01-sysctl` (`sysctl -p` on `/usr/lib/sysctl.d/*.conf`,
   then `/etc/sysctl.d/*.conf`), `05-firewall`, `10-filesystems`,
-  `15-dns` (shipped by the unbound package), `20-loopback`,
+  `15-dns` (shipped by the unbound package), `16-anon` (tor), `20-loopback`,
   `25-net-privacy`, `30-network`.
 - Kernel command line (`scripts/mkimage.sh`): `slab_nomerge debugfs=off
   iommu.passthrough=0 iommu.strict=1 efi=disable_early_pci_dma`.
@@ -150,6 +150,29 @@ in the README.
   records from IANA).
 - Recipes can declare `users=(NAME)`: wh adds a system group and user with
   a locked password, no home and nologin (IDs from 999 down).
+
+## Anonymous mode
+
+- `worm anon` (`src/worm/anon.c`). The switch is `/etc/worm/anon` (part of
+  system snapshots). `on` writes it (bind-remounting `/` if locked),
+  reloads the firewall, then starts Tor; `off` removes it, reloads the
+  firewall and stops Tor. At boot the firewall service loads the anonymous
+  rules before the network, and `16-anon` (`worm anon start`, from the tor
+  package) starts Tor once `/var` is mounted.
+- Tor (`recipes/tor`) is built as a client only (`--disable-module-relay`),
+  without GeoIP data. `/etc/tor/torrc`: user `tor`, data in `/var/lib/tor`,
+  pid and notices log in `/run/tor`, SocksPort 9050, TransPort 9040,
+  DNSPort 5353 (IPv4 and IPv6 loopback), .onion names automapped into
+  10.192.0.0/10. `worm anon status` reads the last "Bootstrapped N%" line
+  of the log.
+- Rules (`write_anon()` in `fw.c`), added to the `inet worm` table: an
+  output filter (policy drop) accepting loopback, Tor's UID and DHCP
+  renewals, rejecting the rest (TCP with a reset); and a NAT output chain
+  returning Tor's packets, redirecting UDP port 53 to 5353 and every other
+  IPv4 TCP connection outside 127.0.0.0/8 to 9040. The resolver's own
+  upstream connections are redirected like any other. Without a `tor`
+  user nothing is accepted or excepted, so the machine fails closed. A cut
+  network (panic, safe mode) replaces the whole table and wins.
 
 ## Panic and safe mode
 

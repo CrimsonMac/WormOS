@@ -220,6 +220,28 @@ STATUS_CHECKS = [
      r"(.|\n)*Kernel\s+lockdown integrity(.|\n)*io_uring off"),
 ]
 
+# Anonymous mode (worm anon). Tor cannot connect here; what matters is
+# that nothing leaves the machine directly. {repo} is the repository URL.
+ANON_CHECKS = [
+    ("tor installed", "tor --version | head -1", r"^Tor version 0\.4\.9"),
+    ("worm anon on", "worm anon on", r"^Anonymous mode is on"),
+    ("tor runs unprivileged", "sleep 3; ps -o user,comm | grep -w tor", r"^tor\s+tor"),
+    ("connections sent to Tor", "nft list chain inet worm anon_nat",
+     r"udp dport 53 redirect to :5353(.|\n)*l4proto (tcp|6) redirect to :9040"),
+    ("everything else blocked", "ping -c 1 -W 3 10.0.2.2 2>&1", r"not permitted|100% packet loss"),
+    ("direct request attempted", "wget -q -T 10 -O- {repo}anon-leak-check 2>&1; echo done",
+     r"done$"),
+    ("connections reach Tor", "wget -q -T 10 -O- http://198.51.100.1/ 2>&1; echo rc=$?",
+     r"\A(?![\s\S]*refused)[\s\S]*rc="),
+    ("status shows it", "worm status", r"DNS\s+through Tor(.|\n)*Anonymity\s+on"),
+    ("survives a firewall reload", "worm fw load && nft list chain inet worm anon_nat | grep -c 9040",
+     r"^1$"),
+    ("worm anon off", "worm anon off", r"^Anonymous mode is off"),
+    ("tor stopped", "sleep 2; pidof tor || echo none", r"^none$"),
+    ("direct connections again", "wget -q -T 10 -O- {repo}anon-off-check 2>&1; echo done",
+     r"done$"),
+]
+
 # worm panic, at the end: its snapshot would change the IDs checked above.
 # {repo} is the repository URL.
 PANIC_CHECKS = [
@@ -359,11 +381,19 @@ def fetch(port, timeout=10):
         return False
 
 
+# Paths the VM requested from the repository server, to detect leaks.
+REQUESTS = []
+
+
 def serve_repo():
     """Serve out/repo over HTTP; the VM reaches it at 10.0.2.2."""
     class Quiet(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *args):
             pass
+
+        def do_GET(self):
+            REQUESTS.append(self.path)
+            super().do_GET()
 
     handler = functools.partial(Quiet, directory=os.path.join(ROOT, "out", "repo"))
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -437,8 +467,10 @@ def main():
     repo = serve_repo()
     worm_checks = [(n, c.format(repo=repo), p) for n, c, p in WORM_CHECKS]
     panic_checks = [(n, c.format(repo=repo), p) for n, c, p in PANIC_CHECKS]
+    anon_checks = [(n, c.format(repo=repo), p) for n, c, p in ANON_CHECKS]
     total = (len(CHECKS) + len(KERNEL_CHECKS) + len(DNS_CHECKS) + len(FIREWALL_CHECKS) +
              len(STATUS_CHECKS) + len(panic_checks) + len(SAFE_CHECKS) + 2 +
+             len(anon_checks) + 2 +
              len(FIREWALL_OPEN_CHECKS) + len(FIREWALL_CLOSE_CHECKS) +
              len(FIREWALL_AFTER_CHECKS) + 3 + len(BLACKHOLE_CHECKS) + len(WHC_CHECKS) +
              len(SNAPSHOT_CHECKS) +
@@ -492,6 +524,11 @@ def main():
             run_checks(con, BLACKHOLE_CHECKS)
             run_checks(con, WHC_CHECKS)
             run_checks(con, STATUS_CHECKS)
+            run_checks(con, anon_checks)
+            check("nothing reached the network directly in anonymous mode",
+                  "/anon-leak-check" not in REQUESTS, REQUESTS[-5:])
+            check("direct requests arrive again after anon off",
+                  "/anon-off-check" in REQUESTS, REQUESTS[-5:])
             run_checks(con, SNAPSHOT_CHECKS)
             con.send("snap browse 1\n")
             con.expect("Exit the shell to leave.", 60)

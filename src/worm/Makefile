@@ -8,7 +8,7 @@ BINDIR  ?= $(PREFIX)/bin
 
 all: worm
 
-OBJS = worm.o fw.o panic.o status.o
+OBJS = worm.o fw.o panic.o status.o anon.o
 
 worm: $(OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS)

@@ -1,0 +1,21 @@
+# WormOS: the Tor client behind 'worm anon'. In anonymous mode the
+# firewall sends all TCP connections of the machine to TransPort and all
+# DNS queries to DNSPort; only Tor itself (user tor) may reach the network.
+# Programs can also use SocksPort directly.
+
+User tor
+DataDirectory /var/lib/tor
+PidFile /run/tor/tor.pid
+RunAsDaemon 1
+Log notice file /run/tor/notices.log
+AvoidDiskWrites 1
+
+SocksPort 127.0.0.1:9050
+TransPort 127.0.0.1:9040
+DNSPort 127.0.0.1:5353
+DNSPort [::1]:5353
+
+# .onion names resolve to addresses in this range, which TransPort
+# connects to through Tor.
+AutomapHostsOnResolve 1
+VirtualAddrNetworkIPv4 10.192.0.0/10

@@ -1,0 +1,33 @@
+name=tor
+version=0.4.9.14
+description="Anonymity network client (worm anon)"
+depends=(glibc openssl libevent zlib zstd)
+users=(tor)
+# The checksum file is signed by David Goulet
+# (B74417EDDF22AC9F9E90F49142E86A2A11F48D36) and Alexander Færøy
+# (1C1BC007A9F607AA8152C040BEA7B180B1491921).
+source=(https://dist.torproject.org/tor-$version.tar.gz)
+sha256=(182449ac1c8ff43278da27b69b02040e11d03d0327db6d9126e4190ec6235e4a)
+
+build() {
+	# A client only: no relay or directory authority code. The tool name
+	# check wants CC to carry the target name; ours is a wrapper.
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--sysconfdir=/etc --localstatedir=/var \
+		--with-libevent-dir="$SYSROOT/usr" --with-openssl-dir="$SYSROOT/usr" \
+		--with-zlib-dir="$SYSROOT/usr" --enable-zstd --disable-lzma \
+		--disable-module-relay --disable-seccomp --disable-systemd \
+		--disable-asciidoc --disable-manpage --disable-html-manual \
+		--disable-unittests --disable-tool-name-check
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	# Example configuration, documentation, GeoIP databases (only needed
+	# to pick relays by country), relay key tools and torify (needs torsocks).
+	rm -rf "$pkgdir/etc/tor" "$pkgdir/usr/share" "$pkgdir/usr/bin/tor-gencert" \
+		"$pkgdir/usr/bin/tor-print-ed-signing-cert" "$pkgdir/usr/bin/torify"
+	install -Dm644 "$recipedir/files/torrc" "$pkgdir/etc/tor/torrc"
+	install -Dm644 "$recipedir/files/16-anon" "$pkgdir/etc/worm/services/16-anon"
+}
