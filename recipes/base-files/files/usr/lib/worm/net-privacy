@@ -1,0 +1,19 @@
+#!/bin/sh
+# Before the network comes up, make every network device hard to track:
+# a random MAC address, so networks cannot recognise this machine by its
+# hardware address (locally administered unicast, new at every boot), and
+# temporary IPv6 addresses for outgoing connections. The sysctl defaults
+# only reach devices created after they were set.
+for dev in /sys/class/net/*; do
+	name=${dev##*/}
+	# Hardware only: not loopback, bridges or virtual pairs.
+	[ -e "$dev/device" ] || continue
+	set -- $(od -An -N6 -tx1 /dev/urandom)
+	first=$(printf '%02x' $(( (0x$1 & 0xfc) | 0x02 )))
+	ip link set dev "$name" down
+	ip link set dev "$name" address "$first:$2:$3:$4:$5:$6" ||
+		echo "net-privacy: cannot change the address of $name" >&2
+	[ -w "/proc/sys/net/ipv6/conf/$name/use_tempaddr" ] &&
+		echo 2 > "/proc/sys/net/ipv6/conf/$name/use_tempaddr"
+done
+exit 0

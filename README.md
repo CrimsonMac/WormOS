@@ -144,6 +144,21 @@ worm fw deny 22           # close it again
 Open ports are stored in `/etc/worm/firewall`, so they are part of system
 snapshots: rewinding brings back the firewall of that time.
 
+## Privacy and hardening
+
+- DNS goes to a local resolver (unbound) that validates DNSSEC and sends
+  queries encrypted (DNS over TLS) to Quad9. The DNS servers a network
+  announces are not used. To use other resolvers, put a `forward-zone` in
+  `/etc/unbound/unbound.conf.d/` (after `worm unlock`).
+- Network devices get a random MAC address at every boot, and IPv6 uses
+  temporary addresses for outgoing connections.
+- The kernel is locked down (no unsigned modules, no access to kernel
+  memory), io_uring is off, and kernel pointers and logs are hidden.
+  Settings are in `/usr/lib/sysctl.d/50-wormos.conf`; override them in
+  `/etc/sysctl.d/`.
+- Users see only their own processes. Programs cannot run from `/dev`,
+  `/run` or `/dev/shm`.
+
 ## Blackholes
 
 A blackhole is a disposable sandbox for software you do not trust. Things

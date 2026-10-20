@@ -46,12 +46,27 @@ CHECKS = [
     ("network configured", "ip -4 addr show eth0", r"inet 10\.0\.2\.15"),
     ("syslog running", "pidof syslogd", r"^\d+"),
     ("hostname", "hostname", r"^wormos$"),
-    ("system files owned by root", "find / /var -xdev ! -user 0 | wc -l", r"^0$"),
+    # The resolver keeps its trust anchor current in /var/lib/unbound.
+    ("system files owned by root",
+     "find / /var -xdev ! -user 0 ! -path '/var/lib/unbound*' | wc -l", r"^0$"),
     ("shadow is private", "stat -c '%a %u' /etc/shadow", r"^600 0$"),
 ]
 
-# Kernel security features (kernel/wormos.config).
+# Kernel security features (kernel/wormos.config), settings and mounts.
 KERNEL_CHECKS = [
+    ("hardening on the command line", "cat /proc/cmdline", r"slab_nomerge debugfs=off .*iommu\.strict=1"),
+    ("io_uring off", "cat /proc/sys/kernel/io_uring_disabled", r"^2$"),
+    ("kernel pointers hidden", "cat /proc/sys/kernel/kptr_restrict", r"^2$"),
+    ("protected links and files",
+     "cat /proc/sys/fs/protected_symlinks /proc/sys/fs/protected_regular | tr '\\n' ' '",
+     r"^1 2\s*$"),
+    ("no ICMP redirects", "cat /proc/sys/net/ipv4/conf/all/accept_redirects", r"^0$"),
+    ("IPv6 privacy addresses", "cat /proc/sys/net/ipv6/conf/eth0/use_tempaddr", r"^2$"),
+    ("processes of others hidden", "grep ' /proc ' /proc/mounts", r"hidepid=invisible"),
+    ("no programs from /dev, /run or /dev/shm",
+     "grep -E ' /(dev|run|dev/shm) ' /proc/mounts | grep -c noexec", r"^3$"),
+    ("random MAC address", "cat /sys/class/net/eth0/address", r"^[0-9a-f][26ae]:"),
+    ("not QEMU's MAC address", "cat /sys/class/net/eth0/address", r"^(?!52:54:00:12:34:56)"),
     ("lockdown in integrity mode", "cat /sys/kernel/security/lockdown", r"\[integrity\]"),
     ("security modules active", "cat /sys/kernel/security/lsm", r"lockdown.*yama.*landlock"),
     ("landlock running", "dmesg | grep -c 'landlock: Up and running'", r"^1$"),
@@ -67,6 +82,18 @@ KERNEL_CHECKS = [
     ("vm and tunnel devices", "ls /dev/vhost-net /dev/vhost-vsock /dev/vsock /dev/net/tun | wc -l", r"^4$"),
 ]
 
+# DNS: a local resolver with encrypted upstreams (needs no internet here).
+DNS_CHECKS = [
+    ("local resolver running", "pidof unbound", r"^\d+"),
+    ("resolver runs unprivileged", "ps -o user,comm | grep -w unbound", r"^unbound\s+unbound"),
+    ("resolver configuration valid", "unbound-checkconf 2>&1", r"no errors"),
+    ("programs use the local resolver", "cat /etc/resolv.conf", r"^nameserver 127\.0\.0\.1$"),
+    ("network's DNS servers only recorded",
+     "cat /run/worm/dhcp-dns; grep -c 10.0.2.3 /etc/resolv.conf", r"^nameserver 10\.0\.2\.3\n0$"),
+    ("resolver answers", "nslookup localhost 127.0.0.1 2>&1", r"Address:?\s+127\.0\.0\.1"),
+    ("trust anchor kept up to date", "ls -l /var/lib/unbound/root.key", r"\sunbound\s+unbound\s"),
+]
+
 # The firewall. A web server in the VM on port 8080 is fetched from this
 # machine through a QEMU port forward between these lists.
 FIREWALL_CHECKS = [
@@ -74,7 +101,8 @@ FIREWALL_CHECKS = [
     ("no ports open by default", "worm fw status", r"^Open ports: none$"),
     ("inbound and forwarding denied",
      "nft list table inet worm | grep -c 'policy drop'", r"^2$"),
-    ("loaded before the network", "ls /etc/worm/services | head -1", r"^05-firewall$"),
+    ("loaded before the network", "ls /etc/worm/services | grep -E 'firewall|network' | tr '\\n' ' '",
+     r"^05-firewall 30-network\s*$"),
     ("web server started",
      "mkdir -p /tmp/www && echo hi > /tmp/www/index.html && httpd -p 8080 -h /tmp/www && echo ok",
      r"^ok$"),
@@ -376,7 +404,7 @@ def main():
     passed = 0
     repo = serve_repo()
     worm_checks = [(n, c.format(repo=repo), p) for n, c, p in WORM_CHECKS]
-    total = (len(CHECKS) + len(KERNEL_CHECKS) + len(FIREWALL_CHECKS) +
+    total = (len(CHECKS) + len(KERNEL_CHECKS) + len(DNS_CHECKS) + len(FIREWALL_CHECKS) +
              len(FIREWALL_OPEN_CHECKS) + len(FIREWALL_CLOSE_CHECKS) +
              len(FIREWALL_AFTER_CHECKS) + 3 + len(BLACKHOLE_CHECKS) + len(WHC_CHECKS) +
              len(SNAPSHOT_CHECKS) +
@@ -419,6 +447,7 @@ def main():
             print(f"booted to login prompt in {time.time() - start:.0f}s")
             run_checks(con, CHECKS)
             run_checks(con, KERNEL_CHECKS)
+            run_checks(con, DNS_CHECKS)
             run_checks(con, FIREWALL_CHECKS)
             check("closed port unreachable from outside", not fetch(web_port))
             run_checks(con, FIREWALL_OPEN_CHECKS)

@@ -103,15 +103,17 @@ static void mount_pseudo_filesystems(void)
 {
 	const unsigned long nosuid_nodev_noexec = MS_NOSUID | MS_NODEV | MS_NOEXEC;
 
-	mount_fs("proc", "/proc", "proc", nosuid_nodev_noexec, NULL);
+	/* Users see only their own processes. */
+	mount_fs("proc", "/proc", "proc", nosuid_nodev_noexec, "hidepid=invisible");
 	mount_fs("sysfs", "/sys", "sysfs", nosuid_nodev_noexec, NULL);
 	mount_fs("securityfs", "/sys/kernel/security", "securityfs",
 		 nosuid_nodev_noexec, NULL);
-	mount_fs("devtmpfs", "/dev", "devtmpfs", MS_NOSUID, "mode=0755");
+	mount_fs("devtmpfs", "/dev", "devtmpfs", MS_NOSUID | MS_NOEXEC, "mode=0755");
 	mount_fs("devpts", "/dev/pts", "devpts", MS_NOSUID | MS_NOEXEC,
 		 "gid=5,mode=0620,ptmxmode=0666");
-	mount_fs("tmpfs", "/dev/shm", "tmpfs", MS_NOSUID | MS_NODEV, "mode=1777");
-	mount_fs("tmpfs", "/run", "tmpfs", MS_NOSUID | MS_NODEV, "mode=0755");
+	mount_fs("tmpfs", "/dev/shm", "tmpfs", nosuid_nodev_noexec, "mode=1777");
+	mount_fs("tmpfs", "/run", "tmpfs", nosuid_nodev_noexec, "mode=0755");
+	/* /tmp stays executable: build tools and installers run things there. */
 	mount_fs("tmpfs", "/tmp", "tmpfs", MS_NOSUID | MS_NODEV, "mode=1777");
 	mount_fs("cgroup2", "/sys/fs/cgroup", "cgroup2", nosuid_nodev_noexec, NULL);
 }

@@ -31,6 +31,7 @@ boot_test = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(boot_test)
 
 CHECKS = [
+    ("encrypted DNS resolves", "nslookup deb.debian.org 2>&1 | tail -3", r"Address:?\s+[0-9a-f.:]+"),
     ("debian install", "wh -y install --from debian htop 2>&1 | tail -3",
      r"htop -> /usr/bin/htop \(debian\)"),
     ("debian wormhole ready", "cat /var/lib/wormholes/debian/etc/os-release",

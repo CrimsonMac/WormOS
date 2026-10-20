@@ -400,7 +400,7 @@ static int open_parent(const char *path, const char **leaf, int create)
 	return fd;
 }
 
-/* ---- capabilities and groups ---- */
+/* ---- capabilities, groups and users ---- */
 
 static const char *const cap_names[] = {
 	"chown", "dac_override", "dac_read_search", "fowner", "fsetid", "kill",
@@ -459,7 +459,10 @@ static int set_caps(const char *path, const char *text)
 	return ret;
 }
 
-/* Add a system group to /etc/group if it is missing. */
+/*
+ * Add a system group to /etc/group if it is missing. Returns its GID, or -1.
+ * New system IDs are taken from 999 downwards.
+ */
 static int ensure_group(const char *name)
 {
 	char line[1024], used[1000] = { 0 };
@@ -478,11 +481,11 @@ static int ensure_group(const char *name)
 
 		if (!c1 || !(c2 = strchr(c1 + 1, ':')))
 			continue;
+		g = atoi(c2 + 1);
 		if ((size_t)(c1 - line) == strlen(name) && strncmp(line, name, c1 - line) == 0) {
 			fclose(f);
-			return 0;
+			return g;
 		}
-		g = atoi(c2 + 1);
 		if (g >= 0 && g < 1000)
 			used[g] = 1;
 	}
@@ -493,7 +496,62 @@ static int ensure_group(const char *name)
 		return -1;
 	}
 	fprintf(f, "%s:x:%d:\n", name, gid);
-	return fclose(f);
+	return fclose(f) == 0 ? gid : -1;
+}
+
+/*
+ * Add a system user (and its group) for a daemon: no password, no shell,
+ * no home. It gets its group's ID as UID when that is free.
+ */
+static int ensure_user(const char *name)
+{
+	char line[1024], used[1000] = { 0 };
+	int gid = ensure_group(name), uid, fd;
+	FILE *f;
+
+	if (gid < 0)
+		return -1;
+	fd = open_in_root("etc/passwd", O_RDWR | O_APPEND);
+	if (fd < 0 || !(f = fdopen(fd, "r+"))) {
+		if (fd >= 0)
+			close(fd);
+		return -1;
+	}
+	while (fgets(line, sizeof(line), f)) {
+		char *c1 = strchr(line, ':'), *c2;
+		int u;
+
+		if (!c1 || !(c2 = strchr(c1 + 1, ':')))
+			continue;
+		if ((size_t)(c1 - line) == strlen(name) && strncmp(line, name, c1 - line) == 0) {
+			fclose(f);
+			return 0;
+		}
+		u = atoi(c2 + 1);
+		if (u >= 0 && u < 1000)
+			used[u] = 1;
+	}
+	uid = gid;
+	if (uid >= 1000 || used[uid])
+		for (uid = 999; uid >= 100 && used[uid]; uid--)
+			;
+	if (uid < 100) {
+		fclose(f);
+		return -1;
+	}
+	fprintf(f, "%s:x:%d:%d:%s:/nonexistent:/usr/sbin/nologin\n", name, uid, gid, name);
+	if (fclose(f) != 0)
+		return -1;
+	/* A locked password, so no login is possible even with a shell. */
+	fd = open_in_root("etc/shadow", O_WRONLY | O_APPEND);
+	if (fd < 0)
+		return errno == ENOENT ? 0 : -1;
+	snprintf(line, sizeof(line), "%s:!:1::::::\n", name);
+	if (write(fd, line, strlen(line)) != (ssize_t)strlen(line)) {
+		close(fd);
+		return -1;
+	}
+	return close(fd);
 }
 
 /* ---- install ---- */
@@ -613,8 +671,8 @@ int pkg_install(const char *wpkg, const char *expect_name)
 {
 	struct set *hashes = set_new(), *now = set_new(), *old = NULL;
 	char *pkginfo = NULL, *list = NULL, tmp[NAME_MAX];
-	char **caps = NULL, **groups = NULL;
-	int ncaps = 0, ngroups = 0, r, ret = -1;
+	char **caps = NULL, **groups = NULL, **users = NULL;
+	int ncaps = 0, ngroups = 0, nusers = 0, r, ret = -1;
 	size_t listlen = 0;
 	struct package p;
 	struct stream s;
@@ -646,6 +704,9 @@ int pkg_install(const char *wpkg, const char *expect_name)
 		} else if (strncmp(line, "group = ", 8) == 0) {
 			groups = realloc(groups, (ngroups + 1) * sizeof(char *));
 			groups[ngroups++] = strdup(line + 8);
+		} else if (strncmp(line, "user = ", 7) == 0) {
+			users = realloc(users, (nusers + 1) * sizeof(char *));
+			users[nusers++] = strdup(line + 7);
 		}
 		if (end)
 			*end = '\n';
@@ -772,6 +833,11 @@ fail_entry:
 			warn("%s: cannot add the group %s", p.name, groups[i]);
 			goto out;
 		}
+	for (int i = 0; i < nusers; i++)
+		if (ensure_user(users[i]) < 0) {
+			warn("%s: cannot add the user %s", p.name, users[i]);
+			goto out;
+		}
 	for (int i = 0; i < ncaps; i++) {
 		char path[PATH_MAX], text[256];
 
@@ -800,8 +866,11 @@ out:
 		free(caps[i]);
 	for (int i = 0; i < ngroups; i++)
 		free(groups[i]);
+	for (int i = 0; i < nusers; i++)
+		free(users[i]);
 	free(caps);
 	free(groups);
+	free(users);
 	free(pkginfo);
 	set_free(hashes);
 	set_free(now);

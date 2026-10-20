@@ -37,7 +37,10 @@ TMP=$BUILD/image
 sudo rm -rf "$TMP"
 mkdir -p "$TMP" "$OUT"
 
-KERNEL_CMDLINE="root=UUID=$FS_UUID rootflags=subvol=@,compress=zstd ro console=tty0 console=ttyS0,115200"
+# Hardening: no merged slab caches (harder heap exploits), no debugfs, a
+# strict IOMMU (no DMA passthrough, also not before the kernel takes over).
+HARDENING="slab_nomerge debugfs=off iommu.passthrough=0 iommu.strict=1 efi=disable_early_pci_dma"
+KERNEL_CMDLINE="root=UUID=$FS_UUID rootflags=subvol=@,compress=zstd ro $HARDENING console=tty0 console=ttyS0,115200"
 
 msg "Applying file ownership"
 fakeroot -i "$STATE" -- find "$FSROOT" -printf '%U %G %m %y %P\0' > "$TMP/owners"

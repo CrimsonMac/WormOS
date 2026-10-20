@@ -22,7 +22,7 @@ fi
 # The base system. Packages come from the signed repository (tools/wrepo)
 # and are installed with wh, as on a running system.
 PACKAGES=(base-files glibc gcc-libs busybox worminit wormrd snap wh worm linux
-	zstd curl gnupg wormhole-keyrings libmnl libnftnl nftables bh)
+	zstd curl gnupg wormhole-keyrings libmnl libnftnl nftables bh expat unbound)
 WH=$BUILD/host/wh
 
 [ -x "$WH" ] && [ -f "$REPO/index" ] || die "run tools/wrepo first"

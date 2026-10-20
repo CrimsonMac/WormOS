@@ -1,0 +1,3 @@
+# Kernel hardening settings (/usr/lib/sysctl.d, then /etc/sysctl.d).
+type = oneshot
+exec = for f in /usr/lib/sysctl.d/*.conf /etc/sysctl.d/*.conf; do [ -f "$f" ] && sysctl -q -p "$f"; done; true

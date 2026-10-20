@@ -1,0 +1,19 @@
+name=expat
+version=2.9.0
+description="XML parsing library"
+depends=(glibc)
+# Signed by Sebastian Pipping (3176EF7DB2367F1FCA4F306B1F9B0E909AF37285).
+source=(https://github.com/libexpat/libexpat/releases/download/R_2_9_0/expat-$version.tar.xz)
+sha256=(1e6371862cc31999b368c3b89b49994f0677e1bab5f1b2b85ae3741f5d803051)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--without-docbook --without-examples --without-tests --disable-static
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/bin" "$pkgdir/usr/share"
+}

@@ -4,7 +4,7 @@
 PACKAGES := base-files busybox worminit wormrd snap \
 	zlib zstd openssl ca-certificates curl monocypher \
 	libgpg-error npth libassuan libksba libgcrypt gnupg wormhole-keyrings \
-	libmnl libnftnl nftables wh worm bh \
+	libmnl libnftnl nftables wh worm bh expat unbound \
 	libpcap tcpdump
 
 all: image

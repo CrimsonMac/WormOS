@@ -1,0 +1,30 @@
+name=unbound
+version=1.26.1
+description="Validating, caching DNS resolver (encrypted upstream queries)"
+depends=(glibc openssl expat ca-certificates)
+users=(unbound)
+# Signed by NLnet Labs (231018690C4D903EF419146AA144323DEAACDF45).
+source=(https://nlnetlabs.nl/downloads/unbound/unbound-$version.tar.gz)
+sha256=(35a6dc0e425a9282c3426d9a3043144011bf0534aed4b73ab62c52aee0af1503)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--sysconfdir=/etc --with-ssl="$SYSROOT/usr" --with-libexpat="$SYSROOT/usr" \
+		--with-conf-file=/etc/unbound/unbound.conf --with-run-dir=/var/lib/unbound \
+		--with-rootkey-file=/var/lib/unbound/root.key --with-chroot-dir= \
+		--with-pidfile= --with-username=unbound --disable-static \
+		--without-pythonmodule --without-pyunbound --disable-flto
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la "$pkgdir/usr/sbin/unbound-control-setup"
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/etc/unbound"
+	install -Dm644 "$recipedir/files/unbound.conf" "$pkgdir/etc/unbound/unbound.conf"
+	mkdir -p "$pkgdir/etc/unbound/unbound.conf.d"
+	# The DNSSEC root trust anchors (KSK-2017 and KSK-2024, from IANA's
+	# root-anchors.xml); unbound keeps its own copy up to date (RFC 5011).
+	install -Dm644 "$recipedir/files/root.key" "$pkgdir/usr/share/unbound/root.key"
+	install -Dm644 "$recipedir/files/15-dns" "$pkgdir/etc/worm/services/15-dns"
+}

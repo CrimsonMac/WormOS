@@ -25,7 +25,7 @@ in the README.
   `build/pkgs/NAME`, with metadata in `build/pkginfo/NAME.info`. It copies each
   package's `usr/include` and `usr/lib` into the sysroot, so `PACKAGES` in the
   Makefile is in build order. Recipe fields include `release`, `depends`,
-  `caps`, `groups` and `sysroot_files`.
+  `caps`, `groups`, `users` and `sysroot_files`.
 - Autotools recipes must pass `--build="$(gcc -dumpmachine)"`; otherwise
   configure runs our cross binaries' host tools against the target libc.
 - `tools/wpack` writes `out/repo/NAME-VER-REL.wpkg`: a zstd pax tar with
@@ -125,6 +125,31 @@ in the README.
   `src/common/ns.c`). It shares `/dev`, `/proc`, `/sys`, `/tmp`, `/home`,
   `/run`, resolv.conf, hosts, passwd and group (user mode) and the host
   network.
+
+## Hardening and privacy
+
+- Services in order: `01-sysctl` (`sysctl -p` on `/usr/lib/sysctl.d/*.conf`,
+  then `/etc/sysctl.d/*.conf`), `05-firewall`, `10-filesystems`,
+  `15-dns` (shipped by the unbound package), `20-loopback`,
+  `25-net-privacy`, `30-network`.
+- Kernel command line (`scripts/mkimage.sh`): `slab_nomerge debugfs=off
+  iommu.passthrough=0 iommu.strict=1 efi=disable_early_pci_dma`.
+- worminit mounts `/proc` with `hidepid=invisible` and `/dev`, `/run` and
+  `/dev/shm` `noexec`. `/tmp` stays executable.
+- `/usr/lib/worm/net-privacy` gives every device with a `device` link in
+  `/sys/class/net` a random locally administered unicast MAC and sets its
+  `use_tempaddr` to 2 (the sysctl defaults only reach devices created
+  later).
+- `/usr/lib/worm/dhcp-event` replaces busybox's udhcpc script. It records
+  the announced DNS servers in `/run/worm/dhcp-dns` and, when unbound is
+  installed, keeps `/run/resolv.conf` at 127.0.0.1 and ::1.
+- unbound (`recipes/unbound/files/unbound.conf`) listens on loopback only,
+  runs as the `unbound` user, forwards everything over TLS to Quad9 and
+  validates DNSSEC with `/var/lib/unbound/root.key` (RFC 5011 updates),
+  seeded from `/usr/share/unbound/root.key` (KSK-2017 and KSK-2024 DS
+  records from IANA).
+- Recipes can declare `users=(NAME)`: wh adds a system group and user with
+  a locked password, no home and nologin (IDs from 999 down).
 
 ## Blackholes
 

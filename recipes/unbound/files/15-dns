@@ -1,0 +1,4 @@
+# The local DNS resolver. It starts with a copy of the root trust anchor and
+# keeps it current in /var/lib/unbound.
+type = respawn
+exec = mkdir -p /var/lib/unbound && { [ -s /var/lib/unbound/root.key ] || cp /usr/share/unbound/root.key /var/lib/unbound/; } && chown -R unbound:unbound /var/lib/unbound && printf 'nameserver 127.0.0.1\nnameserver ::1\n' > /run/resolv.conf && exec unbound -d -p

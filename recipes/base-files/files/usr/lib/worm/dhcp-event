@@ -1,0 +1,40 @@
+#!/bin/sh
+# Called by udhcpc when a DHCP lease changes: configures the address and the
+# default routes. DNS servers announced by the network are only recorded in
+# /run/worm/dhcp-dns: with the local resolver installed (unbound, encrypted
+# upstream), /etc/resolv.conf keeps pointing at it, so the network never
+# sees or answers our queries.
+
+RESOLV=/run/resolv.conf
+
+case "$1" in
+deconfig)
+	ip -4 addr flush dev "$interface"
+	ip link set dev "$interface" up
+	;;
+renew|bound)
+	ip addr add "$ip${subnet:+/$subnet}" broadcast "${broadcast:-+}" dev "$interface"
+	if [ -n "$router" ]; then
+		while ip route del default dev "$interface" 2>/dev/null; do :; done
+		metric=0
+		for gw in $router; do
+			[ "$subnet" = 255.255.255.255 ] && ip route add "$gw" dev "$interface"
+			ip route add default via "$gw" dev "$interface" metric $metric
+			metric=$((metric + 1))
+		done
+	fi
+
+	mkdir -p /run/worm
+	: > /run/worm/dhcp-dns
+	for server in $dns; do
+		echo "nameserver $server" >> /run/worm/dhcp-dns
+	done
+	if [ -x /usr/sbin/unbound ]; then
+		printf 'nameserver 127.0.0.1\nnameserver ::1\n' > "$RESOLV.new"
+	else
+		{ [ -n "$domain" ] && echo "search $domain"; cat /run/worm/dhcp-dns; } > "$RESOLV.new"
+	fi
+	mv "$RESOLV.new" "$RESOLV"
+	;;
+esac
+exit 0
