@@ -162,10 +162,24 @@ if ! done_step gcc-final; then
 	stamp gcc-final
 fi
 
+# The linker resolves the dependencies of shared libraries (such as Mesa's
+# on libstdc++, from C programs) in the sysroot only.
+cp -a "$PKGDIR/gcc-libs/usr/lib/." "$SYSROOT/usr/lib/"
+
+# The C.UTF-8 locale (programs such as foot need a UTF-8 locale), compiled
+# by the target's localedef through its own loader.
+if [ ! -d "$PKGDIR/glibc/usr/lib/locale/C.utf8" ]; then
+	mkdir -p "$PKGDIR/glibc/usr/lib/locale"
+	I18NPATH=$PKGDIR/glibc/usr/share/i18n \
+		"$PKGDIR/glibc/usr/lib/ld-linux-x86-64.so.2" --library-path "$PKGDIR/glibc/usr/lib" \
+		"$PKGDIR/glibc/usr/bin/localedef" --no-archive -c -i C -f UTF-8 \
+		"$PKGDIR/glibc/usr/lib/locale/C.utf8"
+fi
+
 # Package metadata for the libraries the target system uses. Development
 # files stay in the sysroot and are left out of the packages.
 pkginfo linux-headers 6.18.57 1 "Linux kernel headers"
-pkginfo glibc 2.44 1 "The GNU C library"
+pkginfo glibc 2.44 2 "The GNU C library"
 printf 'exclude = %s\n' usr/include '*.a' '*.o' usr/share/info usr/share/man \
 	usr/share/i18n >> "$BUILD/pkginfo/glibc.info"
 pkginfo gcc-libs 15.3.0 1 "GCC runtime libraries" glibc

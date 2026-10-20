@@ -19,7 +19,8 @@ PKGDIR=$BUILD/pkgs          # staged package contents, one directory per package
 FSROOT=$BUILD/fsroot        # top level of the btrfs image (one dir per subvolume)
 ROOTFS=$FSROOT/@            # assembled root filesystem (the @ subvolume)
 
-export PATH=$TOOLS/bin:/usr/sbin:/sbin:$PATH
+# ~/.local/bin: a newer meson than Debian's (pipx install meson, see README).
+export PATH=$TOOLS/bin:$HOME/.local/bin:/usr/sbin:/sbin:$PATH
 export LC_ALL=C
 # Files and directories built here end up in the system: never group- or
 # world-writable unless a recipe says so.
@@ -30,9 +31,11 @@ die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
 # fetch URL SHA256
 # Download a source archive into $SOURCES (if missing) and verify its checksum.
+# URL may be given as NAME::URL to store the file under another name.
 fetch() {
 	local url=$1 sum=$2 file
-	file=$SOURCES/$(basename "$url")
+	file=$SOURCES/$(srcname "$url")
+	url=${url#*::}
 	mkdir -p "$SOURCES"
 	if [ ! -f "$file" ]; then
 		msg "Downloading $(basename "$url")"
@@ -41,6 +44,14 @@ fetch() {
 	fi
 	echo "$sum  $file" | sha256sum -c --quiet - ||
 		die "checksum mismatch for $(basename "$file")"
+}
+
+# srcname URL: the file name a source is stored under (see fetch).
+srcname() {
+	case $1 in
+	*::*) echo "${1%%::*}" ;;
+	*) basename "$1" ;;
+	esac
 }
 
 # unpack ARCHIVE DESTDIR

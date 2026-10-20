@@ -12,11 +12,14 @@
 #   caps=("PATH CAPS"...)  file capabilities, e.g. "usr/bin/dumpcap cap_net_raw=ep"
 #   groups=(NAME...)    system groups the package needs
 #   users=(NAME...)     system users (with a group of the same name) for daemons
-#   sysroot_files=(PATH...)  extra files later builds need from this package
+#   sysroot_files=(PATH...)  extra files or directories later builds need
 #                       (headers, libraries and pkg-config files go anyway)
-#   source=(URL...)     archives to download (the first one is unpacked)
+#   source=(URL...)     archives to download (the first one is unpacked);
+#                       NAME::URL stores the download as NAME
 #   sha256=(SUM...)     checksums, one per source
 #   localsrc=PATH       alternatively, a source tree inside this repository
+#   noextract=1         leave the sources in $SOURCES; build() takes what it
+#                       needs from them (for large archives)
 #
 # and defines two functions, run from the unpacked source directory:
 #
@@ -44,13 +47,13 @@
 wrapdir=$BUILD/host/cc
 mkdir -p "$wrapdir"
 for tool in gcc g++ c++ cpp; do
-	cat > "$wrapdir/$TARGET-$tool.new" <<-EOF
+	cat > "$wrapdir/$TARGET-$tool.new.$$" <<-EOF
 	#!/bin/sh
 	exec "$TOOLS/bin/$TARGET-$tool" -ffile-prefix-map="$WORK"=/usr/src \\
 		-ffile-prefix-map="$SYSROOT"= "\$@"
 	EOF
-	chmod 755 "$wrapdir/$TARGET-$tool.new"
-	mv "$wrapdir/$TARGET-$tool.new" "$wrapdir/$TARGET-$tool"
+	chmod 755 "$wrapdir/$TARGET-$tool.new.$$"
+	mv "$wrapdir/$TARGET-$tool.new.$$" "$wrapdir/$TARGET-$tool"
 done
 export PATH=$wrapdir:$PATH
 
@@ -63,11 +66,74 @@ export LDFLAGS="-Wl,-O1,--as-needed,-z,relro,-z,now"
 export PKG_CONFIG_SYSROOT_DIR=$SYSROOT
 export PKG_CONFIG_LIBDIR=$SYSROOT/usr/lib/pkgconfig:$SYSROOT/usr/share/pkgconfig
 
+# Meson: the cross file describes the target; tools that run during the
+# build (wayland-scanner and the like) come from $NATIVE, built for this
+# machine by the recipes that need them.
+NATIVE=$BUILD/host/native
+mkdir -p "$NATIVE/bin" "$NATIVE/lib/pkgconfig" "$NATIVE/share/pkgconfig"
+cat > "$BUILD/host/meson-cross.ini" <<EOF
+[binaries]
+c = '$TARGET-gcc'
+cpp = '$TARGET-g++'
+ar = '$TARGET-ar'
+strip = '$TARGET-strip'
+pkg-config = 'pkg-config'
+
+[properties]
+sys_root = '$SYSROOT'
+pkg_config_libdir = '$PKG_CONFIG_LIBDIR'
+
+[host_machine]
+system = 'linux'
+cpu_family = 'x86_64'
+cpu = 'x86_64'
+endian = 'little'
+EOF
+NATIVE_PKG_CONFIG_LIBDIR=$NATIVE/lib/pkgconfig:$NATIVE/share/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
+# pkg-config for this machine must not see the target's sysroot settings.
+cat > "$BUILD/host/native-pkg-config" <<EOF
+#!/bin/sh
+unset PKG_CONFIG_SYSROOT_DIR PKG_CONFIG_PATH
+export PKG_CONFIG_LIBDIR='$NATIVE_PKG_CONFIG_LIBDIR'
+exec pkg-config "\$@"
+EOF
+chmod 755 "$BUILD/host/native-pkg-config"
+cat > "$BUILD/host/meson-native.ini" <<EOF
+[binaries]
+pkg-config = '$BUILD/host/native-pkg-config'
+EOF
+export PATH=$NATIVE/bin:$PATH NATIVE
+
+# meson_build [OPTION...]: configure and compile a meson project for the
+# target in ./build (plain build type: our CFLAGS decide).
+meson_build() {
+	meson setup build --cross-file "$BUILD/host/meson-cross.ini" \
+		--native-file "$BUILD/host/meson-native.ini" \
+		--prefix=/usr --libdir=lib --sysconfdir=/etc --localstatedir=/var \
+		--buildtype=plain -Db_ndebug=true -Dwerror=false --wrap-mode=nodownload \
+		-Ddefault_library=shared "$@"
+	ninja -C build -j"$JOBS"
+}
+
+# host_env CMD...: run a command that builds for this machine (tools the
+# build itself needs), without the target's compilers, flags and sysroot.
+host_env() {
+	env -u CC -u CXX -u AR -u AS -u LD -u NM -u RANLIB -u STRIP -u OBJCOPY \
+		-u CFLAGS -u CXXFLAGS -u LDFLAGS -u PKG_CONFIG_SYSROOT_DIR \
+		PKG_CONFIG_LIBDIR="$NATIVE_PKG_CONFIG_LIBDIR" \
+		"$@"
+}
+
+# meson_package: install a meson build into $pkgdir.
+meson_package() {
+	DESTDIR="$pkgdir" meson install -C build --no-rebuild
+}
+
 build_one() (
 	local recipedir=$WORMOS_ROOT/recipes/$1
 	[ -f "$recipedir/recipe" ] || die "no recipe for $1"
 
-	local name="" version="" release=1 description="" localsrc=""
+	local name="" version="" release=1 description="" localsrc="" noextract=""
 	local -a source=() sha256=() depends=() caps=() groups=() users=() sysroot_files=()
 	. "$recipedir/recipe"
 	[ "$name" = "$1" ] || die "$1: recipe declares name '$name'"
@@ -85,14 +151,14 @@ build_one() (
 	if [ -n "$localsrc" ]; then
 		rm -rf "$srcdir"
 		cp -r "$WORMOS_ROOT/$localsrc" "$srcdir"
-	elif [ ${#source[@]} -gt 0 ]; then
+	elif [ ${#source[@]} -gt 0 ] && [ -z "$noextract" ]; then
 		case ${source[0]} in
 		*.tar.*|*.tgz)
-			unpack "$SOURCES/$(basename "${source[0]}")" "$srcdir" ;;
+			unpack "$SOURCES/$(srcname "${source[0]}")" "$srcdir" ;;
 		*)
 			rm -rf "$srcdir"
 			mkdir -p "$srcdir"
-			cp "$SOURCES/$(basename "${source[0]}")" "$srcdir/" ;;
+			cp "$SOURCES/$(srcname "${source[0]}")" "$srcdir/" ;;
 		esac
 	else
 		mkdir -p "$srcdir"
@@ -127,7 +193,12 @@ build_one() (
 		fi
 	done
 	for d in "${sysroot_files[@]}"; do
-		install -D "$pkgdir/$d" "$SYSROOT/$d"
+		if [ -d "$pkgdir/$d" ]; then
+			mkdir -p "$SYSROOT/$d"
+			cp -a "$pkgdir/$d/." "$SYSROOT/$d/"
+		else
+			install -D "$pkgdir/$d" "$SYSROOT/$d"
+		fi
 	done
 
 	msg "Packaged $name $version"
