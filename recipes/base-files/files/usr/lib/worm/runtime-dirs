@@ -1,0 +1,8 @@
+#!/bin/sh
+# Create /run/user/UID (XDG_RUNTIME_DIR, private to its owner) for every
+# user account. There is no login manager to do it at login.
+mkdir -p -m 0755 /run/user
+awk -F: '$3 >= 1000 && $3 < 65534 { print $3, $4 }' /etc/passwd |
+while read -r uid gid; do
+	[ -d "/run/user/$uid" ] || install -d -m 0700 -o "$uid" -g "$gid" "/run/user/$uid"
+done

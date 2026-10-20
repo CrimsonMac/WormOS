@@ -1,0 +1,23 @@
+name=wormos-desktop
+version=1.0
+release=2
+description="The WormOS desktop session: labwc, foot and the WormOS look"
+depends=(labwc foot swaybg grim seatd font-inter font-hack base-files)
+
+build() {
+	python3 "$recipedir/files/wallpaper.py" wormos.png 1920 1080
+}
+
+package() {
+	local f=$recipedir/files
+	install -Dm755 "$f/session" "$pkgdir/usr/lib/worm/session"
+	install -Dm755 "$f/screenshot" "$pkgdir/usr/lib/worm/screenshot"
+	install -Dm755 "$f/apps-menu" "$pkgdir/usr/lib/worm/apps-menu"
+	install -Dm644 "$f/desktop.sh" "$pkgdir/etc/profile.d/desktop.sh"
+	install -Dm644 -t "$pkgdir/etc/xdg/labwc" "$f/labwc/rc.xml" "$f/labwc/menu.xml" \
+		"$f/labwc/autostart" "$f/labwc/environment"
+	install -Dm644 "$f/theme/themerc" "$pkgdir/usr/share/themes/WormOS/labwc/themerc"
+	install -Dm644 "$f/foot.ini" "$pkgdir/etc/xdg/foot/foot.ini"
+	install -Dm644 "$f/welcome" "$pkgdir/usr/share/wormos/welcome"
+	install -Dm644 wormos.png "$pkgdir/usr/share/backgrounds/wormos.png"
+}

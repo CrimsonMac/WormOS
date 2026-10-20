@@ -647,7 +647,8 @@ int wormhole_setup(const char *name)
 	{
 		static const char *const dirs[] = {
 			"var/lib/dpkg/info", "var/lib/dpkg/updates", "etc/apt/keyrings",
-			"etc/apt/apt.conf.d", "etc/dpkg/dpkg.cfg.d", "var/cache/wh-debs", NULL,
+			"etc/apt/apt.conf.d", "etc/dpkg/dpkg.cfg.d", "var/cache/wh-debs",
+			"usr/local/share/fonts/wormos", NULL,
 		};
 
 		for (int i = 0; dirs[i]; i++) {

@@ -1,0 +1,25 @@
+#!/bin/sh
+# labwc pipe menu: the graphical programs installed from wormholes
+# (wh install NAME), read from their desktop entries.
+
+xml() {
+	printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'
+}
+
+echo '<openbox_pipe_menu>'
+for entry in /var/lib/wormholes/*/usr/share/applications/*.desktop; do
+	[ -f "$entry" ] || continue
+	grep -q '^NoDisplay=true' "$entry" && continue
+	name=$(sed -n 's/^Name=//p' "$entry" | head -n 1)
+	command=$(sed -n 's/^Exec=//p' "$entry" | head -n 1 | sed 's/ *%[a-zA-Z]//g')
+	program=${command%% *}
+	# Only programs wh exported to the system's PATH.
+	[ -x "/usr/local/bin/${program##*/}" ] || continue
+	command="${program##*/}${command#"$program"}"
+	grep -q '^Terminal=true' "$entry" && command="foot $command"
+	printf '<item label="%s"><action name="Execute" command="%s" /></item>\n' \
+		"$(xml "$name")" "$(xml "$command")"
+done | sort -u
+[ -n "$(ls /var/lib/wormholes/*/usr/share/applications/*.desktop 2>/dev/null)" ] ||
+	echo '<item label="None yet: wh install NAME (as root)" />'
+echo '</openbox_pipe_menu>'

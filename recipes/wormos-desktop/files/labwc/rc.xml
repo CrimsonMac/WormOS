@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<!--
+  WormOS defaults for labwc. Copy this file to ~/.config/labwc/rc.xml to
+  change it; see labwc-config(5).
+-->
+<labwc_config>
+  <core>
+    <gap>6</gap>
+  </core>
+  <placement>
+    <policy>cascade</policy>
+  </placement>
+  <theme>
+    <name>WormOS</name>
+    <cornerRadius>8</cornerRadius>
+    <dropShadows>yes</dropShadows>
+    <font><name>Inter Variable</name><size>10</size></font>
+    <font place="ActiveWindow"><name>Inter Variable</name><size>10</size><weight>bold</weight></font>
+  </theme>
+  <keyboard>
+    <repeatRate>40</repeatRate>
+    <repeatDelay>250</repeatDelay>
+    <default />
+    <keybind key="W-Return"><action name="Execute" command="foot" /></keybind>
+    <keybind key="W-t"><action name="Execute" command="foot" /></keybind>
+    <keybind key="W-space"><action name="ShowMenu" menu="root-menu" /></keybind>
+    <keybind key="W-q"><action name="Close" /></keybind>
+    <keybind key="W-Up"><action name="ToggleMaximize" /></keybind>
+    <keybind key="W-Left"><action name="SnapToEdge" direction="left" /></keybind>
+    <keybind key="W-Right"><action name="SnapToEdge" direction="right" /></keybind>
+    <keybind key="Print"><action name="Execute" command="/usr/lib/worm/screenshot" /></keybind>
+  </keyboard>
+  <mouse>
+    <default />
+  </mouse>
+  <libinput>
+    <device category="touchpad">
+      <tap>yes</tap>
+      <naturalScroll>yes</naturalScroll>
+    </device>
+  </libinput>
+</labwc_config>

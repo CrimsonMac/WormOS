@@ -1,6 +1,6 @@
 NAME="WormOS"
 ID=wormos
-VERSION="0.1 (development)"
-VERSION_ID=0.1
-PRETTY_NAME="WormOS 0.1 (development)"
+VERSION="1.0"
+VERSION_ID=1.0
+PRETTY_NAME="WormOS 1.0"
 ANSI_COLOR="0;35"

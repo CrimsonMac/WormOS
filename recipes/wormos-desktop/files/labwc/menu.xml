@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<!-- The desktop menu (right click on the background, or Super+Space). -->
+<openbox_menu>
+  <menu id="root-menu" label="WormOS">
+    <item label="Terminal">
+      <action name="Execute" command="foot" />
+    </item>
+    <item label="Root terminal">
+      <action name="Execute" command="foot --title 'Root terminal' su -" />
+    </item>
+    <menu id="apps" label="Applications" execute="/usr/lib/worm/apps-menu" />
+    <separator />
+    <menu id="snapshots" label="Snapshots">
+      <item label="Take a snapshot">
+        <action name="Execute" command="foot --hold --title Snapshot su -c 'snap now -c &quot;From the desktop&quot;'" />
+      </item>
+      <item label="List snapshots">
+        <action name="Execute" command="foot --hold --title Snapshots su -c 'snap list'" />
+      </item>
+      <item label="System status">
+        <action name="Execute" command="foot --hold --title 'System status' su -c 'worm status'" />
+      </item>
+    </menu>
+    <item label="Screenshot">
+      <action name="Execute" command="/usr/lib/worm/screenshot" />
+    </item>
+    <separator />
+    <item label="Reload settings">
+      <action name="Reconfigure" />
+    </item>
+    <item label="Log out">
+      <action name="Exit" />
+    </item>
+  </menu>
+</openbox_menu>

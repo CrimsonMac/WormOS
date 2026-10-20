@@ -1,0 +1,3 @@
+# Private runtime directories for users (/run/user/UID).
+type = oneshot
+exec = /usr/lib/worm/runtime-dirs

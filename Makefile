@@ -5,7 +5,13 @@ PACKAGES := base-files busybox worminit wormrd snap \
 	zlib zstd openssl ca-certificates curl monocypher \
 	libgpg-error npth libassuan libksba libgcrypt gnupg wormhole-keyrings \
 	libmnl libnftnl nftables wh worm bh expat unbound libevent tor \
-	libpcap tcpdump
+	libpcap tcpdump \
+	kmod eudev seatd linux-firmware \
+	libffi wayland wayland-protocols libdrm pixman xkeyboard-config \
+	libxkbcommon libevdev mtdev libinput hwdata libdisplay-info mesa \
+	libpng freetype harfbuzz fribidi fontconfig pcre2 glib libxml2 cairo pango \
+	font-inter font-hack wlroots labwc tllist fcft foot grim swaybg \
+	wormos-desktop
 
 all: image
 
@@ -35,11 +41,16 @@ run-gui:
 
 test:
 	tests/boot-test.py
+	tests/desktop-test.py
 
 # Needs internet access: sets up the Debian and Kali wormholes.
 # DNS=ADDR uses that name server in the VM instead of QEMU's relay.
 test-wormholes:
 	tests/wormhole-test.py $(if $(DNS),--dns $(DNS))
+
+# Release images in out/release (VERSION must match os-release).
+release: repo
+	scripts/release.sh $(VERSION)
 
 clean:
 	rm -rf build/work build/pkgs build/pkginfo build/fsroot build/kernel build/image build/host out
@@ -47,4 +58,4 @@ clean:
 distclean:
 	rm -rf build out
 
-.PHONY: all toolchain kernel packages repo rootfs image run run-gui test test-wormholes clean distclean
+.PHONY: all toolchain kernel packages repo rootfs image run run-gui test test-wormholes release clean distclean

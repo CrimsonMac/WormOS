@@ -1,2 +1,4 @@
+# The first console: first-boot setup if needed, then the login prompt
+# (logging in there starts the desktop).
 type = respawn
-exec = getty 38400 tty1 linux
+exec = /usr/lib/worm/console tty1

@@ -1,0 +1,20 @@
+
+   [35m.-~~~-.[0m
+  [35m(  (o)  )[0m   Welcome to WormOS 1.0
+   [35m'-~~~-'[0m
+
+  The desktop
+    Right click on the background (or Super+Space) for the menu.
+    Super+Enter opens a terminal, Super+Q closes a window,
+    Alt+Tab switches windows, Print saves a screenshot to ~/Pictures.
+    Ctrl+Alt+F2 has a second console, for logging in as root.
+
+  Administration happens as root: run  su -  (or the menu's "Root terminal").
+    snap now -c "note"     take a snapshot of the system
+    snap list              list snapshots;  snap rewind  goes back
+    worm status            protections at a glance
+    worm fw allow 22       open a port in the firewall
+    worm anon on           send all traffic through Tor
+    bh open                a disposable sandbox for untrusted programs
+    wh install htop        software from Debian, in a wormhole
+

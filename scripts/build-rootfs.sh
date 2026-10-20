@@ -23,7 +23,8 @@ fi
 # and are installed with wh, as on a running system.
 PACKAGES=(base-files glibc gcc-libs busybox worminit wormrd snap wh worm linux
 	zstd curl gnupg wormhole-keyrings libmnl libnftnl nftables bh expat unbound
-	libevent tor)
+	libevent tor kmod eudev seatd linux-firmware
+	wormos-desktop labwc wlroots mesa foot swaybg grim font-inter font-hack)
 WH=$BUILD/host/wh
 
 [ -x "$WH" ] && [ -f "$REPO/index" ] || die "run tools/wrepo first"
@@ -71,5 +72,10 @@ chmod 0755 "$FSROOT/@wormholes"
 chmod 1777 "$FSROOT/@var/lib/blackholes"
 chmod 1777 tmp
 chmod 0600 etc/shadow
+# Release images: root cannot log in until the first-boot setup has set its
+# password. (Development images keep an empty one for the tests.)
+if [ "${WORMOS_RELEASE:-}" = 1 ]; then
+	sed -i 's/^root::/root:!:/' etc/shadow
+fi
 
 msg "Root filesystem ready ($(du -sh "$ROOTFS" | cut -f1))"

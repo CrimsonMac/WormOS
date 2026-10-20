@@ -1,0 +1,9 @@
+#!/bin/sh
+# Login prompt on a virtual console (worminit service). On the first
+# console, a system without any user account first runs the first-boot
+# setup.
+tty=$1
+if [ "$tty" = tty1 ] && /usr/lib/worm/first-boot --needed; then
+	setsid -c /usr/lib/worm/first-boot < "/dev/$tty" > "/dev/$tty" 2>&1
+fi
+exec getty 38400 "$tty" linux

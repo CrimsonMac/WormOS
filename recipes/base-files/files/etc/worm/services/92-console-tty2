@@ -1,0 +1,3 @@
+# A second console (Ctrl+Alt+F2), e.g. for root while the desktop runs.
+type = respawn
+exec = /usr/lib/worm/console tty2

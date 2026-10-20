@@ -1,0 +1,5 @@
+#!/bin/sh
+# Save a screenshot of the whole screen in ~/Pictures.
+dir=$HOME/Pictures
+mkdir -p "$dir"
+exec grim "$dir/screenshot-$(date +%Y%m%d-%H%M%S).png"

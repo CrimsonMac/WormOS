@@ -6,8 +6,9 @@
  *     whc --root NAME COMMAND [ARGS...]    as root (wh uses this for apt)
  *
  * The container shares the host's network, /dev, /proc, /sys, /tmp, /home
- * and /run (sockets of the desktop session). Programs see the container's
- * files everywhere else. A normal user runs inside a user namespace that
+ * and /run (sockets of the desktop session: Wayland programs show up on
+ * the desktop), and the host's fonts read-only. Programs see the
+ * container's files everywhere else. A normal user runs inside a user namespace that
  * maps only their own IDs: no setuid helper is involved, and the
  * container's root-owned files stay read-only to them.
  *
@@ -130,6 +131,9 @@ int main(int argc, char **argv)
 		bind("/run", "/run", 0, 1);
 		bind("/etc/passwd", "/etc/passwd", MS_RDONLY, 1);
 		bind("/etc/group", "/etc/group", MS_RDONLY, 1);
+		/* The system's fonts, so programs look like the desktop (the
+		 * mount point is created when the wormhole is set up). */
+		bind("/usr/share/fonts", "/usr/local/share/fonts/wormos", MS_RDONLY, 1);
 	}
 	for (int b = 0; b < nbinds; b++) {
 		char src[PATH_MAX], *colon;

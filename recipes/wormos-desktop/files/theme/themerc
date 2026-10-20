@@ -1,0 +1,40 @@
+# WormOS window theme for labwc (openbox themerc format).
+border.width: 1
+window.titlebar.padding.width: 4
+window.titlebar.padding.height: 6
+
+window.active.border.color: #7c3aed
+window.inactive.border.color: #2a2238
+window.active.title.bg.color: #1f1a2b
+window.inactive.title.bg.color: #17131f
+window.active.label.text.color: #ece7f5
+window.inactive.label.text.color: #857c95
+window.label.text.justify: center
+window.active.button.unpressed.image.color: #ece7f5
+window.inactive.button.unpressed.image.color: #857c95
+window.button.hover.bg.color: #7c3aed50
+window.button.hover.bg.corner-radius: 4
+
+window.active.shadow.size: 40
+window.inactive.shadow.size: 20
+window.active.shadow.color: #00000080
+window.inactive.shadow.color: #00000050
+
+menu.border.width: 1
+menu.border.color: #7c3aed
+menu.items.bg.color: #1f1a2b
+menu.items.text.color: #ece7f5
+menu.items.active.bg.color: #7c3aed
+menu.items.active.text.color: #ffffff
+menu.items.padding.x: 10
+menu.items.padding.y: 5
+menu.separator.color: #3a3150
+menu.title.bg.color: #17131f
+menu.title.text.color: #c4a1ff
+
+osd.bg.color: #1f1a2b
+osd.border.color: #7c3aed
+osd.border.width: 1
+osd.label.text.color: #ece7f5
+osd.window-switcher.style-classic.item.active.bg.color: #7c3aed40
+osd.window-switcher.style-classic.item.active.border.color: #7c3aed

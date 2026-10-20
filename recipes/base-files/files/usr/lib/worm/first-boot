@@ -1,0 +1,95 @@
+#!/bin/sh
+# First-boot setup: create the first user account and set the root
+# password. Runs on the first console while no user account exists.
+# --needed only tells (by its exit status) whether setup is needed.
+
+needed() {
+	! awk -F: '$3 >= 1000 && $3 < 65534 { found = 1 } END { exit !found }' /etc/passwd
+}
+
+if [ "$1" = --needed ]; then
+	needed
+	exit
+fi
+needed || exit 0
+
+trap 'stty echo 2>/dev/null' EXIT INT TERM
+
+# ask_password PROMPT: read a password twice; the result is in $password.
+ask_password() {
+	while :; do
+		stty -echo
+		printf '%s: ' "$1"
+		read -r password
+		printf '\nRepeat it: '
+		read -r again
+		stty echo
+		echo
+		if [ -z "$password" ]; then
+			echo "The password cannot be empty."
+		elif [ "$password" != "$again" ]; then
+			echo "The passwords do not match, try again."
+		else
+			return
+		fi
+	done
+}
+
+clear
+cat <<'TEXT'
+
+Welcome to WormOS.
+
+Before the first login, create your account. Your user runs the desktop;
+the root password is for administration (su, snapshots, packages).
+
+TEXT
+
+while :; do
+	printf 'Username: '
+	read -r name
+	case $name in
+	"")
+		continue ;;
+	*[!a-z0-9_-]*|[!a-z_]*)
+		echo "Use lowercase letters, digits, '-' and '_', starting with a letter." ;;
+	*)
+		if [ ${#name} -gt 32 ]; then
+			echo "At most 32 characters."
+		elif grep -q "^$name:" /etc/passwd /etc/group; then
+			echo "That name is already in use."
+		else
+			break
+		fi ;;
+	esac
+done
+
+ask_password "Password for $name"
+user_password=$password
+ask_password "Root password"
+root_password=$password
+password= again=
+
+echo
+echo "Creating the account..."
+worm unlock > /dev/null || exit 1
+ok=1
+adduser -D -s /bin/sh -g "$name" "$name" || ok=
+if [ -n "$ok" ]; then
+	for group in wheel video input audio render kvm; do
+		addgroup "$name" "$group" || ok=
+	done
+	printf '%s:%s\nroot:%s\n' "$name" "$user_password" "$root_password" |
+		chpasswd -c sha512 || ok=
+fi
+user_password= root_password=
+worm lock -c "First boot: created $name" > /dev/null
+
+if [ -z "$ok" ]; then
+	echo "Setting up the account failed; it will be tried again." >&2
+	sleep 5
+	exit 1
+fi
+/usr/lib/worm/runtime-dirs
+echo "Done. Log in as $name to start the desktop."
+echo

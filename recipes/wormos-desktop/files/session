@@ -1,0 +1,44 @@
+#!/bin/sh
+# Start the WormOS desktop (the labwc compositor) for the user logged in on
+# this console. Its output goes to $XDG_RUNTIME_DIR/desktop.log.
+
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+if [ ! -d "$XDG_RUNTIME_DIR" ] || [ ! -O "$XDG_RUNTIME_DIR" ]; then
+	echo "desktop: $XDG_RUNTIME_DIR is missing or not yours" >&2
+	exit 1
+fi
+if ! id -Gn | grep -qw video; then
+	echo "desktop: $(id -un) is not in the group video" >&2
+	exit 1
+fi
+
+export LANG=${LANG:-C.UTF-8}
+export XDG_SESSION_TYPE=wayland
+export XDG_CURRENT_DESKTOP=labwc:wlroots
+export XDG_CONFIG_DIRS=/etc/xdg
+export XDG_DATA_DIRS=/usr/local/share:/usr/share
+export LIBSEAT_BACKEND=seatd
+export MOZ_ENABLE_WAYLAND=1 QT_QPA_PLATFORM=wayland GDK_BACKEND=wayland
+export SDL_VIDEODRIVER=wayland ELECTRON_OZONE_PLATFORM_HINT=wayland
+
+# GPUs with a hardware OpenGL driver (Intel, VMware with 3D acceleration)
+# render with OpenGL ES; everything else uses the software renderer, which
+# is faster than OpenGL emulated on the CPU.
+if [ -z "${WLR_RENDERER:-}" ]; then
+	renderer=pixman
+	for driver in /sys/class/drm/card*/device/driver; do
+		case $(basename "$(readlink "$driver")") in
+		i915|xe|vmwgfx) renderer= ;;
+		esac
+	done
+	[ -n "$renderer" ] && export WLR_RENDERER=$renderer
+fi
+
+log=$XDG_RUNTIME_DIR/desktop.log
+labwc > "$log" 2>&1
+status=$?
+if [ $status -ne 0 ]; then
+	echo "desktop: labwc exited with status $status; the end of $log:" >&2
+	tail -n 15 "$log" >&2
+fi
+exit $status
