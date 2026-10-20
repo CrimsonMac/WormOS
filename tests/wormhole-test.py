@@ -53,6 +53,17 @@ CHECKS = [
     ("user sees their home", "su tester -c 'cd && touch here && whc debian ls ~/here'",
      r"/home/tester/here$"),
     ("host network shared", "whc debian cat /etc/resolv.conf | grep -c nameserver", r"^[1-9]"),
+    # Wayland programs from wormholes appear on the desktop: here a
+    # headless compositor, run by the user, and Debian's event viewer.
+    ("wayland program from debian", "wh -y install --from debian wev 2>&1 | tail -3",
+     r"wev -> /usr/bin/wev \(debian\)"),
+    ("system fonts shared", "su tester -c 'whc debian ls /usr/local/share/fonts/wormos'",
+     r"^hack$"),
+    ("wayland program shows a window",
+     "/usr/lib/worm/runtime-dirs; su tester -c 'export XDG_RUNTIME_DIR=/run/user/1000 "
+     "WLR_BACKENDS=headless WLR_RENDERER=pixman; labwc > /tmp/labwc.log 2>&1 & "
+     "sleep 5; WAYLAND_DISPLAY=wayland-0 timeout 10 wev > /tmp/wev.log 2>&1; "
+     "grep -c xdg_toplevel /tmp/wev.log'; kill $(pidof labwc)", r"^[1-9]"),
     ("core command not shadowed", "ls /usr/local/bin/ls 2>&1", r"No such file"),
     ("debian remove", "wh -y remove htop && ls /usr/local/bin/htop 2>&1",
      r"No such file"),
