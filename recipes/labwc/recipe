@@ -1,0 +1,18 @@
+name=labwc
+version=0.20.2
+description="Stacking Wayland compositor (window manager)"
+depends=(glibc wlroots libxml2 glib cairo pango libpng libinput)
+# Upstream publishes no signature: checksum pinned from the release download.
+source=(labwc-$version.tar.gz::https://github.com/labwc/labwc/archive/refs/tags/$version.tar.gz)
+sha256=(fae023b6fe022f7057556707a17cdb2d98e0138c5dffaedaa1dade975699f9e8)
+
+build() {
+	meson_build -Dxwayland=disabled -Dsvg=disabled -Dicon=disabled \
+		-Dnls=disabled -Dman-pages=disabled -Dtest=disabled
+}
+
+package() {
+	meson_package
+	rm -rf "$pkgdir/usr/share/doc" "$pkgdir/usr/share/wayland-sessions" \
+		"$pkgdir/usr/share/xdg-desktop-portal"
+}

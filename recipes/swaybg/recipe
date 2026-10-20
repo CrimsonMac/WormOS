@@ -1,0 +1,15 @@
+name=swaybg
+version=1.2.2
+description="Wallpaper tool for Wayland"
+depends=(glibc wayland cairo)
+# Signed by Simon Ser (34FF9526CFEF0E97A340E2E40FDE7BE0E88F5E48).
+source=(https://github.com/swaywm/swaybg/releases/download/v$version/swaybg-$version.tar.gz)
+sha256=(a6652a0060a0bea3c3318d9d03b6dddac34f6aeca01b883eef9e58281f5202a1)
+
+build() {
+	meson_build -Dgdk-pixbuf=disabled -Dman-pages=disabled
+}
+
+package() {
+	meson_package
+}

@@ -1,0 +1,17 @@
+name=fcft
+version=3.3.3
+description="Font loading and glyph rasterization library (used by foot)"
+depends=(glibc fontconfig freetype harfbuzz pixman)
+# Upstream publishes no signature: checksum pinned from the release download.
+source=(fcft-$version.tar.gz::https://codeberg.org/dnkl/fcft/archive/$version.tar.gz)
+sha256=(b0c0f4a599f43723736c8565b8b84337c4195077f07f1bb8bb3252bb13a2306a)
+
+build() {
+	meson_build -Dsvg-backend=none -Ddocs=disabled -Dgrapheme-shaping=enabled \
+		-Drun-shaping=disabled -Dtest-text-shaping=false -Dexamples=false
+}
+
+package() {
+	meson_package
+	rm -rf "$pkgdir/usr/share/doc"
+}

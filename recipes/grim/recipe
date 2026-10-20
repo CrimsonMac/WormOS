@@ -1,0 +1,16 @@
+name=grim
+version=1.4.1
+description="Screenshot tool for Wayland"
+depends=(glibc wayland pixman libpng)
+# Upstream publishes no signature: checksum pinned from the release download.
+source=(https://gitlab.freedesktop.org/emersion/grim/-/archive/v$version/grim-v$version.tar.gz)
+sha256=(5ed8e70fcd83a7e203e92d34dbb82a1342d3f13ad98a6b0310cc97e1a9342ded)
+
+build() {
+	meson_build -Djpeg=disabled -Dman-pages=disabled -Dfish-completions=false \
+		-Dbash-completions=false
+}
+
+package() {
+	meson_package
+}
