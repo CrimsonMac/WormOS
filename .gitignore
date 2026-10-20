@@ -43,3 +43,6 @@
 /src/wormrd/wormrd
 /src/worm/worm
 /src/bh/bh
+
+# Python
+__pycache__/
