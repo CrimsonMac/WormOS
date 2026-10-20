@@ -37,8 +37,9 @@ test:
 	tests/boot-test.py
 
 # Needs internet access: sets up the Debian and Kali wormholes.
+# DNS=ADDR uses that name server in the VM instead of QEMU's relay.
 test-wormholes:
-	tests/wormhole-test.py
+	tests/wormhole-test.py $(if $(DNS),--dns $(DNS))
 
 clean:
 	rm -rf build/work build/pkgs build/pkginfo build/fsroot build/kernel build/image build/host out

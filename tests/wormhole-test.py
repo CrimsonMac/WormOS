@@ -8,7 +8,10 @@ normal user, checks what the containers can and cannot touch, and removes
 the packages again. Takes several minutes. Console output goes to
 build/wormhole.log.
 
-Usage: tests/wormhole-test.py [--timeout SECONDS]
+With --dns ADDR the VM resolves names through ADDR instead of the DNS
+relay of QEMU, which forwards to the first nameserver of this machine.
+
+Usage: tests/wormhole-test.py [--timeout SECONDS] [--dns ADDR]
 """
 
 import argparse
@@ -61,6 +64,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--timeout", type=int, default=3600,
                         help="seconds to wait for each step")
+    parser.add_argument("--dns", metavar="ADDR",
+                        help="name server for the VM, instead of QEMU's relay")
     args = parser.parse_args()
 
     env = dict(os.environ, QEMU_MEM=os.environ.get("QEMU_MEM", "2048"))
@@ -75,6 +80,10 @@ def main():
             con.send("root\n")
             con.expect("# ", 60)
             con.run("dmesg -n 1")
+            if args.dns:
+                # After DHCP has written its own (the lease outlasts the test).
+                con.run("while [ ! -s /run/resolv.conf ]; do sleep 1; done; "
+                        f"echo 'nameserver {args.dns}' > /run/resolv.conf")
             for name, cmd, pattern in CHECKS:
                 start = time.time()
                 out = con.run(cmd, args.timeout)
