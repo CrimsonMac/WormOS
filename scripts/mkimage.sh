@@ -11,13 +11,16 @@
 # (sudo) for one step: mkfs.btrfs reads file owners in a way fakeroot cannot
 # intercept, so the owners and modes fakeroot recorded are applied for real
 # to a temporary copy of the tree first.
+#
+# IMAGE (default out/wormos.img) and DISK_MB (default 4096) choose the
+# output file and the disk size.
 
 . "$(dirname "$0")/env.sh"
 
 STATE=$BUILD/fakeroot.state
 [ -f "$STATE" ] && [ -d "$ROOTFS" ] || die "run scripts/build-rootfs.sh first"
 
-IMAGE=$OUT/wormos.img
+IMAGE=${IMAGE:-$OUT/wormos.img}
 DISK_MB=${DISK_MB:-4096}
 ESP_MB=128
 SECTOR=512
@@ -111,8 +114,9 @@ unit: sectors
 start=$esp_start, size=$esp_size, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=$ESP_PARTUUID, name="EFI"
 start=$root_start, size=$root_size, type=4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709, uuid=$ROOT_PARTUUID, name="WormOS"
 EOF
-dd if="$TMP/esp.img" of="$IMAGE" bs=$SECTOR seek=$esp_start conv=notrunc,sparse status=none
-dd if="$TMP/root.img" of="$IMAGE" bs=$SECTOR seek=$root_start conv=notrunc,sparse status=none
+# Both partitions start on a MiB boundary.
+dd if="$TMP/esp.img" of="$IMAGE" bs=1M seek=$((esp_start / MB)) conv=notrunc,sparse status=none
+dd if="$TMP/root.img" of="$IMAGE" bs=1M seek=$((root_start / MB)) conv=notrunc,sparse status=none
 rm -rf "$TMP"
 
 msg "Image ready: $IMAGE ($(du -h "$IMAGE" | cut -f1) used of ${DISK_MB} MiB)"

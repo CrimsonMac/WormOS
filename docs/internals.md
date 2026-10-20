@@ -276,6 +276,89 @@ in the README.
   port list loads the firewall with no open ports and exits 1.
 - nftables is built with mini-gmp and without the CLI, JSON or xtables.
 
+## Devices and modules
+
+- The kernel builds Intel's i915 and xe, VMware's vmwgfx, uinput and the
+  VMware guest drivers as modules (zstd-compressed, signed); everything a
+  VM needs to boot stays built in. `linux-firmware` ships only the Intel GPU
+  firmware (`i915/`, `xe/`), zstd-compressed; the kernel decompresses it.
+- kmod provides `modprobe`/`depmod` (busybox's module applets and mdev are
+  left out). eudev is the device manager: the service `02-udev` starts
+  `udevd`, replays the boot devices (`udevadm trigger`, which loads modules
+  and firmware) and waits for it to settle. Network devices keep their
+  kernel names (the `80-net-name-slot` rule is removed).
+- The hardware database is compiled when the package is built: the eudev
+  recipe runs its own `udevadm hwdb --update --usr` through the sysroot's
+  loader (`/etc` is read-only on the target). The OUI (MAC vendor) table is
+  left out.
+- Device groups: `video` (`/dev/dri/card*`), `render` (render nodes, open
+  to everyone), `input`, `kvm` and the usual others in base-files.
+- seatd (`45-seatd`, `seatd -g video`) hands the GPU and input devices to
+  the compositor, so it runs as the user.
+
+## Graphics stack
+
+- Build support for meson projects: `meson_build`/`meson_package` in wbuild
+  with a generated cross file, and `host_env` plus `$NATIVE`
+  (`build/host/native`) for tools the build runs on this machine
+  (wayland-scanner, Mesa's `mesa_clc`). A wrapper keeps the target's
+  pkg-config settings away from lookups for this machine.
+- Mesa: gallium drivers iris and crocus (Intel), virgl and svga (virtual
+  GPUs) and softpipe; EGL, GBM and OpenGL ES; no LLVM, no GLX, no Vulkan.
+  The Intel drivers compile OpenCL kernels at build time with `mesa_clc`,
+  which the Mesa recipe first builds for this machine from Debian's LLVM.
+- Text: freetype, harfbuzz, fribidi, fontconfig (cache in
+  `/var/cache/fontconfig`, created on first use), cairo, pango, glib.
+  Fonts: Inter (sans-serif) and Hack (monospace), made the defaults by
+  `/etc/fonts/conf.d/60-*.conf`.
+- glibc ships the `C.UTF-8` locale (compiled by the target's localedef
+  through its own loader); `/etc/profile` sets `LANG=C.UTF-8`.
+
+## Desktop session
+
+- `wormos-desktop` holds the session: `/etc/profile.d/desktop.sh` runs
+  `/usr/lib/worm/session` after a non-root login on tty1, and logging out
+  of the desktop ends the login. The session script checks
+  `XDG_RUNTIME_DIR` (`/run/user/UID`, created by the `12-runtime-dirs`
+  service and by the first-boot setup) and membership of `video`, sets the
+  Wayland environment and `LIBSEAT_BACKEND=seatd`, and runs labwc with its
+  output in `$XDG_RUNTIME_DIR/desktop.log`.
+- Renderer: OpenGL ES when a card is driven by i915, xe or vmwgfx;
+  otherwise wlroots' pixman renderer (`WLR_RENDERER=pixman`), which beats
+  OpenGL emulated on the CPU.
+- labwc's configuration is in `/etc/xdg/labwc` (`rc.xml`, `menu.xml`,
+  `autostart`, `environment`), the theme in `/usr/share/themes/WormOS`,
+  foot's in `/etc/xdg/foot/foot.ini`. `autostart` starts swaybg with the
+  wallpaper (drawn at build time by `wallpaper.py`) and, once per user, a
+  welcome terminal. The menu's "Applications" entry is a pipe menu
+  (`/usr/lib/worm/apps-menu`) listing desktop entries in wormholes whose
+  program wh exported.
+- Wormholes: whc shares `/run` (so the Wayland socket) and `/dev/dri`, and
+  binds `/usr/share/fonts` read-only on `/usr/local/share/fonts/wormos`
+  (the mount point is created when a wormhole is set up).
+- Consoles: `/usr/lib/worm/console TTY` runs getty on tty1 and tty2. On
+  tty1, while `/etc/passwd` has no user with a UID of 1000 or more, it first
+  runs `/usr/lib/worm/first-boot` there (with the tty as controlling
+  terminal): user name, user and root passwords, then `worm unlock`,
+  `adduser`, the groups `wheel video input audio render kvm`, `chpasswd -c
+  sha512` and `worm lock -c "First boot: created NAME"`, which also takes
+  a snapshot.
+- `su` is a separate, minimal busybox build holding only `su`, installed
+  setuid root; the main busybox binary has no setuid applets.
+
+## Releases
+
+- `scripts/release.sh VERSION` (`make release VERSION=X`) builds the root
+  filesystem with `WORMOS_RELEASE=1` (root's password field becomes `!`
+  until the first-boot setup), a 20 GiB image (`IMAGE` and `DISK_MB` are
+  parameters of `mkimage.sh`), and converts it with qemu-img: a compressed
+  qcow2, and a monolithic sparse VMDK zipped with `WormOS.vmx` (from
+  `scripts/wormos.vmx.in`: UEFI, NVMe, vmxnet3, 3D on). `SHA256SUMS` lists
+  both.
+- GRUB is installed at the removable path `\EFI\BOOT\BOOTX64.EFI`, so the
+  images boot with fresh firmware settings. `run-qemu.sh` gives the disk
+  `bootindex=0` so that added devices never shift the boot order.
+
 ## Tests
 
 - `make test` (`tests/boot-test.py`) boots a throwaway copy of the image
@@ -285,5 +368,9 @@ in the README.
 - `make test-wormholes` (`tests/wormhole-test.py`) needs internet and takes
   several minutes: it sets up the Debian and Kali wormholes from the real
   archives.
+- `tests/desktop-test.py` (also run by `make test`) adds a virtio GPU,
+  keyboard and tablet and a QEMU monitor socket, types on tty1 with
+  `sendkey`, reads the console text from `/dev/vcs1` over the serial
+  console, and checks `screendump` output for the wallpaper's colours.
 - Faster loop for snap: build natively (`make -C src/snap CC=gcc`) and use
   `--top` on a loopback btrfs image mounted with sudo.

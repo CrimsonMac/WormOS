@@ -2,8 +2,9 @@
 
 A lightweight, security-focused Linux operating system built around instant, tamper-resistant snapshots.
 
-> **Status:** early development. A minimal base system boots in QEMU with a
-> read-only root and working snapshots.
+> **Status:** 1.0, the first usable release: a read-only system with
+> snapshots, packages, a firewall, sandboxes, Tor and a light Wayland
+> desktop, running in a virtual machine (QEMU or VMware).
 
 ## Philosophy
 
@@ -31,6 +32,53 @@ A lightweight, security-focused Linux operating system built around instant, tam
 - An independent init system and package manager (`wh` / `wormhole`), with
   automatic snapshots before every change (`snap auto on|off`).
 - A lightweight Wayland desktop.
+
+## Trying it
+
+Release images run in a virtual machine with UEFI firmware. Download them
+from the release page and check them against `SHA256SUMS`.
+
+- **QEMU / virt-manager:** `wormos-1.0-x86_64.qcow2`. In virt-manager,
+  import an existing disk image, choose a generic recent Linux, and set the
+  firmware to UEFI (Customize configuration before install, Overview,
+  Firmware) with Secure Boot off. From the command line:
+  ```
+  qemu-system-x86_64 -machine q35 -accel kvm -cpu host -m 2048 -smp 2 \
+      -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+      -drive file=wormos-1.0-x86_64.qcow2,if=virtio \
+      -nic user,model=virtio-net-pci -device virtio-vga \
+      -device virtio-keyboard-pci -device virtio-tablet-pci
+  ```
+- **VMware Workstation / Player:** unzip `wormos-1.0-vmware.zip` and open
+  `WormOS.vmx` (UEFI, NVMe disk, 2 GB of memory, 3D acceleration on).
+
+On the first start, WormOS asks for a user name, a password for it and a
+password for root, on the first console. Then log in with that user: the
+desktop starts.
+
+## The desktop
+
+The desktop is [labwc](https://labwc.github.io), a light stacking Wayland
+compositor, with the [foot](https://codeberg.org/dnkl/foot) terminal. It
+idles at well under 100 MB of memory.
+
+- Right click on the background (or Super+Space) opens the menu: terminals,
+  applications installed from wormholes, snapshots, screenshots, log out.
+- Super+Enter opens a terminal, Super+Q closes a window, Alt+Tab switches,
+  Super+Arrow keys maximize or snap windows, Print saves a screenshot in
+  `~/Pictures`.
+- Ctrl+Alt+F2 switches to a second console (for logging in as root);
+  Ctrl+Alt+F1 returns to the desktop.
+- Administration is done as root: `su -` in a terminal, or the menu's root
+  terminal.
+- Settings: `/etc/xdg/labwc` (copy files to `~/.config/labwc` to change
+  them; `environment` sets the keyboard layout) and `/etc/xdg/foot/foot.ini`.
+
+Graphics: Intel GPUs (with the i915/xe firmware) and VMware's virtual GPU
+use OpenGL ES through Mesa; other virtual GPUs use a fast software renderer.
+Programs installed from Debian or Kali that support Wayland open on the
+desktop as well (they see the system's fonts); X11-only programs do not
+work yet.
 
 ## Snapshots
 
@@ -69,7 +117,7 @@ How it works:
 
 These protections raise the bar, but software running as root on the same
 machine can always write to the disk directly. Untrusted code belongs in an
-isolated sandbox, which is planned for a later phase.
+isolated sandbox: a blackhole (see below).
 
 ## Packages
 
@@ -117,7 +165,7 @@ installs take effect immediately, without a restart.
 Wormholes share your home folder and the network: they make software
 available, they are not a security boundary. They live on a separate
 subvolume mounted `nosuid`, so nothing inside one can gain root on the
-system. Run untrusted software in a blackhole instead (planned).
+system. Run untrusted software in a blackhole instead.
 
 ### Manual changes
 
@@ -243,14 +291,23 @@ is described in [docs/internals.md](docs/internals.md).
 
 ### Requirements
 
-A Debian 13 (or similar) host with roughly 25 GB of free disk space:
+A Debian 13 (or similar) host with roughly 35 GB of free disk space:
 
 ```
 sudo apt install build-essential bison flex gawk texinfo m4 help2man \
     libncurses-dev libssl-dev libelf-dev libgmp-dev libmpc-dev rsync curl xz-utils bzip2 \
     btrfs-progs dosfstools mtools fakeroot grub-efi-amd64-bin \
-    qemu-system-x86 ovmf
+    qemu-system-x86 qemu-utils ovmf zip unzip \
+    ninja-build gperf pipx python3-mako python3-yaml python3-ply python3-packaging \
+    libexpat1-dev llvm-19-dev libclang-19-dev libclang-cpp19-dev \
+    libllvmspirvlib-19-dev spirv-tools libclc-19-dev
+pipx install meson==1.12.1
 ```
+
+Meson comes from pipx because some packages need a newer one than Debian
+13 ships (the build puts `~/.local/bin` first in `PATH`). LLVM is only used
+on the build machine, to build Mesa's OpenCL compiler (`mesa_clc`) for its
+Intel drivers; nothing from LLVM goes into WormOS.
 
 ### Build and run
 
@@ -263,6 +320,13 @@ make test       # boot the image and run automated checks
 
 `make test-wormholes` checks the Debian and Kali wormholes against the real
 archives; it needs internet access and takes several minutes.
+
+`make test` also runs `tests/desktop-test.py`: the VM gets a virtio GPU,
+keyboard and tablet, and the test types on the graphical console through
+the QEMU monitor like a user would. It answers the first-boot setup, logs
+in (which starts the desktop), types into the terminal, opens another with
+Super+Enter, checks a screendump of the real screen, and compares memory
+use and system size with their budgets.
 
 `make test` boots a throwaway copy of the image, checks the running system
 and exercises snapshots end to end (take, diff, restore, browse, rewind of
@@ -289,7 +353,11 @@ safe and backed up); its public half is `keys/core.pub`, which is built
 into the system. The root filesystem is assembled by installing the base
 packages from that repository with `wh --root`.
 
-The development image has an empty root password.
+The development image has an empty root password (the tests log in with
+it). `make release VERSION=1.0` builds the release images instead
+(`scripts/release.sh`): root stays locked until the first-boot setup, the
+disk is 20 GiB, and the output is a qcow2 image and a VMware bundle in
+`out/release`.
 
 The root filesystem is read-only; change it with `worm unlock` and
 `worm lock`. (A plain `mount -o remount,ro /` would make the whole btrfs
