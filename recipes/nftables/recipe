@@ -1,0 +1,22 @@
+name=nftables
+version=1.1.7
+description="Command-line tool for the nf_tables packet filter"
+depends=(glibc libmnl libnftnl)
+# Signed by the Netfilter Core Team (8C5F7146A1757A65E2422A94D70D1A666ACF2B21).
+source=(https://www.netfilter.org/projects/nftables/files/nftables-$version.tar.xz)
+sha256=(a6fbf060d8d4fff001517a2b94f356bb4366bfbf0ba366366f9d27cc38caa58f)
+
+build() {
+	# mini-gmp avoids a GMP dependency; no readline CLI, JSON or xtables.
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--sysconfdir=/etc --with-mini-gmp --without-cli --without-json \
+		--disable-man-doc --disable-static
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	# Example rulesets; the firewall is configured with worm fw.
+	rm -rf "$pkgdir/etc" "$pkgdir/usr/share"
+}

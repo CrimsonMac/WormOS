@@ -1,0 +1,18 @@
+name=libmnl
+version=1.0.5
+description="Minimalistic netlink library"
+depends=(glibc)
+# Signed by the Netfilter Core Team (37D964ACC04981C75500FB9BD55D978A8A1420E4).
+source=(https://www.netfilter.org/projects/libmnl/files/libmnl-$version.tar.bz2)
+sha256=(274b9b919ef3152bfb3da3a13c950dd60d6e2bcd54230ffeca298d03b40d0525)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-static
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+}

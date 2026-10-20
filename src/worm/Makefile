@@ -8,13 +8,17 @@ BINDIR  ?= $(PREFIX)/bin
 
 all: worm
 
-worm: worm.c
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $<
+OBJS = worm.o fw.o
+
+worm: $(OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS)
+
+$(OBJS): worm.h
 
 install: worm
 	install -Dm755 worm $(DESTDIR)$(BINDIR)/worm
 
 clean:
-	rm -f worm
+	rm -f worm $(OBJS)
 
 .PHONY: all install clean

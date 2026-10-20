@@ -3,6 +3,7 @@
  *
  *     worm unlock             make the system writable for manual changes
  *     worm lock [-c TEXT]     make it read-only again and snapshot the changes
+ *     worm fw ...             the firewall (see fw.c)
  *
  * Only the mount of / changes (a bind remount), never the filesystem, so
  * /var and /home are not affected. Unlocking is a guard against accidents,
@@ -22,7 +23,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-static void die(const char *fmt, const char *arg)
+#include "worm.h"
+
+void die(const char *fmt, const char *arg)
 {
 	fprintf(stderr, "worm: ");
 	fprintf(stderr, fmt, arg);
@@ -30,7 +33,7 @@ static void die(const char *fmt, const char *arg)
 	exit(1);
 }
 
-static int run(char *const argv[], char *out, size_t len)
+int run(char *const argv[], char *out, size_t len, int quiet)
 {
 	int pipefd[2], status;
 	size_t n = 0;
@@ -47,16 +50,26 @@ static int run(char *const argv[], char *out, size_t len)
 			close(pipefd[0]);
 			close(pipefd[1]);
 		}
+		if (quiet) {
+			int null = open("/dev/null", O_WRONLY);
+
+			if (null >= 0)
+				dup2(null, STDERR_FILENO);
+		}
 		execvp(argv[0], argv);
 		_exit(127);
 	}
 	if (out) {
+		char discard[512];
 		ssize_t r;
 
 		close(pipefd[1]);
 		while (n < len - 1 && (r = read(pipefd[0], out + n, len - 1 - n)) > 0)
 			n += r;
 		out[n] = '\0';
+		/* Drain the rest, or the command may die of SIGPIPE. */
+		while (read(pipefd[0], discard, sizeof(discard)) > 0)
+			;
 		close(pipefd[0]);
 	}
 	if (waitpid(pid, &status, 0) < 0)
@@ -156,9 +169,44 @@ static void show_writers(void)
 		printf("  (none found; a program may have a file mapped for writing)\n");
 }
 
-static int cmd_unlock(void)
+/* Changes to / made now would be lost when a staged package change applies. */
+static void refuse_if_pending(void)
 {
 	char status[128] = "";
+
+	if (run((char *[]){ "snap", "stage", "status", NULL }, status, sizeof(status), 0) == 0 &&
+	    strstr(status, "pending"))
+		die("a package change is waiting to be applied; restart first%s", "");
+}
+
+int root_begin_change(void)
+{
+	int ro;
+	unsigned long flags = root_flags(&ro);
+
+	refuse_if_pending();
+	if (!ro)
+		return 0;
+	if (mount(NULL, "/", NULL, MS_REMOUNT | MS_BIND | flags, NULL) < 0)
+		die("cannot make / writable: %s", strerror(errno));
+	return 1;
+}
+
+void root_end_change(int relock)
+{
+	int ro;
+	unsigned long flags = root_flags(&ro);
+
+	if (!relock || ro)
+		return;
+	sync();
+	if (mount(NULL, "/", NULL, MS_REMOUNT | MS_BIND | MS_RDONLY | flags, NULL) < 0)
+		fprintf(stderr, "worm: / stays writable (%s); run 'worm lock'\n",
+			strerror(errno));
+}
+
+static int cmd_unlock(void)
+{
 	int ro;
 	unsigned long flags = root_flags(&ro);
 
@@ -166,9 +214,7 @@ static int cmd_unlock(void)
 		printf("The system is already unlocked.\n");
 		return 0;
 	}
-	if (run((char *[]){ "snap", "stage", "status", NULL }, status, sizeof(status)) == 0 &&
-	    strstr(status, "pending"))
-		die("a package change is waiting to be applied; restart first%s", "");
+	refuse_if_pending();
 	if (mount(NULL, "/", NULL, MS_REMOUNT | MS_BIND | flags, NULL) < 0)
 		die("cannot unlock: %s", strerror(errno));
 	printf("The system is unlocked: / is writable.\n"
@@ -197,14 +243,16 @@ static int cmd_lock(const char *comment)
 	}
 	printf("The system is locked.\n");
 	if (run((char *[]){ "snap", "now", "--auto", "-c", (char *)comment, NULL },
-		out, sizeof(out)) == 0 && out[0])
+		out, sizeof(out), 0) == 0 && out[0])
 		printf("%s", out);
 	return 0;
 }
 
 static void usage(FILE *out)
 {
-	fputs("usage: worm unlock | lock [-c COMMENT]\n", out);
+	fputs("usage: worm unlock | lock [-c COMMENT]\n"
+	      "       worm fw status | allow PORT[/tcp|/udp] | deny PORT[/tcp|/udp] | load\n"
+	      "PORT is a number or a range such as 6000-6010; tcp is the default.\n", out);
 }
 
 int main(int argc, char **argv)
@@ -219,6 +267,13 @@ int main(int argc, char **argv)
 	}
 	if (geteuid() != 0)
 		die("this needs root, try again with su%s", "");
+	if (!strcmp(argv[1], "fw")) {
+		int r = cmd_fw(argc - 2, argv + 2);
+
+		if (r == 2)
+			usage(stderr);
+		return r;
+	}
 	if (!strcmp(argv[1], "unlock") && argc == 2)
 		return cmd_unlock();
 	if (!strcmp(argv[1], "lock") && argc == 2)

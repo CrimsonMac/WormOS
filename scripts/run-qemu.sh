@@ -6,6 +6,8 @@
 # By default the VM runs on the serial console in this terminal
 # (press Ctrl-A X to quit QEMU). --gui opens a graphical window instead.
 # --snapshot discards all disk writes when QEMU exits.
+# QEMU_HOSTFWD forwards host ports to the VM, e.g. tcp:127.0.0.1:2222-:22
+# (several separated by spaces).
 
 . "$(dirname "$0")/env.sh"
 
@@ -26,6 +28,11 @@ for arg in "$@"; do
 	esac
 done
 
+netdev=user,id=net0
+for fwd in ${QEMU_HOSTFWD:-}; do
+	netdev+=,hostfwd=$fwd
+done
+
 accel=(-accel tcg)
 [ -w /dev/kvm ] && accel=(-accel kvm -cpu host)
 
@@ -37,7 +44,7 @@ exec qemu-system-x86_64 \
 	-drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
 	-drive if=pflash,format=raw,file="$OVMF_VARS" \
 	-drive file="$IMAGE",format=raw,if=virtio \
-	-netdev user,id=net0 \
+	-netdev "$netdev" \
 	-device virtio-net-pci,netdev=net0 \
 	-device virtio-rng-pci \
 	"${display[@]}" "${extra[@]}"

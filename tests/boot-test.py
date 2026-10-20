@@ -7,7 +7,9 @@ running) and checks the change is gone, then reboots and picks a snapshot
 from the "Rewind to a snapshot" boot menu. Last, it exercises worm
 unlock/lock and the package manager against out/repo, served over HTTP
 from this machine: install, a trial removal that rolls back, a removal and
-its undo. The full console output is written to build/boot.log.
+its undo. Firewall checks reach a web server in the VM from this machine
+through a QEMU port forward. The full console output is written to
+build/boot.log.
 
 Usage: tests/boot-test.py [--timeout SECONDS]
 """
@@ -18,6 +20,7 @@ import http.server
 import os
 import re
 import select
+import socket
 import subprocess
 import sys
 import threading
@@ -64,6 +67,44 @@ KERNEL_CHECKS = [
     ("vm and tunnel devices", "ls /dev/vhost-net /dev/vhost-vsock /dev/vsock /dev/net/tun | wc -l", r"^4$"),
 ]
 
+# The firewall. A web server in the VM on port 8080 is fetched from this
+# machine through a QEMU port forward between these lists.
+FIREWALL_CHECKS = [
+    ("firewall active at boot", "worm fw status", r"^Firewall: active"),
+    ("no ports open by default", "worm fw status", r"^Open ports: none$"),
+    ("inbound and forwarding denied",
+     "nft list table inet worm | grep -c 'policy drop'", r"^2$"),
+    ("loaded before the network", "ls /etc/worm/services | head -1", r"^05-firewall$"),
+    ("web server started",
+     "mkdir -p /tmp/www && echo hi > /tmp/www/index.html && httpd -p 8080 -h /tmp/www && echo ok",
+     r"^ok$"),
+]
+
+FIREWALL_OPEN_CHECKS = [
+    ("worm fw allow", "worm fw allow 8080", r"^Opened 8080/tcp\.$"),
+]
+
+FIREWALL_CLOSE_CHECKS = [
+    ("port listed", "worm fw status", r"^\s+8080/tcp$"),
+    ("port saved", "cat /etc/worm/firewall", r"^tcp 8080$"),
+    ("root still read-only", "touch /probe 2>&1", r"Read-only file system"),
+    ("allow is idempotent", "worm fw allow 8080/tcp", r"already open"),
+    ("invalid port refused", "worm fw allow 70000 2>&1; echo rc=$?", r"invalid port(.|\n)*rc=1"),
+    ("worm fw deny", "worm fw deny 8080", r"^Closed 8080/tcp\.$"),
+]
+
+FIREWALL_AFTER_CHECKS = [
+    ("drops counted", "worm fw status", r"^Dropped since loaded: [1-9]"),
+    ("bad port list loads closed",
+     "mount -o remount,bind,rw / && echo 'tcp banana' >> /etc/worm/firewall && "
+     "worm fw load 2>&1; echo rc=$?; worm fw status",
+     r"invalid line(.|\n)*rc=1(.|\n)*Firewall: active(.|\n)*Open ports: none"),
+    ("bad line removed",
+     "sed -i '/banana/d' /etc/worm/firewall && mount -o remount,bind,ro / && worm fw load && echo ok",
+     r"^ok$"),
+    ("udp port kept for later", "worm fw allow 5353/udp", r"^Opened 5353/udp\.$"),
+]
+
 # Snapshot, change the system, and look at the change.
 SNAPSHOT_CHECKS = [
     ("snap now", "snap now -c 'test base'", r"^Snapshot 1 created \(system\)$"),
@@ -88,6 +129,7 @@ BROWSE_CHECKS = [
 REWIND_CHECKS = [
     ("services restarted", "pidof syslogd && grep -c ' /var ' /proc/mounts", r"^1$"),
     ("change is gone", "ls /etc/probe 2>&1", r"No such file"),
+    ("firewall reloaded", "worm fw status", r"^Firewall: active(.|\n)*^\s+5353/udp$"),
     ("previous state saved", "snap list", r"^\s+2\s.*auto\s+Before rewind to 1$"),
     ("saved state has the change", "snap diff 1 2", r"^\+ /etc/probe$"),
     ("root still read-only", "grep ' / ' /proc/mounts", r"\sro[,\s]"),
@@ -115,6 +157,7 @@ MENU_CHECKS = [
     ("snapshot 3 state is back", "cat /etc/probe2", r"^y$"),
     ("later restore is undone", "ls /etc/probe 2>&1", r"No such file"),
     ("menu rewind saved previous state", "snap list", r"^\s+\d+\s.*system\s+auto\s+Before rewind to 3$"),
+    ("firewall after reboot", "worm fw status", r"^Firewall: active(.|\n)*^\s+5353/udp$"),
 ]
 
 
@@ -158,6 +201,22 @@ AFTER_UNDO_CHECKS = [
     ("undo brought tcpdump back", "tcpdump --version 2>&1", r"^tcpdump version"),
     ("undo in history", "wh history", r"\sundo\s+\d+\s+#\d+$"),
 ]
+
+
+def free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def fetch(port, timeout=10):
+    """Fetch / from the VM's web server through the forwarded port."""
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=timeout) as s:
+            s.sendall(b"GET / HTTP/1.0\r\n\r\n")
+            return s.recv(64).startswith(b"HTTP/")
+    except OSError:
+        return False
 
 
 def serve_repo():
@@ -228,14 +287,18 @@ def main():
 
     # Disk writes are discarded, so the test always starts from the built
     # image and leaves it untouched.
+    web_port = free_port()
+    env = dict(os.environ, QEMU_HOSTFWD=f"tcp:127.0.0.1:{web_port}-:8080")
     proc = subprocess.Popen([os.path.join(ROOT, "scripts", "run-qemu.sh"), "--snapshot"],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT)
+                            stderr=subprocess.STDOUT, env=env)
     failures = 0
     passed = 0
     repo = serve_repo()
     worm_checks = [(n, c.format(repo=repo), p) for n, c, p in WORM_CHECKS]
-    total = (len(CHECKS) + len(KERNEL_CHECKS) + len(SNAPSHOT_CHECKS) +
+    total = (len(CHECKS) + len(KERNEL_CHECKS) + len(FIREWALL_CHECKS) +
+             len(FIREWALL_OPEN_CHECKS) + len(FIREWALL_CLOSE_CHECKS) +
+             len(FIREWALL_AFTER_CHECKS) + 3 + len(SNAPSHOT_CHECKS) +
              len(BROWSE_CHECKS) + len(REWIND_CHECKS) + len(HOME_CHECKS) + len(MENU_CHECKS) +
              len(worm_checks) + len(AFTER_INSTALL_CHECKS) +
              len(AFTER_TRIAL_CHECKS) + len(AFTER_TRIAL_END_CHECKS) +
@@ -275,6 +338,13 @@ def main():
             print(f"booted to login prompt in {time.time() - start:.0f}s")
             run_checks(con, CHECKS)
             run_checks(con, KERNEL_CHECKS)
+            run_checks(con, FIREWALL_CHECKS)
+            check("closed port unreachable from outside", not fetch(web_port))
+            run_checks(con, FIREWALL_OPEN_CHECKS)
+            check("open port reachable from outside", fetch(web_port))
+            run_checks(con, FIREWALL_CLOSE_CHECKS)
+            check("port unreachable again after deny", not fetch(web_port))
+            run_checks(con, FIREWALL_AFTER_CHECKS)
             run_checks(con, SNAPSHOT_CHECKS)
             con.send("snap browse 1\n")
             con.expect("Exit the shell to leave.", 60)

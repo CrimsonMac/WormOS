@@ -130,6 +130,20 @@ in the README.
 - `src/worm/`: `worm unlock` / `worm lock` bind-remount `/` (re-applying the
   statvfs flags), list processes with files open for writing (by mnt_id) on
   EBUSY, and run `snap now --auto` after locking.
+- `fw.c` is the firewall. Open ports live in `/etc/worm/firewall` (`tcp 22`,
+  `udp 6000-6010`); no package ships it, and a missing file means none.
+  `worm fw allow|deny` applies the new rules first and only then rewrites
+  the file, bind-remounting `/` writable for the moment if it was locked
+  (refused while a package change is pending, as for `worm unlock`).
+- The ruleset is generated into `/run/worm/firewall.nft` and loaded with
+  `nft -f`: `destroy table inet worm` plus the new table, one transaction.
+  Input policy drop with established/related, loopback, essential ICMP and
+  ICMPv6 (neighbour discovery with hop limit 255), DHCPv6 replies and the
+  sets `open_tcp`/`open_udp`; a named counter `dropped` counts the rest.
+  Forward policy drop. Output is not filtered.
+- The service `05-firewall` runs `worm fw load` before the network. A bad
+  port list loads the firewall with no open ports and exits 1.
+- nftables is built with mini-gmp and without the CLI, JSON or xtables.
 
 ## Tests
 

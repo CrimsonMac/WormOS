@@ -128,6 +128,22 @@ worm unlock               # make / writable (only the root mount)
 worm lock                 # read-only again, and snapshot the changes
 ```
 
+## Firewall
+
+Inbound traffic is dropped unless it answers a connection this machine
+started (outbound is not filtered). The rules load before any network
+interface comes up.
+
+```
+worm fw status            # active? which ports are open?
+worm fw allow 22          # open a TCP port
+worm fw allow 51820/udp   # UDP, or a range such as 6000-6010
+worm fw deny 22           # close it again
+```
+
+Open ports are stored in `/etc/worm/firewall`, so they are part of system
+snapshots: rewinding brings back the firewall of that time.
+
 ## Roadmap
 
 1. Minimal bootable base system (kernel, libc, init)
@@ -174,7 +190,9 @@ archives; it needs internet access and takes several minutes.
 and exercises snapshots end to end (take, diff, restore, browse, rewind of
 the system and of `/home`, and a rewind from the boot menu), then
 `worm unlock`/`lock` and the package manager against `out/repo`, served to
-the VM over HTTP (install, a trial that rolls back, remove and undo).
+the VM over HTTP (install, a trial that rolls back, remove and undo). It
+also opens and closes a firewall port and checks it from the host through a
+QEMU port forward (`QEMU_HOSTFWD`).
 
 Building the disk image uses `sudo` for one step (applying file ownership
 before `mkfs.btrfs`); everything else runs as a normal user.
