@@ -1,5 +1,6 @@
 name=busybox
 version=1.38.0
+release=3
 description="Core command-line utilities (temporary userland)"
 depends=(glibc)
 source=(https://busybox.net/downloads/busybox-$version.tar.bz2)
@@ -21,15 +22,39 @@ build() {
 	bb_unset LINUXRC
 	bb_unset TC              # does not build against current kernel headers
 	bb_unset FEATURE_SUID    # no setuid multi-call binary
+	local applet             # kmod and eudev handle modules and devices
+	for applet in INSMOD RMMOD LSMOD MODPROBE DEPMOD MODINFO MDEV; do
+		bb_unset $applet
+	done
 	bb_set EXTRA_CFLAGS "\"-std=gnu17\""
 	make oldconfig < /dev/null > /dev/null
 
 	make CROSS_COMPILE="$TARGET-" CONFIG_EXTRA_LDFLAGS="$LDFLAGS" -j"$JOBS"
 	make CROSS_COMPILE="$TARGET-" busybox.links
+
+	# su must be setuid root. Rather than making the whole multi-call
+	# binary setuid, a second build holds su alone.
+	rm -rf ../busybox-su
+	cp -a . ../busybox-su
+	cd ../busybox-su
+	make clean > /dev/null
+	make allnoconfig > /dev/null
+	bb_set SU y
+	bb_set FEATURE_SU_SYSLOG y
+	bb_set FEATURE_SU_CHECKS_SHELLS y
+	bb_set FEATURE_SHADOWPASSWDS y
+	bb_set USE_BB_CRYPT y
+	bb_set USE_BB_CRYPT_SHA y
+	bb_set FEATURE_SUID y
+	bb_set LONG_OPTS y
+	bb_set EXTRA_CFLAGS "\"-std=gnu17\""
+	make oldconfig < /dev/null > /dev/null
+	make CROSS_COMPILE="$TARGET-" CONFIG_EXTRA_LDFLAGS="$LDFLAGS" -j"$JOBS"
 }
 
 package() {
 	install -Dm755 busybox "$pkgdir/usr/bin/busybox"
+	install -Dm4755 ../busybox-su/busybox "$pkgdir/usr/bin/su"
 	install -Dm755 examples/udhcp/simple.script \
 		"$pkgdir/usr/share/udhcpc/default.script"
 
@@ -38,7 +63,7 @@ package() {
 	local path applet
 	while read -r path; do
 		applet=${path##*/}
-		[ "$applet" = busybox ] && continue
+		case $applet in busybox|su) continue ;; esac
 		case $path in
 			*sbin/*) ln -sf ../bin/busybox "$pkgdir/usr/sbin/$applet" ;;
 			*)       ln -sf busybox "$pkgdir/usr/bin/$applet" ;;

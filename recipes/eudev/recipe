@@ -1,0 +1,37 @@
+name=eudev
+version=3.2.15
+description="Device manager: device nodes, permissions and module autoloading (udev)"
+depends=(glibc kmod)
+# Signed by Boian Bonev (BA60BC20F37E59444D6D25001365720913D2F22D).
+source=(https://github.com/eudev-project/eudev/releases/download/v$version/eudev-$version.tar.gz)
+sha256=(eb69809fc0d1187f2463ab2149c53aa9f42a78e59f14ebea68eae6cb6b4fc1c3)
+
+build() {
+	PKG_CONFIG=pkg-config ./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--bindir=/usr/bin --sbindir=/usr/sbin --libdir=/usr/lib \
+		--sysconfdir=/etc --with-rootprefix=/usr --with-rootlibdir=/usr/lib \
+		--with-rootlibexecdir=/usr/lib/udev --with-rootrundir=/run \
+		--enable-kmod --enable-hwdb --disable-blkid --disable-selinux \
+		--disable-manpages --disable-static
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man"
+	# Network devices keep their kernel names (eth0, wlan0).
+	rm -f "$pkgdir/usr/lib/udev/rules.d/80-net-name-slot.rules"
+	install -Dm644 "$recipedir/files/02-udev" "$pkgdir/etc/worm/services/02-udev"
+
+	# The hardware database is compiled here: /etc is read-only on the
+	# target. udevadm is ours, run through the sysroot's loader. Network
+	# card vendor names (OUI) are left out, and so are the sources.
+	rm "$pkgdir/etc/udev/hwdb.d/20-OUI.hwdb"
+	"$SYSROOT/usr/lib/ld-linux-x86-64.so.2" \
+		--library-path "$pkgdir/usr/lib:$SYSROOT/usr/lib" \
+		"$pkgdir/usr/bin/udevadm" hwdb --update --usr --root "$pkgdir"
+	[ -s "$pkgdir/usr/lib/udev/hwdb.bin" ] || die "hwdb.bin was not generated"
+	chmod 644 "$pkgdir/usr/lib/udev/hwdb.bin"
+	rm -rf "$pkgdir/etc/udev/hwdb.d"
+}

@@ -1,0 +1,28 @@
+name=linux-firmware
+version=20261019
+description="Firmware for Intel GPUs (i915 and xe), from linux-firmware"
+# Signed by Josh Boyer (4CDE8575E547BF835FE15807A31B6BD72486CFD6).
+source=(https://www.kernel.org/pub/linux/kernel/firmware/linux-firmware-$version.tar.xz)
+sha256=(a10d1ab5baf2c74ba92e8c7cf313e691696c26bddfa6df00db795e48d70cd4ca)
+# Only a small part of the archive (over 600 MB) is shipped.
+noextract=1
+
+build() {
+	rm -rf "$srcdir"/*
+	tar -xf "$SOURCES/linux-firmware-$version.tar.xz" --strip-components=1 \
+		--wildcards "*/i915/*" "*/xe/*" "*/LICENSES/LICENSE.i915" \
+		"*/LICENSES/LICENSE.xe"
+}
+
+package() {
+	local dir
+	for dir in i915 xe; do
+		mkdir -p "$pkgdir/usr/lib/firmware/$dir"
+		cp -a "$dir/." "$pkgdir/usr/lib/firmware/$dir/"
+	done
+	# The kernel decompresses firmware itself (FW_LOADER_COMPRESS_ZSTD).
+	find "$pkgdir/usr/lib/firmware" -type f -exec zstd -q -19 --rm {} +
+	find "$pkgdir/usr/lib/firmware" -type f -exec chmod 644 {} +
+	install -Dm644 -t "$pkgdir/usr/share/licenses/linux-firmware" \
+		LICENSES/LICENSE.i915 LICENSES/LICENSE.xe
+}

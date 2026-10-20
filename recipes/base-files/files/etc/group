@@ -1,8 +1,17 @@
 root:x:0:
+lp:x:7:
 wheel:x:10:
 tty:x:5:
 disk:x:6:
+kmem:x:15:
+dialout:x:20:
+cdrom:x:24:
+tape:x:26:
 audio:x:29:
 video:x:44:
+input:x:97:
+kvm:x:98:
+render:x:99:
+sgx:x:96:
 users:x:100:
 nogroup:x:65534:

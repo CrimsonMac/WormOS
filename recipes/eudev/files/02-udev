@@ -1,0 +1,4 @@
+# Device manager: start udevd, replay the devices found at boot (loading
+# their modules and firmware, setting owners) and wait until it is done.
+type = oneshot
+exec = udevd --daemon && udevadm trigger --type=subsystems --action=add && udevadm trigger --type=devices --action=add && udevadm settle --timeout=60

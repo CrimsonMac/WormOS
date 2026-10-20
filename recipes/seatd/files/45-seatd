@@ -1,0 +1,3 @@
+# Hands GPU and input devices to graphical sessions of users in "video".
+type = respawn
+exec = seatd -g video
