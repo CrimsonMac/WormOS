@@ -95,6 +95,32 @@ must match the SHA-256 the index lists, and an index older than the one
 already downloaded is refused. Packages are unpacked by wh itself, which
 never writes outside the system it installs into.
 
+### Software from Debian and Kali
+
+The core repository holds the base system and the tools that need direct
+access to the machine. Everything else comes from existing distributions:
+when a package is not in core, `wh install` looks in Debian stable, then in
+Kali, and installs it into a container for that distribution, a
+*wormhole*. Its commands appear on your `PATH` as if installed natively.
+
+```
+wh install htop               # not in core: found in Debian, installed there
+wh install --from kali hashid # pick the source
+wh remove htop
+```
+
+A wormhole is set up the first time it is needed, from the distribution's
+own signed archive (checked with `gpgv` against its archive keyring, which
+WormOS ships), and from then on it is managed by its own apt. These
+installs take effect immediately, without a restart.
+
+Wormholes share your home folder and the network: they make software
+available, they are not a security boundary. They live on a separate
+subvolume mounted `nosuid`, so nothing inside one can gain root on the
+system. Run untrusted software in a blackhole instead (planned).
+
+### Manual changes
+
 To change the read-only system by hand:
 
 ```
@@ -137,6 +163,9 @@ make run        # boot the image in QEMU on the serial console (Ctrl-A X quits)
 make run-gui    # boot the image in a QEMU window
 make test       # boot the image and run automated checks
 ```
+
+`make test-wormholes` checks the Debian and Kali wormholes against the real
+archives; it needs internet access and takes several minutes.
 
 `make test` boots a throwaway copy of the image, checks the running system
 and exercises snapshots end to end (take, diff, restore, browse, rewind of

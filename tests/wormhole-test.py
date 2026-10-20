@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""Check wormholes: software from Debian and Kali in containers.
+
+Boots a throwaway copy of the image (like boot-test.py) and needs internet
+access: it sets up the Debian and Kali wormholes from their real archives,
+installs a package from each, runs the exported commands as root and as a
+normal user, checks what the containers can and cannot touch, and removes
+the packages again. Takes several minutes. Console output goes to
+build/wormhole.log.
+
+Usage: tests/wormhole-test.py [--timeout SECONDS]
+"""
+
+import argparse
+import importlib.util
+import os
+import re
+import subprocess
+import sys
+import time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOG = os.path.join(ROOT, "build", "wormhole.log")
+
+spec = importlib.util.spec_from_file_location(
+    "boot_test", os.path.join(ROOT, "tests", "boot-test.py"))
+boot_test = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(boot_test)
+
+CHECKS = [
+    ("debian install", "wh -y install --from debian htop 2>&1 | tail -3",
+     r"htop -> /usr/bin/htop \(debian\)"),
+    ("debian wormhole ready", "cat /var/lib/wormholes/debian/etc/os-release",
+     r"Debian GNU/Linux 13"),
+    ("exported command", "head -2 /usr/local/bin/htop", r"Exported by wh from the debian wormhole"),
+    ("runs as root", "htop --version", r"^htop 3\."),
+    ("listed", "wh list | tail -2", r"^htop\s+\S+\s+\[debian\]$"),
+    ("found by search", "wh search htop", r"^htop .*\[debian\]$"),
+    ("no setuid escape", "mount | grep ' /var/lib/wormholes '", r"nosuid,nodev"),
+    ("add a user", "worm unlock >/dev/null && adduser -D tester && worm lock >/dev/null && echo ok",
+     r"^ok$"),
+    ("runs as a user", "su tester -c 'htop --version'", r"^htop 3\."),
+    ("user keeps their identity", "su tester -c 'whc debian id -un'", r"^tester$"),
+    ("user cannot change the container",
+     "su tester -c 'whc debian touch /usr/x' 2>&1", r"(Permission denied|Read-only)"),
+    ("user sees their home", "su tester -c 'cd && touch here && whc debian ls ~/here'",
+     r"/home/tester/here$"),
+    ("host network shared", "whc debian cat /etc/resolv.conf | grep -c nameserver", r"^[1-9]"),
+    ("core command not shadowed", "ls /usr/local/bin/ls 2>&1", r"No such file"),
+    ("debian remove", "wh -y remove htop && ls /usr/local/bin/htop 2>&1",
+     r"No such file"),
+    ("kali fallback", "wh -y install --from kali hashid 2>&1 | tail -3",
+     r"hashid -> .* \(kali\)"),
+    ("kali tool runs", "hashid --version 2>&1", r"^(?i:hashid) v\d"),
+    ("kali wormhole", "cat /var/lib/wormholes/kali/etc/os-release", r"Kali GNU/Linux"),
+    ("system still read-only", "touch /usr/x 2>&1", r"Read-only file system"),
+]
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--timeout", type=int, default=3600,
+                        help="seconds to wait for each step")
+    args = parser.parse_args()
+
+    env = dict(os.environ, QEMU_MEM=os.environ.get("QEMU_MEM", "2048"))
+    proc = subprocess.Popen([os.path.join(ROOT, "scripts", "run-qemu.sh"), "--snapshot"],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, env=env)
+    passed = failures = 0
+    with open(LOG, "wb") as log:
+        con = boot_test.Console(proc, log)
+        try:
+            con.expect("login:", 600)
+            con.send("root\n")
+            con.expect("# ", 60)
+            con.run("dmesg -n 1")
+            for name, cmd, pattern in CHECKS:
+                start = time.time()
+                out = con.run(cmd, args.timeout)
+                ok = re.search(pattern, out, re.MULTILINE) is not None
+                passed += ok
+                failures += not ok
+                print(f"{'PASS' if ok else 'FAIL'}  {name} ({time.time() - start:.0f}s)")
+                if not ok:
+                    print(f"      output: {out[-400:]!r}")
+            con.send("poweroff\n")
+            con.expect("Power down", 120)
+        except (TimeoutError, RuntimeError) as e:
+            print(f"FAIL  {e} (see {LOG})")
+            failures += 1
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+    print(f"{passed}/{len(CHECKS)} checks passed")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
