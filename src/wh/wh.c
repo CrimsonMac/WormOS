@@ -9,6 +9,10 @@
  *
  * With --root DIR, wh works directly on DIR instead (no copy, snapshot or
  * restart). The image build uses this to assemble the root filesystem.
+ *
+ * Software that is not in the core repository comes from other
+ * distributions (Debian, then Kali), each kept in its own container, a
+ * wormhole (see foreign.c). Those installs need no restart.
  */
 
 #define _GNU_SOURCE
@@ -41,6 +45,7 @@ int verbose;
 const char *key_file;
 
 static const char *repo_override;
+static const char *opt_from;            /* --from SOURCE: core, debian, kali */
 static int opt_try, opt_later, opt_yes, opt_force;
 static int direct;              /* --root given: no staging */
 static int staging;             /* a staged copy is mounted */
@@ -62,7 +67,8 @@ static void usage(FILE *out)
 "  search [TERM]            find packages\n"
 "  info PACKAGE             show a package\n"
 "  list                     list installed packages\n"
-"  install [--try] PKG...   install packages (and what they need)\n"
+"  install [--try] [--from SOURCE] PKG...\n"
+"                           install packages (and what they need)\n"
 "  remove PKG...            remove packages\n"
 "  upgrade                  upgrade installed packages\n"
 "  history                  list package changes\n"
@@ -71,7 +77,11 @@ static void usage(FILE *out)
 "\n"
 "Changes are applied with a quick restart of the system (the kernel keeps\n"
 "running). --later applies them at the next restart instead. --try makes a\n"
-"trial: the restart after the next one goes back, unless 'wh keep' is run.\n",
+"trial: the restart after the next one goes back, unless 'wh keep' is run.\n"
+"\n"
+"Packages not in the core repository come from Debian, then Kali, each in\n"
+"its own container (a wormhole); --from picks the source. Those installs\n"
+"need no restart.\n",
 	      out);
 }
 
@@ -293,6 +303,22 @@ static void stage_commit(const char *action, const char *packages)
 	}
 }
 
+/* Ask before a change that is applied right away. */
+static void confirm_now(const char *what)
+{
+	char answer[16];
+
+	if (opt_yes)
+		return;
+	if (!isatty(STDIN_FILENO))
+		die("not a terminal, pass -y to confirm");
+	printf("%s Continue? [Y/n] ", what);
+	fflush(stdout);
+	if (!fgets(answer, sizeof(answer), stdin) ||
+	    (answer[0] != '\n' && answer[0] != 'y' && answer[0] != 'Y'))
+		die("cancelled");
+}
+
 /* Ask before a change that restarts the system. */
 static void confirm(const char *what)
 {
@@ -401,7 +427,10 @@ static int cmd_update(int argc, char **argv)
 	if (argc != 1)
 		die("usage: wh update");
 	lock_wh();
-	return repo_update(repo_url(repo_override));
+	repo_update(repo_url(repo_override));
+	if (!direct)
+		foreign_refresh(0);
+	return 0;
 }
 
 static int cmd_install(int argc, char **argv, int reinstall)
@@ -411,13 +440,42 @@ static int cmd_install(int argc, char **argv, int reinstall)
 	char names[1024], **files;
 
 	if (argc < 2)
-		die("usage: wh install [--try] [--later] PACKAGE...");
+		die("usage: wh install [--try] [--later] [--from SOURCE] PACKAGE...");
 	lock_wh();
-	require_locked();
+	if (opt_from && strcmp(opt_from, "core") && !foreign_source_known(opt_from))
+		die("unknown source '%s' (see /etc/wh/sources)", opt_from);
 	repo_load(&idx);
+
+	/* Packages not in core come through a wormhole, applied right away. */
+	for (int i = 1; i < argc; i++) {
+		const char *source = NULL;
+		char what[512], label[256];
+
+		if (opt_from && strcmp(opt_from, "core"))
+			source = opt_from;
+		else if (!index_find(&idx, argv[i]) && !opt_from)
+			source = foreign_find(argv[i]);
+		if (!source)
+			continue;
+		if (direct || opt_try)
+			die("%s comes from %s; --root and --try work with the core "
+			    "repository only", argv[i], source);
+		snprintf(what, sizeof(what), "%s is not in the core repository; it comes from %s%s",
+			 argv[i], source, wormhole_exists(source) ? "." :
+			 ", which is set up first (a one-time download of its base system).");
+		confirm_now(what);
+		foreign_install(source, argv[i]);
+		snprintf(label, sizeof(label), "%s [%s]", argv[i], source);
+		history_add("install", label, 0);
+		argv[i] = NULL;
+	}
 	for (int i = 1; i < argc; i++)
-		resolve(&idx, &pl, argv[i], 0, reinstall);
+		if (argv[i])
+			resolve(&idx, &pl, argv[i], 0, reinstall);
 	if (pl.count == 0) {
+		if (argc > 1 && !argv[argc - 1])
+			return 0;
+
 		info("Nothing to do: already installed.");
 		return 0;
 	}
@@ -445,6 +503,34 @@ static int cmd_remove(int argc, char **argv)
 	if (argc < 2)
 		die("usage: wh remove PACKAGE...");
 	lock_wh();
+
+	/* Foreign packages first: they are removed right away. */
+	for (int i = 1; i < argc; i++) {
+		char source[32], what[256], label[256];
+
+		if (!foreign_installed(argv[i], source, sizeof(source)))
+			continue;
+		snprintf(what, sizeof(what), "Remove %s (from %s)?", argv[i], source);
+		confirm_now(what);
+		foreign_remove(argv[i]);
+		snprintf(label, sizeof(label), "%s [%s]", argv[i], source);
+		history_add("remove", label, 0);
+		argv[i] = NULL;
+	}
+	{
+		int left = 0;
+
+		for (int i = 1; i < argc; i++)
+			left |= argv[i] != NULL;
+		if (!left)
+			return 0;
+		/* Squeeze out the ones handled. */
+		for (int i = 1, j = 1; i < argc; i++)
+			if (argv[i])
+				argv[j++] = argv[i];
+		for (int i = argc - 1; i > 0 && !argv[i]; i--)
+			argc--;
+	}
 	require_locked();
 	n = db_list(&installed);
 	for (int i = 1; i < argc; i++) {
@@ -496,6 +582,8 @@ static int cmd_upgrade(int argc, char **argv)
 	if (argc != 1)
 		die("usage: wh upgrade");
 	lock_wh();
+	if (!direct)
+		foreign_refresh(1);
 	require_locked();
 	repo_load(&idx);
 	n = db_list(&installed);
@@ -536,6 +624,8 @@ static int cmd_list(int argc, char **argv)
 	for (int i = 0; i < n; i++)
 		printf("%-20s %-16s %s\n", list[i].name, list[i].version, list[i].description);
 	free(list);
+	if (!direct)
+		foreign_list();
 	return 0;
 }
 
@@ -560,6 +650,8 @@ static int cmd_search(int argc, char **argv)
 		printf("%s %s%s\n    %s\n", p->name, p->version, mark, p->description);
 		found++;
 	}
+	if (!direct)
+		found += foreign_search(term);
 	if (!found)
 		printf("No packages match '%s'.\n", term);
 	return found ? 0 : 1;
@@ -684,6 +776,7 @@ int main(int argc, char **argv)
 		{ "later", no_argument,       NULL, 'l' },
 		{ "yes",   no_argument,       NULL, 'y' },
 		{ "force", no_argument,       NULL, 'f' },
+		{ "from",  required_argument, NULL, 'F' },
 		{ "help",  no_argument,       NULL, 'h' },
 		{ NULL, 0, NULL, 0 },
 	};
@@ -699,6 +792,7 @@ int main(int argc, char **argv)
 		case 'l': opt_later = 1; break;
 		case 'y': opt_yes = 1; break;
 		case 'f': opt_force = 1; break;
+		case 'F': opt_from = optarg; break;
 		case 'v': verbose = 1; break;
 		case 'h': usage(stdout); return 0;
 		default:  usage(stderr); return 2;

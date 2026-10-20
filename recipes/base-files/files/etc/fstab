@@ -4,3 +4,6 @@ LABEL=WORMOS    /var           btrfs   subvol=@var,noatime,compress=zstd,nosuid,
 LABEL=WORMOS    /home          btrfs   subvol=@home,noatime,compress=zstd,nosuid,nodev 0 0
 # The root is read-only, so root's home lives on the writable /var.
 /var/roothome   /root          none    bind                             0 0
+# Containers of other distributions. nosuid: nothing in them can become
+# root on the host.
+LABEL=WORMOS    /var/lib/wormholes btrfs subvol=@wormholes,noatime,compress=zstd,nosuid,nodev 0 0

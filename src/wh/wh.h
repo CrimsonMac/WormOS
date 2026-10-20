@@ -61,6 +61,19 @@ int repo_update(const char *url);
 int repo_load(struct index *idx);
 int repo_fetch(const char *url, const struct package *p, char *out, size_t len);
 const char *repo_url(const char *override);
+int download(const char *url, const char *dest);
+int file_sha256(const char *path, char hex[65], long long *size);
+
+/* foreign.c */
+int foreign_source_known(const char *name);
+const char *foreign_find(const char *pkg);
+int foreign_installed(const char *pkg, char *source, size_t len);
+int foreign_install(const char *source, const char *pkg);
+int foreign_remove(const char *pkg);
+int foreign_refresh(int upgrade);
+void foreign_list(void);
+int foreign_search(const char *term);
+int wormhole_exists(const char *name);
 
 /* db.c */
 int db_installed(const char *name, struct package *p);
@@ -76,5 +89,6 @@ void db_free_files(char **paths, int count);
 int pkg_install(const char *wpkg, const char *expect_name);
 int pkg_remove(const char *name);
 int parse_pkginfo(const char *text, struct package *p);
+int tar_unpack(char *const argv[]);
 
 #endif

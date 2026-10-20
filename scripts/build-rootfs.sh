@@ -8,6 +8,7 @@
 #   @           the system root, mounted read-only
 #   @var        /var, writable state and logs (not part of system snapshots)
 #   @home       /home
+#   @wormholes  containers of other distributions (/var/lib/wormholes)
 #   @snapshots  snapshot store, never mounted by the running system
 
 . "$(dirname "$0")/env.sh"
@@ -21,19 +22,20 @@ fi
 # The base system. Packages come from the signed repository (tools/wrepo)
 # and are installed with wh, as on a running system.
 PACKAGES=(base-files glibc gcc-libs busybox worminit wormrd snap wh worm linux
-	zstd curl)
+	zstd curl gnupg wormhole-keyrings)
 WH=$BUILD/host/wh
 
 [ -x "$WH" ] && [ -f "$REPO/index" ] || die "run tools/wrepo first"
 
 msg "Assembling root filesystem"
 rm -rf "$FSROOT"
-mkdir -p "$ROOTFS" "$FSROOT/@home" "$FSROOT/@snapshots"
+mkdir -p "$ROOTFS" "$FSROOT/@home" "$FSROOT/@snapshots" "$FSROOT/@wormholes"
 
 cd "$ROOTFS"
 mkdir -p boot dev etc home mnt proc root run sys tmp \
 	usr/bin usr/lib usr/sbin usr/share \
-	var/cache var/lib var/log var/spool var/roothome
+	var/cache var/lib var/lib/wormholes var/log var/spool var/roothome \
+	var/usrlocal/bin
 ln -s usr/bin bin
 ln -s usr/sbin sbin
 ln -s usr/lib lib
@@ -42,6 +44,9 @@ ln -s lib usr/lib64
 ln -s ../run var/run
 ln -s ../run/lock var/lock
 ln -s ../tmp var/tmp
+# The root is read-only: locally added commands (such as the ones wh exports
+# from wormholes) live on /var.
+ln -s ../var/usrlocal usr/local
 
 wh() { "$WH" --root "$ROOTFS" --repo "file://$REPO/" --key "$WORMOS_ROOT/keys/core.pub" "$@"; }
 wh update
@@ -58,6 +63,9 @@ mkdir "$ROOTFS/var"
 
 chown -R 0:0 "$FSROOT"
 chmod 0700 root "$FSROOT/@var/roothome" "$FSROOT/@snapshots"
+# Users run wormhole programs, so they must be able to reach them; the
+# mount is nosuid, so set-ID files inside grant nothing.
+chmod 0755 "$FSROOT/@wormholes"
 chmod 1777 tmp
 chmod 0600 etc/shadow
 

@@ -12,17 +12,21 @@ MONO_LIBS   ?= -lmonocypher
 PREFIX  ?= /usr
 BINDIR  ?= $(PREFIX)/bin
 
-SRCS = wh.c repo.c db.c pkg.c util.c sig.c ../snap/sha256.c
+SRCS = wh.c repo.c db.c pkg.c foreign.c util.c sig.c ../snap/sha256.c
 
-all: wh
+all: wh whc
 
 wh: $(SRCS) wh.h sig.h
 	$(CC) $(CFLAGS) $(MONO_CFLAGS) $(LDFLAGS) -o $@ $(SRCS) $(MONO_LIBS)
 
-install: wh
+whc: whc.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ whc.c
+
+install: wh whc
 	install -Dm755 wh $(DESTDIR)$(BINDIR)/wh
+	install -Dm755 whc $(DESTDIR)$(BINDIR)/whc
 
 clean:
-	rm -f wh
+	rm -f wh whc
 
 .PHONY: all install clean

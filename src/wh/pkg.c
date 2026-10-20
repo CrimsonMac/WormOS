@@ -199,6 +199,7 @@ struct entry {
 	unsigned mode;
 	unsigned long long size;
 	long long mtime;
+	unsigned uid, gid;
 };
 
 /* Read a pax extended header's records into e. */
@@ -233,6 +234,10 @@ static int read_pax(struct stream *s, unsigned long long size, struct entry *e,
 			} else if (strcmp(sp + 1, "size") == 0) {
 				e->size = strtoull(eq + 1, NULL, 10);
 				*have_size = 1;
+			} else if (strcmp(sp + 1, "uid") == 0) {
+				e->uid = strtoul(eq + 1, NULL, 10) + 1;   /* +1: set */
+			} else if (strcmp(sp + 1, "gid") == 0) {
+				e->gid = strtoul(eq + 1, NULL, 10) + 1;
 			}
 		}
 		pos += len;
@@ -303,11 +308,15 @@ static int next_entry(struct stream *s, struct entry *e)
 		e->type = type ? type : '0';
 		e->mode = octal((char *)h + 100, 8) & 07777;
 		e->mtime = octal((char *)h + 136, 12);
+		/* Owner from a pax header (stored +1) wins over the ustar field. */
+		e->uid = e->uid ? e->uid - 1 : octal((char *)h + 108, 8);
+		e->gid = e->gid ? e->gid - 1 : octal((char *)h + 116, 8);
 		return 1;
 	}
 }
 
-static int open_stream(const char *wpkg, struct stream *s)
+/* Read the output of a decompressor (argv) as the tar stream. */
+static int open_stream_cmd(char *const argv[], struct stream *s)
 {
 	int pipefd[2];
 
@@ -318,7 +327,7 @@ static int open_stream(const char *wpkg, struct stream *s)
 		return -1;
 	if (s->pid == 0) {
 		dup2(pipefd[1], STDOUT_FILENO);
-		execlp("zstd", "zstd", "-dcq", wpkg, (char *)NULL);
+		execvp(argv[0], argv);
 		_exit(127);
 	}
 	close(pipefd[1]);
@@ -326,10 +335,23 @@ static int open_stream(const char *wpkg, struct stream *s)
 	return 0;
 }
 
+static int open_stream(const char *wpkg, struct stream *s)
+{
+	return open_stream_cmd((char *[]){ "zstd", "-dcq", (char *)wpkg, NULL }, s);
+}
+
 static int close_stream(struct stream *s)
 {
+	char buf[BLOCK * 16];
 	int status;
 
+	/*
+	 * Read to the end: tar archives are padded past their end marker, and
+	 * closing the pipe early could kill the decompressor with SIGPIPE
+	 * while it still writes the padding, which looks like a failure.
+	 */
+	while (read(s->fd, buf, sizeof(buf)) > 0)
+		;
 	close(s->fd);
 	while (waitpid(s->pid, &status, 0) < 0)
 		if (errno != EINTR)
@@ -818,4 +840,124 @@ int pkg_remove(const char *name)
 	}
 	db_free_files(paths, count);
 	return db_remove(name);
+}
+
+/* ---- plain unpacking ---- */
+
+/*
+ * Unpack a tar stream (the output of the decompressor argv) into the root,
+ * keeping owners and modes. Paths are cleaned and resolved inside the root
+ * as for packages, but nothing is recorded or checked against hashes: this
+ * is for archives already verified by other means (Debian packages being
+ * bootstrapped, checked against their signed index).
+ */
+int tar_unpack(char *const argv[])
+{
+	struct stream s;
+	struct entry e;
+	char tmp[NAME_MAX];
+	int r, ret = -1;
+
+	if (open_stream_cmd(argv, &s) < 0)
+		return -1;
+	snprintf(tmp, sizeof(tmp), ".wh-new-%d", (int)getpid());
+	while ((r = next_entry(&s, &e)) == 1) {
+		struct timespec times[2] = { { 0, UTIME_OMIT }, { e.mtime, 0 } };
+		const char *leaf;
+		int pfd, ok = 1;
+
+		/* The archive's own top directory ("./") is the root itself. */
+		if (strcmp(e.path, ".") == 0 || strcmp(e.path, "./") == 0) {
+			if (e.size && skip(&s, padded(e.size)) < 0)
+				goto out;
+			continue;
+		}
+		if (clean_path(e.path) < 0) {
+			warn("unsafe path '%s' in the archive", e.path);
+			goto out;
+		}
+		if ((pfd = open_parent(e.path, &leaf, 1)) < 0) {
+			warn("cannot open the folder of %s: %s", e.path, strerror(errno));
+			goto out;
+		}
+		switch (e.type) {
+		case '5': {
+			struct stat st;
+
+			if (mkdirat(pfd, leaf, 0700) == 0 || errno == EEXIST)
+				ok = fstatat(pfd, leaf, &st, 0) == 0 && S_ISDIR(st.st_mode) &&
+				     fchownat(pfd, leaf, e.uid, e.gid, 0) == 0 &&
+				     fchmodat(pfd, leaf, e.mode, 0) == 0;
+			else
+				ok = 0;
+			break;
+		}
+		case '0':
+		case '7': {
+			unsigned char buf[65536];
+			unsigned long long left = e.size;
+			int fd;
+
+			unlinkat(pfd, tmp, 0);
+			fd = openat(pfd, tmp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+			if (fd < 0) {
+				ok = 0;
+				break;
+			}
+			while (ok && left > 0) {
+				size_t take = left < sizeof(buf) ? left : sizeof(buf);
+
+				ok = read_full(&s, buf, take) == 0 &&
+				     write(fd, buf, take) == (ssize_t)take;
+				left -= take;
+			}
+			ok = ok && fchown(fd, e.uid, e.gid) == 0 && fchmod(fd, e.mode) == 0 &&
+			     futimens(fd, times) == 0;
+			ok = close(fd) == 0 && ok && renameat(pfd, tmp, pfd, leaf) == 0;
+			if (!ok)
+				unlinkat(pfd, tmp, 0);
+			ok = ok && skip(&s, padded(e.size) - e.size) == 0;
+			e.size = 0;
+			break;
+		}
+		case '2':
+			unlinkat(pfd, tmp, 0);
+			ok = symlinkat(e.link, pfd, tmp) == 0 &&
+			     fchownat(pfd, tmp, e.uid, e.gid, AT_SYMLINK_NOFOLLOW) == 0 &&
+			     renameat(pfd, tmp, pfd, leaf) == 0;
+			break;
+		case '1': {
+			const char *tleaf;
+			int tfd;
+
+			if (clean_path(e.link) < 0 || (tfd = open_parent(e.link, &tleaf, 0)) < 0) {
+				ok = 0;
+				break;
+			}
+			unlinkat(pfd, tmp, 0);
+			ok = linkat(tfd, tleaf, pfd, tmp, 0) == 0 &&
+			     renameat(pfd, tmp, pfd, leaf) == 0;
+			close(tfd);
+			break;
+		}
+		default:
+			break;          /* devices and fifos: dpkg creates them later */
+		}
+		close(pfd);
+		if (!ok) {
+			warn("cannot unpack %s: %s", e.path, strerror(errno));
+			goto out;
+		}
+		if (e.size && skip(&s, padded(e.size)) < 0)
+			goto out;
+	}
+	ret = r == 0 ? 0 : -1;
+	if (r < 0)
+		warn("the archive is damaged");
+out:
+	if (close_stream(&s) < 0 && ret == 0) {
+		warn("cannot decompress the archive");
+		ret = -1;
+	}
+	return ret;
 }

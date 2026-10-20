@@ -58,7 +58,7 @@ const char *repo_url(const char *override)
 	return url;
 }
 
-static int download(const char *url, const char *dest)
+int download(const char *url, const char *dest)
 {
 	char *argv[] = { "curl", "-fsSL", "--retry", "2",
 			 "--proto", "-all,https,http,file", "-o", (char *)dest,
@@ -67,7 +67,7 @@ static int download(const char *url, const char *dest)
 	return run(argv, NULL, 0) == 0 ? 0 : -1;
 }
 
-static int file_sha256(const char *path, char hex[65], long long *size)
+int file_sha256(const char *path, char hex[65], long long *size)
 {
 	unsigned char buf[65536], sum[SHA256_LEN];
 	struct sha256 ctx;

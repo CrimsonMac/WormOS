@@ -3,7 +3,8 @@
 #
 # Layout (GPT):
 #   1  EFI system partition (FAT32)  GRUB
-#   2  WormOS root (btrfs)           subvolumes @, @var, @home, @snapshots
+#   2  WormOS root (btrfs)           subvolumes @, @var, @home, @snapshots,
+#                                    @wormholes
 #
 # Each partition is built as a separate file and then written into the
 # disk image, so no loop devices are needed. Building the btrfs needs root
@@ -55,6 +56,7 @@ sudo mkfs.btrfs -q \
 	--subvol rw:@var \
 	--subvol rw:@home \
 	--subvol rw:@snapshots \
+	--subvol rw:@wormholes \
 	"$TMP/root.img"
 sudo rm -rf "$TMP/fsroot"
 
