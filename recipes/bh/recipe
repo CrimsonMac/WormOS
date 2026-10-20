@@ -1,0 +1,14 @@
+name=bh
+version=0.1.0
+description="Blackholes: disposable sandboxes for untrusted programs"
+depends=(glibc)
+# Builds src/bh, which also uses sources from src/common.
+localsrc=src
+
+build() {
+	make -C bh CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+}
+
+package() {
+	make -C bh DESTDIR="$pkgdir" install
+}

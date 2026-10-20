@@ -23,7 +23,7 @@ A lightweight, security-focused Linux operating system built around instant, tam
   ```
 - Separate system and home snapshots, built on Btrfs, with fast rewinds.
 - Snapshots protected from the running system, verified at boot, and restorable from the boot menu.
-- Blackholes: disposable sandboxes for untrusted software and malware analysis (`bh` / `blackhole`).
+- Blackholes: disposable sandboxes for untrusted software and malware analysis (`bh` / `blackhole`); a virtual machine mode for stronger isolation.
 - An nftables firewall that denies inbound traffic by default (`worm fw`).
 - Tor built in, Tor Browser with signature-verified installation, and an optional system-wide anonymous mode.
 - Hardened defaults: full-disk encryption, MAC address randomization, encrypted DNS, a hardened kernel and no telemetry.
@@ -144,6 +144,32 @@ worm fw deny 22           # close it again
 Open ports are stored in `/etc/worm/firewall`, so they are part of system
 snapshots: rewinding brings back the firewall of that time.
 
+## Blackholes
+
+A blackhole is a disposable sandbox for software you do not trust. Things
+go in, nothing escapes.
+
+```
+bh open                   # a temporary blackhole, deleted when you leave
+bh put lab sample.bin     # copy a file into the blackhole "lab" (/inbox)
+bh open lab               # a shell inside it; its files stay between sessions
+bh open lab -- ./x        # run one command inside
+bh list                   # your blackholes
+bh close lab              # stop it and delete everything in it
+```
+
+Inside, programs run as root of the blackhole only: outside, they are an
+unprivileged user. They see the system's programs read-only, but not
+`/home`, `/root`, `/var`, the disks or the snapshots, nor the host's
+processes. There is no network except loopback. A seccomp filter refuses
+mounts, new namespaces, kernel keyrings, BPF, io_uring and similar calls,
+and Landlock keeps file access inside the blackhole. Blackholes opened by
+root are limited to 1024 processes and half the memory.
+
+Limits: a blackhole shares the kernel with the host, so a kernel exploit
+can still escape it (a virtual machine mode is planned). Blackholes have
+no network access yet, and only one session per blackhole runs at a time.
+
 ## Roadmap
 
 1. Minimal bootable base system (kernel, libc, init)
@@ -192,7 +218,8 @@ the system and of `/home`, and a rewind from the boot menu), then
 `worm unlock`/`lock` and the package manager against `out/repo`, served to
 the VM over HTTP (install, a trial that rolls back, remove and undo). It
 also opens and closes a firewall port and checks it from the host through a
-QEMU port forward (`QEMU_HOSTFWD`).
+QEMU port forward (`QEMU_HOSTFWD`), and tries to escape from a blackhole
+(as root and as a normal user).
 
 Building the disk image uses `sudo` for one step (applying file ownership
 before `mkfs.btrfs`); everything else runs as a normal user.

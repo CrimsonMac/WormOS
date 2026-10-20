@@ -121,9 +121,53 @@ in the README.
   `/usr/sbin`. Records are in `/var/lib/wh/foreign/PKG`. Foreign installs are
   live, with no restart.
 - `whc NAME CMD`: for a normal user, a user namespace mapping only their uid
-  plus a mount namespace; for root, a mount namespace only. It shares `/dev`,
-  `/proc`, `/sys`, `/tmp`, `/home`, `/run`, resolv.conf, hosts, passwd and
-  group (user mode) and the host network.
+  plus a mount namespace; for root, a mount namespace only (helpers in
+  `src/common/ns.c`). It shares `/dev`, `/proc`, `/sys`, `/tmp`, `/home`,
+  `/run`, resolv.conf, hosts, passwd and group (user mode) and the host
+  network.
+
+## Blackholes
+
+- `src/bh/`: `bh.c` (commands, state), `box.c` (namespaces, init),
+  `sandbox.c` (Landlock, seccomp). `src/common/ns.c` holds the namespace
+  helpers shared with `whc` (ID maps, binds that keep locked mount flags,
+  pivot_root).
+- State: `/var/lib/blackholes` is sticky and world-writable like `/tmp`;
+  each user has `UID/` (0700, 0711 for root, refused unless owned by the
+  caller) holding `NAME/` with `lock` (flocked by the running bh), `pid`,
+  `info` (outside ID, creation time), `rootfs/` and `inbox/`.
+- IDs: root inside maps to one ID outside: the caller's own for a user,
+  `0x40000000 + n` (allocated per blackhole, under a lock on `UID/`) for
+  root. Root's supplementary groups are dropped first.
+- Start: `clone` with new user, mount, PID, network, IPC and UTS
+  namespaces; the parent writes the ID maps and, for root, moves the child
+  into `/sys/fs/cgroup/blackholes/NAME` (pids.max 1024, memory.max half of
+  RAM), then releases it through a pipe. The child becomes root inside,
+  re-arms `PR_SET_PDEATHSIG` (credential changes clear it), binds
+  `rootfs` onto itself, binds the host's `/usr` and `/etc` read-only, mounts
+  `/proc`, a tmpfs `/dev` with nodes bound from the host, a devpts instance
+  and `/dev/shm`, binds the inbox, pivots, unshares a cgroup namespace,
+  brings up `lo`, applies the sandbox, closes all descriptors above 2 and
+  forks the program with a clean environment. It stays as init and exits
+  with the program, which kills the rest of the PID namespace.
+- Why no overlay of `/`: overlayfs clones its lower layer, and the kernel
+  refuses to clone `/` from a user namespace because its submounts are
+  locked. `/usr` and `/etc` have no submounts and can be bound alone. Host
+  files are owned by unmapped IDs, so an overlay would not make them
+  writable anyway.
+- Sandbox: `PR_SET_NO_NEW_PRIVS`; a Landlock ruleset handling every file
+  system right of the running ABI with one rule, everything beneath the new
+  `/`; a seccomp filter that kills non-x86_64 ABIs (i386, x32), refuses
+  mounts, namespace calls (and `clone` with `CLONE_NEW*`; `clone3` gets
+  ENOSYS so libc falls back to `clone`), keyrings, BPF, perf, io_uring,
+  modules, kexec, reboot, swap, syslog, clock setting, iopl/ioperm, file
+  handles, and `TIOCSTI`/`TIOCLINUX` ioctls.
+- `bh put` opens the sources first, then (as the blackhole's ID for root)
+  creates each file in the inbox with `O_CREAT|O_EXCL|O_NOFOLLOW`: the
+  blackhole may be running and controls what is in there.
+- `bh close` sends SIGTERM to the bh holding the lock, which kills the
+  blackhole's init; it then waits for the lock and deletes the tree with
+  `*at` calls that never follow symlinks.
 
 ## worm
 

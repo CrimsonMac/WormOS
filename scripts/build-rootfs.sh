@@ -22,7 +22,7 @@ fi
 # The base system. Packages come from the signed repository (tools/wrepo)
 # and are installed with wh, as on a running system.
 PACKAGES=(base-files glibc gcc-libs busybox worminit wormrd snap wh worm linux
-	zstd curl gnupg wormhole-keyrings libmnl libnftnl nftables)
+	zstd curl gnupg wormhole-keyrings libmnl libnftnl nftables bh)
 WH=$BUILD/host/wh
 
 [ -x "$WH" ] && [ -f "$REPO/index" ] || die "run tools/wrepo first"
@@ -34,7 +34,7 @@ mkdir -p "$ROOTFS" "$FSROOT/@home" "$FSROOT/@snapshots" "$FSROOT/@wormholes"
 cd "$ROOTFS"
 mkdir -p boot dev etc home mnt proc root run sys tmp \
 	usr/bin usr/lib usr/sbin usr/share \
-	var/cache var/lib var/lib/wormholes var/log var/spool var/roothome \
+	var/cache var/lib var/lib/blackholes var/lib/wormholes var/log var/spool var/roothome \
 	var/usrlocal/bin
 ln -s usr/bin bin
 ln -s usr/sbin sbin
@@ -66,6 +66,8 @@ chmod 0700 root "$FSROOT/@var/roothome" "$FSROOT/@snapshots"
 # Users run wormhole programs, so they must be able to reach them; the
 # mount is nosuid, so set-ID files inside grant nothing.
 chmod 0755 "$FSROOT/@wormholes"
+# Shared like /tmp: each user's blackholes live in a directory of their own.
+chmod 1777 "$FSROOT/@var/lib/blackholes"
 chmod 1777 tmp
 chmod 0600 etc/shadow
 

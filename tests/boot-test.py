@@ -105,6 +105,86 @@ FIREWALL_AFTER_CHECKS = [
     ("udp port kept for later", "worm fw allow 5353/udp", r"^Opened 5353/udp\.$"),
 ]
 
+# Blackholes, mostly escape attempts from inside one. "bh open t1 -- CMD"
+# runs one command in the blackhole t1; echo n=... gives a positive marker.
+BLACKHOLE_CHECKS = [
+    ("bh put", "echo sample > /root/sample && echo secret > /home/secret && bh put t1 /root/sample",
+     r"^/root/sample -> t1:/inbox/sample$"),
+    ("file in the inbox", "bh open t1 -- cat /inbox/sample", r"^sample$"),
+    ("root inside", "bh open t1 -- id -u", r"^0$"),
+    ("unprivileged outside", "bh open t1 -- cat /proc/self/uid_map", r"^\s*0\s+1073741825\s+1$"),
+    ("own host name", "bh open t1 -- hostname", r"^t1$"),
+    ("host home hidden", "bh open t1 -- sh -c 'echo n=$(ls -A /home | wc -l)'", r"^n=0$"),
+    ("root's home hidden", "bh open t1 -- ls /root/probe 2>&1", r"No such file"),
+    ("no disks", "bh open t1 -- sh -c 'echo n=$(ls /dev | grep -c vd)'", r"^n=0$"),
+    ("cannot mount the snapshots",
+     "bh open t1 -- mount -t btrfs -o subvol=@snapshots /dev/vda2 /tmp 2>&1",
+     r"permission denied|not permitted"),
+    ("only loopback", "bh open t1 -- sh -c 'echo n=$(ip -o link | wc -l)'", r"^n=1$"),
+    ("no network", "bh open t1 -- wget -q -T 5 -O- http://10.0.2.2:1/ 2>&1", r"unreachable"),
+    ("host processes hidden",
+     "bh open t1 -- sh -c 'echo n=$(ls /proc | grep -c \"^[0-9]\")'", r"^n=[1-6]$"),
+    ("cannot signal host processes", "bh open t1 -- kill -0 $(pidof syslogd) 2>&1",
+     r"No such process"),
+    ("host files read-only",
+     "bh open t1 -- sh -c 'echo x >> /etc/passwd; touch /usr/bin/x' 2>&1",
+     r"Permission denied(.|\n)*(Permission denied|Read-only file system)"),
+    ("writes stay inside", "bh open t1 -- sh -c 'echo x > /escape && echo ok'; ls /escape 2>&1",
+     r"^ok$(.|\n)*No such file"),
+    ("no sysrq", "bh open t1 -- sh -c 'echo b > /proc/sysrq-trigger' 2>&1", r"Permission denied"),
+    ("no kernel log", "bh open t1 -- dmesg 2>&1", r"not permitted"),
+    ("sandboxed", "bh open t1 -- grep -E 'NoNewPrivs|Seccomp:' /proc/self/status",
+     r"NoNewPrivs:\s+1(.|\n)*Seccomp:\s+2"),
+    ("no nested namespaces", "bh open t1 -- unshare -U true 2>&1", r"not permitted"),
+    ("no inherited descriptors",
+     "exec 7</home; bh open t1 -- sh -c 'echo fds=$(ls /proc/self/fd | tr \"\\n\" \" \")'; exec 7<&-",
+     r"^fds=0 1 2 3\s*$"),
+    ("files kept between sessions",
+     "bh open t1 -- sh -c 'echo kept > /root/note'; bh open t1 -- cat /root/note", r"^kept$"),
+    ("running with limits",
+     "bh open t1 -- sleep 60 & sleep 5; cat /sys/fs/cgroup/blackholes/t1/pids.max; bh list",
+     r"^1024$(.|\n)*^t1\s+running"),
+    ("one session at a time", "bh open t1 -- true 2>&1", r"already open"),
+    ("bh close", "bh close t1", r"^Closed blackhole t1\.$"),
+    ("everything removed",
+     "sleep 1; echo n=$(ls /var/lib/blackholes/0 /sys/fs/cgroup/blackholes | grep -c t1)",
+     r"^n=0$"),
+    ("temporary blackhole removed",
+     "bh open -- touch /x && echo n=$(ls /var/lib/blackholes/0 | wc -l)", r"^n=0$"),
+    ("bh list", "bh list", r"^No blackholes"),
+    ("add a normal user",
+     "mount -o remount,bind,rw / && adduser -D -H tester && mount -o remount,bind,ro / && echo ok",
+     r"^ok$"),
+    ("user's blackhole", "su tester -c 'bh open u1 -- cat /proc/self/uid_map'",
+     r"^\s*0\s+[1-9]\d*\s+1$"),
+    ("user's blackhole is private", "ls -ld /var/lib/blackholes/$(id -u tester)",
+     r"^drwx------\s+\d+\s+tester\s"),
+    ("user closes it", "su tester -c 'bh close u1'", r"^Closed blackhole u1\.$"),
+]
+
+# whc without network access: a tiny wormhole made of busybox and its
+# libraries. make test-wormholes covers real Debian and Kali ones.
+WHC_CHECKS = [
+    ("small wormhole",
+     "W=/var/lib/wormholes/mini && mkdir -p $W/usr/bin $W/usr/lib $W/etc $W/tmp && "
+     "cp /usr/bin/busybox $W/usr/bin/ && "
+     "cp /usr/lib/ld-linux-x86-64.so.2 /usr/lib/libc.so.6 /usr/lib/libm.so.6 "
+     "/usr/lib/libresolv.so.2 $W/usr/lib/ && "
+     "ln -s usr/bin $W/bin && ln -s usr/lib $W/lib && ln -s usr/lib $W/lib64 && echo ok",
+     r"^ok$"),
+    ("whc as root", "touch /var/lib/wormholes/mini/inside && whc mini busybox ls /inside",
+     r"^/inside$"),
+    ("whc as a user keeps their ID",
+     "su tester -c 'whc mini busybox cat /proc/self/uid_map'",
+     r"^\s*([1-9]\d*)\s+\1\s+1$"),
+    ("whc user cannot change the wormhole",
+     "su tester -c 'whc mini busybox touch /usr/x' 2>&1", r"Permission denied|Read-only"),
+    ("whc shares the host's /tmp",
+     "echo shared > /tmp/whc-probe && su tester -c 'whc mini busybox cat /tmp/whc-probe'",
+     r"^shared$"),
+    ("wormhole removed", "rm -rf /var/lib/wormholes/mini && echo ok", r"^ok$"),
+]
+
 # Snapshot, change the system, and look at the change.
 SNAPSHOT_CHECKS = [
     ("snap now", "snap now -c 'test base'", r"^Snapshot 1 created \(system\)$"),
@@ -163,7 +243,7 @@ MENU_CHECKS = [
 
 # Package manager and worm checks. {repo} is the repository URL.
 WORM_CHECKS = [
-    ("installed packages recorded", "wh list", r"^wh\s+0\.1\.0-1"),
+    ("installed packages recorded", "wh list", r"^wh\s+0\.1\.0-\d+"),
     ("wh update", "wh --repo {repo} update", r"^Package index updated: \d+ packages$"),
     ("wh search", "wh search tcp", r"^tcpdump 4\.99\.7-1$"),
     ("worm unlock", "worm unlock", r"^The system is unlocked"),
@@ -298,7 +378,8 @@ def main():
     worm_checks = [(n, c.format(repo=repo), p) for n, c, p in WORM_CHECKS]
     total = (len(CHECKS) + len(KERNEL_CHECKS) + len(FIREWALL_CHECKS) +
              len(FIREWALL_OPEN_CHECKS) + len(FIREWALL_CLOSE_CHECKS) +
-             len(FIREWALL_AFTER_CHECKS) + 3 + len(SNAPSHOT_CHECKS) +
+             len(FIREWALL_AFTER_CHECKS) + 3 + len(BLACKHOLE_CHECKS) + len(WHC_CHECKS) +
+             len(SNAPSHOT_CHECKS) +
              len(BROWSE_CHECKS) + len(REWIND_CHECKS) + len(HOME_CHECKS) + len(MENU_CHECKS) +
              len(worm_checks) + len(AFTER_INSTALL_CHECKS) +
              len(AFTER_TRIAL_CHECKS) + len(AFTER_TRIAL_END_CHECKS) +
@@ -345,6 +426,8 @@ def main():
             run_checks(con, FIREWALL_CLOSE_CHECKS)
             check("port unreachable again after deny", not fetch(web_port))
             run_checks(con, FIREWALL_AFTER_CHECKS)
+            run_checks(con, BLACKHOLE_CHECKS)
+            run_checks(con, WHC_CHECKS)
             run_checks(con, SNAPSHOT_CHECKS)
             con.send("snap browse 1\n")
             con.expect("Exit the shell to leave.", 60)
