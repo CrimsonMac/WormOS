@@ -41,7 +41,7 @@ static void usage(FILE *out)
 	fputs(
 "usage: snap COMMAND [ARGS]\n"
 "\n"
-"  now [-c COMMENT]         take a snapshot\n"
+"  now [-c COMMENT]         take a snapshot (--suspect: never used by safe mode)\n"
 "  list                     list snapshots\n"
 "  rewind [ID] [-y]         go back to the last snapshot (or ID) and restart\n"
 "  diff ID [ID2]            show what changed since ID, or between ID and ID2\n"
@@ -155,6 +155,7 @@ struct opts {
 	int automatic;
 	int keep;
 	int trial;
+	int suspect;
 	const char *comment;
 };
 
@@ -169,6 +170,7 @@ static int parse_opts(int argc, char **argv, struct opts *o, const char *allowed
 		{ "auto",    no_argument,       NULL, 'a' },
 		{ "keep",    required_argument, NULL, 'k' },
 		{ "try",     no_argument,       NULL, 'T' },
+		{ "suspect", no_argument,       NULL, 'u' },
 		{ NULL, 0, NULL, 0 },
 	};
 	int c;
@@ -187,6 +189,7 @@ static int parse_opts(int argc, char **argv, struct opts *o, const char *allowed
 		case 'a': o->automatic = 1; break;
 		case 'k': o->keep = parse_id_arg(optarg); break;
 		case 'T': o->trial = 1; break;
+		case 'u': o->suspect = 1; break;
 		}
 	}
 	if (!o->scope)
@@ -214,8 +217,8 @@ static int cmd_now(int argc, char **argv)
 	struct opts o;
 	int id;
 
-	if (parse_opts(argc, argv, &o, "SHAca") != argc)
-		die("usage: snap now [-c COMMENT] [--system|--home|--all]");
+	if (parse_opts(argc, argv, &o, "SHAcau") != argc)
+		die("usage: snap now [-c COMMENT] [--system|--home|--all] [--suspect]");
 	open_store();
 	store_lock();
 	if (o.automatic && !config_auto())
@@ -223,6 +226,8 @@ static int cmd_now(int argc, char **argv)
 	id = store_create(o.scope, o.automatic ? "auto" : "manual", o.comment);
 	if (id < 0)
 		return 1;
+	if (o.suspect && store_mark_suspect(id) < 0)
+		warn("cannot mark snapshot %d as suspect", id);
 	printf("Snapshot %d created (%s)\n", id, scope_name(o.scope));
 	return 0;
 }

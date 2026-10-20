@@ -144,6 +144,23 @@ worm fw deny 22           # close it again
 Open ports are stored in `/etc/worm/firewall`, so they are part of system
 snapshots: rewinding brings back the firewall of that time.
 
+## When something goes wrong
+
+```
+worm status               # the state of the system's protections
+worm panic                # cut the network, stop all blackholes, snapshot
+worm panic off            # bring the network back
+```
+
+`worm panic` drops all traffic and takes the network devices down, stops
+every blackhole (keeping their files), and saves the system and homes as a
+pinned snapshot for later analysis.
+
+The boot menu has a **safe mode** entry: it rewinds to the newest
+known-good snapshot and starts without network. Snapshots left behind by a
+rewind and those saved by `worm panic` never count as known-good. Restart
+normally to leave safe mode.
+
 ## Privacy and hardening
 
 - DNS goes to a local resolver (unbound) that validates DNSSEC and sends
@@ -233,8 +250,9 @@ the system and of `/home`, and a rewind from the boot menu), then
 `worm unlock`/`lock` and the package manager against `out/repo`, served to
 the VM over HTTP (install, a trial that rolls back, remove and undo). It
 also opens and closes a firewall port and checks it from the host through a
-QEMU port forward (`QEMU_HOSTFWD`), and tries to escape from a blackhole
-(as root and as a normal user).
+QEMU port forward (`QEMU_HOSTFWD`), tries to escape from a blackhole (as
+root and as a normal user), runs `worm panic` and boots safe mode from the
+menu.
 
 Building the disk image uses `sudo` for one step (applying file ownership
 before `mkfs.btrfs`); everything else runs as a normal user.

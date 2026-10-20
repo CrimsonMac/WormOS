@@ -1,3 +1,4 @@
 # Random MAC addresses and IPv6 privacy addresses, before the network.
 type = oneshot
 exec = /usr/lib/worm/net-privacy
+safe = no

@@ -8,7 +8,9 @@
  *         pending        a rewind to apply at the next boot: "<id> <scope>"
  *         grub.cfg       boot menu entries (see menu.c)
  *         <id>/
- *             info       metadata, key = value
+ *             info       metadata, key = value ("suspect = yes" marks a
+ *                        state that is not known to be good: the one left
+ *                        by a rewind, or one saved by worm panic)
  *             system     read-only snapshot of @    (when in scope)
  *             home       read-only snapshot of @home (when in scope)
  *             system.manifest, home.manifest
@@ -154,6 +156,8 @@ static int parse_info(const char *path, struct snapshot *s)
 			snprintf(s->type, sizeof(s->type), "%s", val);
 		else if (strcmp(key, "pinned") == 0)
 			s->pinned = strcmp(val, "yes") == 0;
+		else if (strcmp(key, "suspect") == 0)
+			s->suspect = strcmp(val, "yes") == 0;
 		else if (strcmp(key, "comment") == 0)
 			snprintf(s->comment, sizeof(s->comment), "%s", val);
 		else if (strcmp(key, "system-sum") == 0)
@@ -247,6 +251,8 @@ static int write_info(const char *dir, const struct snapshot *s)
 		     "date = %lld\ntype = %s\npinned = %s\ncomment = %s\n",
 		     (long long)s->date, s->type, s->pinned ? "yes" : "no",
 		     s->comment);
+	if (s->suspect)
+		n += snprintf(buf + n, sizeof(buf) - n, "suspect = yes\n");
 	for (int i = 0; i < 2; i++)
 		if (s->sum[i][0])
 			n += snprintf(buf + n, sizeof(buf) - n, "%s-sum = %s\n",
@@ -263,6 +269,16 @@ int store_write_info(const struct snapshot *s)
 		return -1;
 	menu_update();
 	return 0;
+}
+
+int store_mark_suspect(int id)
+{
+	struct snapshot s;
+
+	if (store_get(id, &s) < 0)
+		return -1;
+	s.suspect = 1;
+	return store_write_info(&s);
 }
 
 static int next_id(void)

@@ -4,6 +4,8 @@
  *     worm unlock             make the system writable for manual changes
  *     worm lock [-c TEXT]     make it read-only again and snapshot the changes
  *     worm fw ...             the firewall (see fw.c)
+ *     worm status             the state of the system's protections
+ *     worm panic [off]        cut the network, stop blackholes, snapshot
  *
  * Only the mount of / changes (a bind remount), never the filesystem, so
  * /var and /home are not affected. Unlocking is a guard against accidents,
@@ -31,6 +33,28 @@ void die(const char *fmt, const char *arg)
 	fprintf(stderr, fmt, arg);
 	fputc('\n', stderr);
 	exit(1);
+}
+
+void warn(const char *fmt, const char *arg)
+{
+	fprintf(stderr, "worm: ");
+	fprintf(stderr, fmt, arg);
+	fputc('\n', stderr);
+}
+
+int safe_mode(void)
+{
+	char line[4096], *tok, *save;
+	FILE *f = fopen("/proc/cmdline", "re");
+	int safe = 0;
+
+	if (!f)
+		return 0;
+	if (fgets(line, sizeof(line), f))
+		for (tok = strtok_r(line, " \n", &save); tok; tok = strtok_r(NULL, " \n", &save))
+			safe |= strcmp(tok, "wormos.safe") == 0;
+	fclose(f);
+	return safe;
 }
 
 int run(char *const argv[], char *out, size_t len, int quiet)
@@ -250,7 +274,7 @@ static int cmd_lock(const char *comment)
 
 static void usage(FILE *out)
 {
-	fputs("usage: worm unlock | lock [-c COMMENT]\n"
+	fputs("usage: worm status | panic [off] | unlock | lock [-c COMMENT]\n"
 	      "       worm fw status | allow PORT[/tcp|/udp] | deny PORT[/tcp|/udp] | load\n"
 	      "PORT is a number or a range such as 6000-6010; tcp is the default.\n", out);
 }
@@ -269,6 +293,15 @@ int main(int argc, char **argv)
 		die("this needs root, try again with su%s", "");
 	if (!strcmp(argv[1], "fw")) {
 		int r = cmd_fw(argc - 2, argv + 2);
+
+		if (r == 2)
+			usage(stderr);
+		return r;
+	}
+	if (!strcmp(argv[1], "status") && argc == 2)
+		return cmd_status();
+	if (!strcmp(argv[1], "panic")) {
+		int r = cmd_panic(argc - 2, argv + 2);
 
 		if (r == 2)
 			usage(stderr);

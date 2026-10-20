@@ -40,6 +40,7 @@ struct snapshot {
 	int scope;                      /* SCOPE_* bits present */
 	char type[16];                  /* manual, auto */
 	int pinned;
+	int suspect;                    /* not a known-good state (safe mode skips it) */
 	char comment[COMMENT_MAX];
 	char sum[2][SHA256_HEX];        /* manifest checksums: system, home */
 };
@@ -82,6 +83,7 @@ int store_delete(int id);
 void store_cleanup(void);
 void subvol_delete_old(const char *subvol);
 int store_write_info(const struct snapshot *s);
+int store_mark_suspect(int id);
 void store_entry_path(char *out, size_t len, int id, int scope);
 int config_auto(void);
 void config_set_auto(int on);

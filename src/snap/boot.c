@@ -71,6 +71,8 @@ int boot_rewind(int id, int scope)
 		warn("cannot save the current state, rewind cancelled");
 		return -1;
 	}
+	/* The state being left is not one to come back to in safe mode. */
+	store_mark_suspect(before);
 	fprintf(stderr, "snap: saved the current %s as snapshot %d\n",
 		scope_desc(scope), before);
 

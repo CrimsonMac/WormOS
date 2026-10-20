@@ -213,6 +213,38 @@ WHC_CHECKS = [
     ("wormhole removed", "rm -rf /var/lib/wormholes/mini && echo ok", r"^ok$"),
 ]
 
+STATUS_CHECKS = [
+    ("worm status", "worm status",
+     r"System\s+read-only(.|\n)*Mode\s+normal(.|\n)*Packages\s+no change waiting(.|\n)*"
+     r"Firewall\s+active, 1 open port(.|\n)*DNS\s+encrypted(.|\n)*Blackholes\s+0 running"
+     r"(.|\n)*Kernel\s+lockdown integrity(.|\n)*io_uring off"),
+]
+
+# worm panic, at the end: its snapshot would change the IDs checked above.
+# {repo} is the repository URL.
+PANIC_CHECKS = [
+    ("a blackhole running", "bh open p1 -- sleep 600 & sleep 5; bh list", r"^p1\s+running"),
+    ("worm panic", "worm panic",
+     r"Network cut(.|\n)*Stopped 1 blackhole(.|\n)*snapshot \d+ \(pinned"),
+    ("blackhole stopped, files kept", "sleep 1; bh list", r"^p1\s+idle"),
+    ("devices down", "ip -o link show eth0", r"^\d+: eth0: <(?![^>]*\bUP\b)"),
+    ("nothing gets out", "wget -q -T 5 -O- {repo}index 2>&1 | head -1", r"\S"),
+    ("panic snapshot pinned", "snap list", r"^\s*\d+\*.*all\s+manual\s+Panic at"),
+    ("firewall refuses changes", "worm fw allow 22 2>&1", r"network is cut"),
+    ("status shows it", "worm status", r"Firewall\s+network cut"),
+    ("worm panic off", "worm panic off", r"network is back"),
+    ("network works again", "sleep 5; wh --repo {repo} update",
+     r"^Package index updated: \d+ packages$"),
+]
+
+# After booting the menu's safe mode entry.
+SAFE_CHECKS = [
+    ("safe mode", "worm status", r"Mode\s+SAFE MODE"),
+    ("network not started", "pidof udhcpc || echo none", r"^none$"),
+    ("network cut", "worm fw status", r"network is cut"),
+    ("stays cut until a normal restart", "worm panic off 2>&1", r"restart normally"),
+]
+
 # Snapshot, change the system, and look at the change.
 SNAPSHOT_CHECKS = [
     ("snap now", "snap now -c 'test base'", r"^Snapshot 1 created \(system\)$"),
@@ -404,7 +436,9 @@ def main():
     passed = 0
     repo = serve_repo()
     worm_checks = [(n, c.format(repo=repo), p) for n, c, p in WORM_CHECKS]
+    panic_checks = [(n, c.format(repo=repo), p) for n, c, p in PANIC_CHECKS]
     total = (len(CHECKS) + len(KERNEL_CHECKS) + len(DNS_CHECKS) + len(FIREWALL_CHECKS) +
+             len(STATUS_CHECKS) + len(panic_checks) + len(SAFE_CHECKS) + 2 +
              len(FIREWALL_OPEN_CHECKS) + len(FIREWALL_CLOSE_CHECKS) +
              len(FIREWALL_AFTER_CHECKS) + 3 + len(BLACKHOLE_CHECKS) + len(WHC_CHECKS) +
              len(SNAPSHOT_CHECKS) +
@@ -457,6 +491,7 @@ def main():
             run_checks(con, FIREWALL_AFTER_CHECKS)
             run_checks(con, BLACKHOLE_CHECKS)
             run_checks(con, WHC_CHECKS)
+            run_checks(con, STATUS_CHECKS)
             run_checks(con, SNAPSHOT_CHECKS)
             con.send("snap browse 1\n")
             con.expect("Exit the shell to leave.", 60)
@@ -484,9 +519,11 @@ def main():
             run_checks(con, HOME_CHECKS)
 
             # Reboot and pick the newest snapshot from the boot menu: down to
-            # the submenu, enter it, take its first entry.
+            # the submenu (after safe mode), enter it, take its first entry.
             con.send("reboot\n")
             con.expect("Rewind to a snapshot", args.timeout)
+            con.send("\x1b[B")
+            time.sleep(0.5)
             con.send("\x1b[B")
             time.sleep(0.5)
             con.send("\r")
@@ -514,6 +551,27 @@ def main():
             run_checks(con, AFTER_REMOVE_CHECKS)
             restart_with(con, "undo applied", "wh undo", "rewound system to snapshot")
             run_checks(con, AFTER_UNDO_CHECKS)
+
+            run_checks(con, panic_checks)
+            panic_id = re.search(r"^\s*(\d+)\*.*Panic at", con.run("snap list"), re.MULTILINE)
+
+            # Safe mode, the second entry: a known-good snapshot, never the
+            # one saved by the panic.
+            con.send("reboot\n")
+            out = con.expect("Rewind to a snapshot", args.timeout)
+            con.send("\x1b[B")
+            time.sleep(0.5)
+            con.send("\r")
+            out = con.expect("login:", args.timeout)
+            rewound = re.search(r"rewound system to snapshot (\d+)", out)
+            check("safe mode rewinds to a known-good snapshot",
+                  rewound is not None and panic_id is not None and
+                  rewound.group(1) != panic_id.group(1), out[-500:])
+            check("safe mode leaves out the network",
+                  "safe mode: not starting 30-network" in out, out[-500:])
+            con.send("root\n")
+            con.expect("# ", 60)
+            run_checks(con, SAFE_CHECKS)
 
             con.send("poweroff\n")
             con.expect("Power down", 120)

@@ -86,9 +86,15 @@ menuentry "WormOS" {
 	initrd /@/boot/initramfs.img
 }
 
-# Entries for recent snapshots, maintained by snap.
+# Safe mode and entries for recent snapshots, maintained by snap. Before
+# the first snapshot, safe mode boots the current system.
 if [ -f /@snapshots/grub.cfg ]; then
 	source /@snapshots/grub.cfg
+else
+	menuentry "Safe mode (no network)" {
+		linux /@/boot/vmlinuz \$wormos_cmdline wormos.safe
+		initrd /@/boot/initramfs.img
+	}
 fi
 EOF
 

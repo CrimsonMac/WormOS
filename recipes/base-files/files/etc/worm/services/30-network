@@ -1,3 +1,4 @@
 # DHCP on the first ethernet interface.
 type = respawn
 exec = udhcpc -f -S -i eth0 -s /usr/lib/worm/dhcp-event > /dev/null
+safe = no

@@ -151,6 +151,36 @@ in the README.
 - Recipes can declare `users=(NAME)`: wh adds a system group and user with
   a locked password, no home and nologin (IDs from 999 down).
 
+## Panic and safe mode
+
+- `worm panic` (`src/worm/panic.c`): `fw_cut()` writes the marker
+  `/run/worm/network-cut` and loads a table dropping everything but
+  loopback in input, output and forward; hardware devices go down (the
+  DHCP script leaves them down while the marker exists). Then every
+  running blackhole of every user is stopped: the bh holding its lock gets
+  SIGKILL and its init follows through `PR_SET_PDEATHSIG`. The PID comes
+  from the user's `pid` file, so it is only signalled when that process
+  belongs to the owner of the user's directory and is not PID 1; waiting
+  for the lock is bounded. Root's blackhole cgroups get `cgroup.kill` and
+  are removed. Last, `snap now --all --suspect` and `snap pin`.
+- `worm panic off` removes the marker, reloads the normal rules, brings
+  the devices up and sends SIGUSR1 to udhcpc (taking a device down dropped
+  its routes).
+- Snapshots marked `suspect = yes` in `info`: the "Before rewind" ones
+  (`snap boot`) and `snap now --suspect` (panic).
+- `menu.c` writes a safe mode entry before the "Rewind to a snapshot"
+  submenu: the newest system snapshot not marked suspect, booted with
+  `wormos.rewind=ID wormos.safe` (the current system before the first
+  snapshot; the ESP grub.cfg has the same fallback when the store has no
+  grub.cfg yet).
+- With `wormos.safe`, worminit skips services marked `safe = no`
+  (`25-net-privacy`, `30-network`) and `worm fw load` cuts the network. A
+  soft reboot keeps the kernel command line, so safe mode lasts until a
+  full restart.
+- `worm status` (`status.c`) summarises the root mount, mode, snapshots
+  (`snap list`, `snap auto`), staged package changes, firewall, the
+  resolver, blackholes, lockdown and io_uring.
+
 ## Blackholes
 
 - `src/bh/`: `bh.c` (commands, state), `box.c` (namespaces, init),

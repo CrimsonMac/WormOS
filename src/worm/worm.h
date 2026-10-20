@@ -18,6 +18,22 @@ int run(char *const argv[], char *out, size_t len, int quiet);
 int root_begin_change(void);
 void root_end_change(int relock);
 
+void warn(const char *fmt, const char *arg);
+
+/* Booted in safe mode (wormos.safe on the kernel command line). */
+int safe_mode(void);
+
 int cmd_fw(int argc, char **argv);
+int cmd_panic(int argc, char **argv);
+int cmd_status(void);
+
+/* The firewall (fw.c): cutting the network and bringing it back. */
+int fw_cut(void);
+int fw_restore(void);
+int fw_network_cut(void);
+const char *fw_summary(void);
+
+/* Count blackholes of all users; with stop, kill the running ones. */
+int blackholes_each(int stop, int *total);
 
 #endif

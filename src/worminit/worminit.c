@@ -15,6 +15,9 @@
  * daemon   start and leave running
  * respawn  start and restart whenever it exits
  *
+ * "safe = no" leaves a service out in safe mode (wormos.safe on the kernel
+ * command line, from the boot menu), such as the network.
+ *
  * Shutdown is requested with signals (compatible with busybox halt, poweroff
  * and reboot): SIGUSR1 halts, SIGUSR2 powers off, SIGTERM and SIGINT reboot.
  *
@@ -57,6 +60,7 @@ struct service {
 	char name[NAME_MAX + 1];
 	char exec[MAX_EXEC];
 	enum svc_type type;
+	int unsafe;             /* not started in safe mode */
 	pid_t pid;
 	time_t started;
 	time_t restart_at;      /* 0 when no restart is pending */
@@ -189,6 +193,8 @@ static int parse_service(const char *dir, const char *file, struct service *svc)
 				svc->type = SVC_RESPAWN;
 			else
 				log_msg("%s:%d: unknown type '%s'", path, lineno, value);
+		} else if (strcmp(key, "safe") == 0) {
+			svc->unsafe = strcmp(value, "no") == 0;
 		} else {
 			log_msg("%s:%d: unknown key '%s'", path, lineno, key);
 		}
@@ -207,10 +213,27 @@ static int name_filter(const struct dirent *d)
 	return d->d_name[0] != '.';
 }
 
+/* Safe mode: wormos.safe on the kernel command line. */
+static int safe_mode(void)
+{
+	char line[4096], *tok, *save;
+	FILE *f = fopen("/proc/cmdline", "re");
+	int safe = 0;
+
+	if (!f)
+		return 0;
+	if (fgets(line, sizeof(line), f))
+		for (tok = strtok_r(line, " \n", &save); tok; tok = strtok_r(NULL, " \n", &save))
+			if (strcmp(tok, "wormos.safe") == 0)
+				safe = 1;
+	fclose(f);
+	return safe;
+}
+
 static void load_services(void)
 {
 	struct dirent **list;
-	int n, i;
+	int n, i, safe = safe_mode();
 
 	n = scandir(SERVICE_DIR, &list, name_filter, alphasort);
 	if (n < 0) {
@@ -220,8 +243,12 @@ static void load_services(void)
 	for (i = 0; i < n; i++) {
 		if (nservices < MAX_SERVICES &&
 		    parse_service(SERVICE_DIR, list[i]->d_name,
-				  &services[nservices]) == 0)
-			nservices++;
+				  &services[nservices]) == 0) {
+			if (safe && services[nservices].unsafe)
+				log_msg("safe mode: not starting %s", list[i]->d_name);
+			else
+				nservices++;
+		}
 		free(list[i]);
 	}
 	free(list);

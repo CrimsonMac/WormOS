@@ -7,6 +7,9 @@
 
 RESOLV=/run/resolv.conf
 
+# While the network is cut (worm panic), devices stay down.
+[ "$1" = deconfig ] && [ -e /run/worm/network-cut ] && exit 0
+
 case "$1" in
 deconfig)
 	ip -4 addr flush dev "$interface"
