@@ -1,0 +1,21 @@
+name=harfbuzz
+version=14.6.0
+description="Text shaping engine"
+depends=(glibc gcc-libs freetype)
+# Upstream publishes no signature: checksum pinned from the release download.
+source=(https://github.com/harfbuzz/harfbuzz/releases/download/$version/harfbuzz-$version.tar.xz)
+sha256=(d07a007327277708a2a73ae437887cdbaf282937f6d03ca5467723e9099af586)
+
+build() {
+	meson_build -Dfreetype=enabled -Dglib=disabled -Dgobject=disabled \
+		-Dcairo=disabled -Dchafa=disabled -Dicu=disabled -Dpng=disabled \
+		-Dzlib=disabled -Dgpu=disabled -Dgpu_demo=disabled -Dsubset=disabled \
+		-Draster=disabled -Dvector=disabled \
+		-Dtests=disabled -Dintrospection=disabled -Ddocs=disabled \
+		-Dutilities=disabled -Dbenchmark=disabled
+}
+
+package() {
+	meson_package
+	rm -rf "$pkgdir/usr/lib/cmake"
+}

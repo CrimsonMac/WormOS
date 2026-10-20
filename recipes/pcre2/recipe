@@ -1,0 +1,20 @@
+name=pcre2
+version=10.49
+description="Perl-compatible regular expressions"
+depends=(glibc)
+# Signed by Nicholas Wilson (A95536204A3BB489715231282A98E77EB6F24CA8).
+source=(https://github.com/PCRE2Project/pcre2/releases/download/pcre2-$version/pcre2-$version.tar.bz2)
+sha256=(53c156e1ba416a20da8e65395daa132da0d80e76910424caca3fcdae7831d384)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-static --enable-pcre2-8 --disable-pcre2-16 --disable-pcre2-32 \
+		--enable-jit
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share" "$pkgdir/usr/bin/pcre2grep" "$pkgdir/usr/bin/pcre2test"
+}

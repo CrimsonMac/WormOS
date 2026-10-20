@@ -1,0 +1,16 @@
+name=freetype
+version=2.15.0
+description="Font rendering library"
+depends=(glibc zlib libpng)
+# Signed by Werner Lemberg (E30674707856409FF1948010BE6C3AAC63AD8E3F).
+source=(https://download.savannah.gnu.org/releases/freetype/freetype-$version.tar.xz)
+sha256=(93cd47eb719c325107f2d3cf087d06299e944c3b48a40b55537302304dea1dd5)
+
+build() {
+	meson_build -Dharfbuzz=disabled -Dpng=enabled -Dzlib=system \
+		-Dbzip2=disabled -Dbrotli=disabled -Dtests=disabled
+}
+
+package() {
+	meson_package
+}

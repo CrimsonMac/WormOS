@@ -1,0 +1,19 @@
+name=libpng
+version=1.6.59
+description="PNG image library"
+depends=(glibc zlib)
+# Upstream publishes no signature: checksum pinned from the release download.
+source=(https://download.sourceforge.net/libpng/libpng-$version.tar.xz)
+sha256=(d80dd2a38a37f803cb9b6ac7b14bd6e74ddc3b654780a8380bdf93523fdb4389)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-static
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man"
+}

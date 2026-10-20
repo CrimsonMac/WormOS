@@ -1,0 +1,15 @@
+name=font-hack
+version=3.003
+description="Hack, the monospace font for the terminal"
+# Upstream publishes no signature: checksum pinned from the release download.
+source=(https://github.com/source-foundry/Hack/releases/download/v$version/Hack-v$version-ttf.tar.xz
+	Hack-v$version-LICENSE.md::https://raw.githubusercontent.com/source-foundry/Hack/v$version/LICENSE.md)
+sha256=(d9ed5d0a07525c7e7bd587b4364e4bc41021dd668658d09864453d9bb374a78d
+	1f61bb7c790c59b4b0ecdf304628b94e42ae4c8020094a8c3da73381ab212623)
+
+package() {
+	install -Dm644 -t "$pkgdir/usr/share/fonts/hack" Hack-*.ttf
+	install -Dm644 "$SOURCES/Hack-v$version-LICENSE.md" \
+		"$pkgdir/usr/share/licenses/font-hack/LICENSE.md"
+	install -Dm644 "$recipedir/files/60-hack.conf" "$pkgdir/etc/fonts/conf.d/60-hack.conf"
+}

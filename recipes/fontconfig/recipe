@@ -1,0 +1,20 @@
+name=fontconfig
+version=2.18.3
+description="Font discovery and configuration"
+depends=(glibc freetype expat)
+# Upstream publishes no signature: checksum pinned from the release download.
+source=(https://gitlab.freedesktop.org/api/v4/projects/fontconfig%2Ffontconfig/packages/generic/fontconfig/$version/fontconfig-$version.tar.xz)
+sha256=(4f7b554a38cdf78c033f666c8871f3749e14a094f65a07f630c91ed0b43d35e3)
+
+build() {
+	# The font cache cannot be built here (it needs the target's fc-cache);
+	# it is created in /var/cache/fontconfig on first use.
+	meson_build -Ddoc=disabled -Dnls=disabled -Dtests=disabled -Dtools=enabled \
+		-Dcache-build=disabled -Dxml-backend=expat -Diconv=disabled
+}
+
+package() {
+	meson_package
+	rm -rf "$pkgdir/usr/share/gettext" "$pkgdir/usr/share/locale" \
+		"$pkgdir/var"
+}

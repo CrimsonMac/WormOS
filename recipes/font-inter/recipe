@@ -1,0 +1,16 @@
+name=font-inter
+version=4.1
+description="Inter, the interface font"
+# Upstream publishes no signature: checksum pinned from the release download.
+source=(https://github.com/rsms/inter/releases/download/v$version/Inter-$version.zip)
+sha256=(9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e)
+
+build() {
+	unzip -q -o "Inter-$version.zip" InterVariable.ttf InterVariable-Italic.ttf LICENSE.txt
+}
+
+package() {
+	install -Dm644 -t "$pkgdir/usr/share/fonts/inter" InterVariable.ttf InterVariable-Italic.ttf
+	install -Dm644 LICENSE.txt "$pkgdir/usr/share/licenses/font-inter/LICENSE"
+	install -Dm644 "$recipedir/files/60-inter.conf" "$pkgdir/etc/fonts/conf.d/60-inter.conf"
+}
