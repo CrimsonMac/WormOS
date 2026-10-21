@@ -43,6 +43,33 @@ for driver in /sys/class/drm/card*/device/driver; do
 		export WLR_NO_HARDWARE_CURSORS=1
 done
 
+# Standard folders, recorded where GTK's file chooser and other programs
+# look for them.
+if [ ! -e "$HOME/.config/user-dirs.dirs" ]; then
+	mkdir -p "$HOME/.config"
+	for entry in DESKTOP:Desktop DOCUMENTS:Documents DOWNLOAD:Downloads \
+		     MUSIC:Music PICTURES:Pictures VIDEOS:Videos \
+		     PUBLICSHARE:Public TEMPLATES:Templates; do
+		mkdir -p "$HOME/${entry#*:}"
+		echo "XDG_${entry%%:*}_DIR=\"\$HOME/${entry#*:}\""
+	done > "$HOME/.config/user-dirs.dirs"
+fi
+
+# A message bus (D-Bus) for this login, at $XDG_RUNTIME_DIR/bus. Only one
+# desktop runs per user, so a socket left there is stale.
+bus=
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && command -v dbus-daemon > /dev/null; then
+	rm -f "$XDG_RUNTIME_DIR/bus"
+	dbus-daemon --session --nofork --nopidfile --nosyslog \
+		> "$XDG_RUNTIME_DIR/bus.log" 2>&1 &
+	bus=$!
+	for _ in 1 2 3 4 5 6 7 8 9 10; do
+		[ -S "$XDG_RUNTIME_DIR/bus" ] && break
+		sleep 0.2
+	done
+	export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+fi
+
 log=$XDG_RUNTIME_DIR/desktop.log
 started=$(date +%s)
 labwc > "$log" 2>&1
@@ -56,6 +83,7 @@ if [ $status -ne 0 ] && [ "${WLR_RENDERER:-}" != pixman ] &&
 	labwc > "$log" 2>&1
 	status=$?
 fi
+[ -n "$bus" ] && kill "$bus" 2> /dev/null
 if [ $status -ne 0 ]; then
 	echo "desktop: labwc exited with status $status; the end of $log:" >&2
 	tail -n 15 "$log" >&2

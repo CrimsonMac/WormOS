@@ -45,6 +45,13 @@ CHECKS = [
     ("home on @home subvolume", "grep ' /home ' /proc/mounts", r"subvol=/@home"),
     ("network configured", "ip -4 addr show eth0", r"inet 10\.0\.2\.15"),
     ("syslog running", "pidof syslogd", r"^\d+"),
+    ("system bus runs unprivileged", "stat -c %U /proc/$(pidof dbus-daemon)",
+     r"^messagebus$"),
+    ("system bus answers",
+     "dbus-send --system --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus "
+     "org.freedesktop.DBus.GetId", r'string "[0-9a-f]{32}"'),
+    ("machine ID kept in /var", "readlink /etc/machine-id; cat /etc/machine-id",
+     r"^\.\./var/lib/dbus/machine-id\n[0-9a-f]{32}$"),
     ("hostname", "hostname", r"^wormos$"),
     # The resolver keeps its trust anchor current in /var/lib/unbound.
     ("system files owned by root",
@@ -159,6 +166,7 @@ BLACKHOLE_CHECKS = [
      r"Permission denied(.|\n)*(Permission denied|Read-only file system)"),
     ("writes stay inside", "bh open t1 -- sh -c 'echo x > /escape && echo ok'; ls /escape 2>&1",
      r"^ok$(.|\n)*No such file"),
+    ("no message bus", "bh open t1 -- ls /run/dbus 2>&1", r"No such file"),
     ("no sysrq", "bh open t1 -- sh -c 'echo b > /proc/sysrq-trigger' 2>&1", r"Permission denied"),
     ("no kernel log", "bh open t1 -- dmesg 2>&1", r"not permitted"),
     ("sandboxed", "bh open t1 -- grep -E 'NoNewPrivs|Seccomp:' /proc/self/status",

@@ -85,6 +85,17 @@ SESSION_CHECKS = [
      r"^[1-9]"),
     ("wallpaper running", "pidof swaybg", r"^\d+"),
     ("welcome terminal open", "pidof foot", r"^\d+$"),
+    ("session bus for the user", "stat -c '%U %F' /run/user/1000/bus",
+     rf"^{USER} socket$"),
+    ("session bus answers",
+     f"su {USER} -c 'XDG_RUNTIME_DIR=/run/user/1000 dbus-send --session --print-reply "
+     "--dest=org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.ListNames'",
+     r'string "org\.freedesktop\.DBus"'),
+    ("programs on the desktop know the bus",
+     "tr '\\0' '\\n' < /proc/$(pidof foot | cut -d' ' -f1)/environ | grep ^DBUS_SESSION",
+     r"^DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus$"),
+    ("standard folders", f"ls -1 /home/{USER}; grep -c DIR= /home/{USER}/.config/user-dirs.dirs",
+     r"Documents(.|\n)*Downloads(.|\n)*Pictures(.|\n)*^8$"),
 ]
 
 TYPING_CHECKS = [

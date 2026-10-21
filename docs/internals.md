@@ -314,11 +314,31 @@ in the README.
 - glibc ships the `C.UTF-8` locale (compiled by the target's localedef
   through its own loader); `/etc/profile` sets `LANG=C.UTF-8`.
 
+## Message bus
+
+- `dbus` is the reference D-Bus daemon (expat only; no systemd, X11
+  autolaunch, SELinux or AppArmor). The service `40-dbus` runs the system
+  bus as the `messagebus` user on `/run/dbus/system_bus_socket`. There is
+  no setuid activation helper: no system service is started on demand.
+- `/etc/machine-id` links to `/var/lib/dbus/machine-id`, created by
+  `dbus-uuidgen --ensure` at the first boot, so each installation has its
+  own ID while `/etc` stays read-only.
+- Each desktop login gets a session bus, started by the session script
+  before labwc and stopped after it, listening on `$XDG_RUNTIME_DIR/bus`
+  (`unix:runtime=yes`, also the default address clients try). Wormholes
+  share `/run`, so their programs find both buses; blackholes see neither.
+  labwc's `autostart` passes `WAYLAND_DISPLAY` and `XDG_CURRENT_DESKTOP` to
+  the bus (`dbus-update-activation-environment`) for programs it starts on
+  demand.
+
 ## Desktop session
 
 - `wormos-desktop` holds the session: `/etc/profile.d/desktop.sh` runs
   `/usr/lib/worm/session` after a non-root login on tty1, and logging out
-  of the desktop ends the login. The session script checks
+  of the desktop ends the login. At the first login it creates the
+  standard folders (Desktop, Documents, Downloads, Music, Pictures, Videos,
+  Public, Templates) and records them in `~/.config/user-dirs.dirs`. The
+  session script checks
   `XDG_RUNTIME_DIR` (`/run/user/UID`, created by the `12-runtime-dirs`
   service and by the first-boot setup) and membership of `video`, sets the
   Wayland environment and `LIBSEAT_BACKEND=seatd`, and runs labwc with its
