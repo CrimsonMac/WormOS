@@ -1,0 +1,10 @@
+#!/bin/sh
+# The login screen: labwc running the greeter, started by wormlogin as the
+# user greeter (HOME and XDG_RUNTIME_DIR are /run/wormlogin/greeter).
+# labwc ends when the greeter does.
+
+. /usr/lib/worm/session-env
+# No session bus or settings store for the login screen.
+export GSETTINGS_BACKEND=memory GTK_USE_PORTAL=0
+run_labwc "$XDG_RUNTIME_DIR/labwc.log" -C /usr/share/wormos/greeter/labwc \
+	-S /usr/bin/wormos-greeter

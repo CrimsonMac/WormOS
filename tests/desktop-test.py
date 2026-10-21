@@ -65,10 +65,12 @@ DEVICE_CHECKS = [
     ("su is setuid root", "stat -c '%U %a' /usr/bin/su", r"^root 4755$"),
 ]
 
-SETUP_WAITING_CHECK = ("first-boot setup waiting on tty1", "cat /dev/vcs1", r"Username:")
+GREETER_MODE = "tr '\\0' '\\n' < /proc/$(pidof wormos-greeter)/environ | grep MODE"
+ACCENT = (0x7c, 0x3a, 0xed)
 
 AFTER_SETUP_CHECKS = [
     ("user created", f"grep -c '^{USER}:x:1000:' /etc/passwd", r"^1$"),
+    ("full name recorded", f"grep '^{USER}:' /etc/passwd | cut -d: -f5", r"^Tester$"),
     ("user in the desktop groups",
      f"id -Gn {USER} | tr ' ' '\\n' | grep -cxE 'wheel|video|input|render'", r"^4$"),
     ("user has a password", f"grep '^{USER}:' /etc/shadow | cut -d: -f2", r"^\$6\$"),
@@ -376,7 +378,7 @@ def main():
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, env=env)
     passed = failures = 0
-    total = (len(DEVICE_CHECKS) + 1 + len(AFTER_SETUP_CHECKS) + len(SESSION_CHECKS) +
+    total = (len(DEVICE_CHECKS) + 1 + len(AFTER_SETUP_CHECKS) + 3 + len(SESSION_CHECKS) +
              len(TYPING_CHECKS) + len(SHORTCUT_CHECKS) + len(BUDGET_CHECKS) +
              len(RESIZES) + len(WELCOME_CHECKS) + len(GTK_CHECKS) + 21)
 
@@ -410,10 +412,31 @@ def main():
             print(f"booted to login prompt in {time.time() - start:.0f}s")
             mon = Monitor(mon_path)
 
+            def screen(name):
+                path = os.path.join(ROOT, "build", f"desktop-{name}.ppm")
+                mon.cmd(f"screendump {path}")
+                time.sleep(1)
+                return read_ppm(path)
+
             def first_boot():
-                """Answer the first-boot setup on tty1, on the keyboard."""
+                """Answer the graphical first-boot setup, on the keyboard."""
+                # Wait for the setup screen: its "Get started" button.
+                deadline = time.time() + 300
+                while time.time() < deadline:
+                    w, h, px = screen("setup")
+                    if solid_block(px, w, h, ACCENT):
+                        break
+                    time.sleep(5)
+                mon.key("ret")                  # Get started
+                time.sleep(2)
+                mon.type("Tester\n")            # the user name is suggested from it
+                time.sleep(1)
                 mon.type(USER + "\n")
-                for secret in (USER_PASSWORD, USER_PASSWORD, ROOT_PASSWORD, ROOT_PASSWORD):
+                for secret in (USER_PASSWORD, USER_PASSWORD):
+                    time.sleep(1)
+                    mon.type(secret + "\n")
+                time.sleep(2)                   # the root password page
+                for secret in (ROOT_PASSWORD, ROOT_PASSWORD):
                     time.sleep(1)
                     mon.type(secret + "\n")
 
@@ -447,19 +470,18 @@ def main():
             else:
                 con.send("root\n")
                 con.expect("# ", 60)
-                run_checks(con, DEVICE_CHECKS + [SETUP_WAITING_CHECK])
+                run_checks(con, DEVICE_CHECKS)
+                out = wait_for(con, GREETER_MODE, r"MODE=setup", 300)
+                check("graphical first-boot setup shown", "MODE=setup" in out,
+                      con.run("cat /run/wormlogin/greeter.log; tail /run/wormlogin/greeter/labwc.log"))
                 first_boot()
-                out = wait_for(con, "cat /dev/vcs1", r"Done\. Log in as", 300)
-                check("first-boot setup finished", "Done. Log in as" in out, out[-300:])
+                out = wait_for(con, "snap list", r"First boot: created", 300)
+                check("first-boot setup finished", "First boot: created" in out, out[-300:])
             run_checks(con, AFTER_SETUP_CHECKS)
 
-            # Log in on tty1: the desktop starts.
-            wait_for(con, "cat /dev/vcs1", r"login:", 60)
-            mon.type(USER + "\n")
-            time.sleep(2)
-            mon.type(USER_PASSWORD + "\n")
+            # The new user is logged in right away: the desktop starts.
             out = wait_for(con, "pidof foot", r"^\d+", 300)
-            check("desktop started after login", re.search(r"^\d+", out, re.M) is not None,
+            check("desktop started after the setup", re.search(r"^\d+", out, re.M) is not None,
                   con.run("tail -n 20 /run/user/1000/desktop.log"))
             time.sleep(5)
             run_checks(con, SESSION_CHECKS)
@@ -491,11 +513,6 @@ def main():
             # Clicks on the background: the left button does nothing, the
             # right one opens the menu. New windows open in the middle; the
             # strip along the right edge shows only the wallpaper.
-            def screen(name):
-                path = os.path.join(ROOT, "build", f"desktop-{name}.ppm")
-                mon.cmd(f"screendump {path}")
-                time.sleep(1)
-                return read_ppm(path)
             qmp = Qmp(qmp_path)
             px, py = width - 60, height - 80
             box = (width - width // 8, 0, width, height)
@@ -614,6 +631,25 @@ def main():
             check("no warnings from Snapshots",
                   con.run("grep -c -i -e critical -e warning /tmp/snapshots.log") == "0",
                   con.run("cat /tmp/snapshots.log"))
+
+            # Log out: the login screen comes back. A wrong password is
+            # refused, the right one starts the desktop again.
+            # What "labwc --exit" (the shell's Log out) does.
+            con.run("kill $(pidof labwc)")
+            out = wait_for(con, GREETER_MODE, r"MODE=login", 120)
+            check("logging out shows the login screen", "MODE=login" in out,
+                  con.run("cat /run/wormlogin/greeter.log"))
+            time.sleep(8)
+            screen("login")
+            mon.type("not the password\n")
+            time.sleep(8)
+            out = con.run("pidof wormos-greeter; pidof worm-shell || echo no-desktop")
+            check("wrong password refused", out.endswith("no-desktop") and out[0].isdigit(), out)
+            mon.type(USER_PASSWORD + "\n")
+            out = wait_for(con, "pidof worm-shell", r"^\d+$", 120)
+            check("logging in starts the desktop", re.search(r"^\d+$", out, re.M) is not None,
+                  con.run("cat /run/wormlogin/greeter.log"))
+            time.sleep(10)
 
             run_checks(con, BUDGET_CHECKS)
             used = con.run("free -m | awk '/^Mem:/ { print $3 }'")

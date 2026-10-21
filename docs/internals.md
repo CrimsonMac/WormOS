@@ -450,9 +450,13 @@ in the README.
 
 ## Desktop session
 
-- `wormos-desktop` holds the session: `/etc/profile.d/desktop.sh` runs
-  `/usr/lib/worm/session` after a non-root login on tty1, and logging out
-  of the desktop ends the login. At the first login it creates the
+- `wormos-desktop` holds the session: `/usr/lib/worm/session`, started by
+  wormlogin (below) or, for a console login on tty1, by
+  `/etc/profile.d/desktop.sh` (which leaves it alone when `WORMOS_LOGIN`
+  is set); logging out of the desktop ends the login. The environment it
+  shares with the login screen (renderer choice, VMware cursor, GTK
+  settings, `run_labwc` with the pixman fallback) is in
+  `/usr/lib/worm/session-env`. At the first login it creates the
   standard folders (Desktop, Documents, Downloads, Music, Pictures, Videos,
   Public, Templates) and records them in `~/.config/user-dirs.dirs`. The
   session script checks
@@ -508,12 +512,49 @@ in the README.
   binds `/usr/share/fonts` read-only on `/usr/local/share/fonts/wormos`
   (the mount point is created when a wormhole is set up).
 - Consoles: `/usr/lib/worm/console TTY` runs getty on tty1 and tty2. On
-  tty1, while `/etc/passwd` has no user with a UID of 1000 or more, it first
-  runs `/usr/lib/worm/first-boot` there (with the tty as controlling
-  terminal): user name, user and root passwords, then `worm unlock`,
-  `adduser`, the groups `wheel video input audio render kvm`, `chpasswd -c
-  sha512` and `worm lock -c "First boot: created NAME"`, which also takes
-  a snapshot.
+  tty1 it hands over to wormlogin when that is installed, unless
+  `/run/wormlogin/console` exists; otherwise, while `/etc/passwd` has no
+  user with a UID of 1000 or more, it first runs `/usr/lib/worm/first-boot`
+  there (with the tty as controlling terminal).
+- `first-boot` creates the first account: `worm unlock`, `adduser` (with
+  the full name), the groups `wheel video input audio render kvm`,
+  `chpasswd -c sha512` for the user and root, `worm lock -c "First boot:
+  created NAME"` (which takes a snapshot), the runtime directory, and the
+  keyboard layout in `~/.config/labwc/environment`. Interactively on the
+  console, or with `--create NAME FULL-NAME LAYOUT` and the two passwords
+  on standard input (for the graphical setup).
+
+## Login
+
+- `wormos-login` (`src/login/`): `wormlogin`, the login manager on tty1,
+  and `wormos-greeter`, the login screen and first-boot setup.
+- wormlogin runs the login screen as the system user `greeter` (with the
+  groups video, input and render set directly, not in `/etc/group`; home
+  and runtime directory `/run/wormlogin/greeter`):
+  `/usr/lib/worm/greeter-session` starts labwc with the configuration in
+  `/usr/share/wormos/greeter/labwc` (no key or mouse bindings, no menu) and
+  the greeter as its session program, so labwc ends with it. There is no
+  session bus; GSettings uses its memory backend.
+- The greeter sends requests to `/run/wormlogin/socket` (SOCK_SEQPACKET,
+  owned by greeter, mode 0600; wormlogin also checks the peer's user ID):
+  NUL-separated fields, `login USER PASSWORD`, `setup NAME FULL-NAME
+  PASSWORD ROOT-PASSWORD LAYOUT` (refused once any account exists) and
+  `power off|reboot`, answered `ok` or `fail` and a message. wormlogin
+  checks passwords against `/etc/shadow` (`src/common/password.c`, two
+  seconds' wait after a failure, also for unknown users) and runs
+  `first-boot --create` for the setup, reading all of its output.
+- After a login or the setup, the greeter exits and wormlogin starts the
+  desktop as the user: a new session with tty1 as controlling terminal,
+  the user's groups (initgroups), `/run/user/UID`, a clean environment with
+  `WORMOS_LOGIN=1`, and the user's shell as a login shell running
+  `/usr/lib/worm/session`. When it ends, the login screen comes back.
+- It logs logins, failed logins, the setup and sessions to the system log
+  (authpriv, `logread`); the greeter's output is in `/run/wormlogin/greeter.log` and
+  labwc's in `/run/wormlogin/greeter/labwc.log`.
+- Fallback: without a graphics device or the greeter user, or after the
+  login screen fails three times within ten seconds of starting, wormlogin
+  creates `/run/wormlogin/console` and runs the console login instead,
+  until the next restart. tty2 always has a console login.
 - `su` is a separate, minimal busybox build holding only `su`, installed
   setuid root; the main busybox binary has no setuid applets.
 

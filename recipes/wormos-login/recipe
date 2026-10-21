@@ -1,0 +1,15 @@
+name=wormos-login
+version=0.1.0
+description="The graphical login and first-boot setup (wormlogin and the greeter)"
+depends=(glibc gtk4 labwc libxcrypt wormos-desktop wormos-gtk-theme adwaita-icon-theme)
+users=(greeter)
+# Builds src/login, which also uses sources from src/common.
+localsrc=src
+
+build() {
+	make -C login CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+}
+
+package() {
+	make -C login DESTDIR="$pkgdir" install
+}

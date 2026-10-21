@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!--
+  labwc for the login screen: the WormOS look, and no key or mouse bindings
+  (one binding that does nothing keeps labwc's defaults out).
+-->
+<labwc_config>
+  <theme>
+    <name>WormOS</name>
+    <cornerRadius>8</cornerRadius>
+  </theme>
+  <keyboard>
+    <repeatRate>40</repeatRate>
+    <repeatDelay>250</repeatDelay>
+    <keybind key="XF86WakeUp"><action name="None" /></keybind>
+  </keyboard>
+  <mouse>
+    <context name="Root">
+      <mousebind button="Left" action="Press"><action name="None" /></mousebind>
+    </context>
+  </mouse>
+  <windowRules>
+    <windowRule identifier="org.wormos.Greeter" serverDecoration="no" />
+  </windowRules>
+</labwc_config>

@@ -23,7 +23,7 @@ fi
 # and are installed with wh, as on a running system.
 PACKAGES=(base-files glibc gcc-libs busybox worminit wormrd snap wh worm linux
 	zstd curl gnupg wormhole-keyrings libmnl libnftnl nftables bh expat unbound
-	libevent tor kmod eudev seatd linux-firmware dbus open-vm-tools
+	libevent tor kmod eudev seatd linux-firmware dbus open-vm-tools wormos-login
 	wormos-desktop labwc wlroots mesa foot swaybg grim wlr-randr xcompose font-inter font-hack)
 WH=$BUILD/host/wh
 
