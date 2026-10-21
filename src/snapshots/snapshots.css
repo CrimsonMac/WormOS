@@ -1,0 +1,127 @@
+/* The Snapshots program, on top of the WormOS GTK theme. */
+
+/* The theme styles suggested-action on buttons, not on menu buttons. */
+menubutton.suggested-action > button {
+	background: #7c3aed;
+	color: #ffffff;
+	border-color: #5b21b6;
+}
+
+menubutton.suggested-action > button:hover {
+	background: #8b5cf6;
+}
+
+.timeline {
+	background: none;
+	padding: 6px 10px 16px;
+}
+
+.timeline row {
+	border-radius: 12px;
+	margin: 2px 0;
+	padding: 10px 12px;
+}
+
+.timeline row:selected {
+	background: rgba(124, 58, 237, 0.28);
+	color: inherit;
+}
+
+.timeline .day {
+	font-weight: 700;
+	font-size: 12px;
+	color: #b794ff;
+	margin: 14px 12px 4px;
+}
+
+.snapshot .dot {
+	min-width: 12px;
+	min-height: 12px;
+	border-radius: 6px;
+	background: #8b5cf6;
+	box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.25);
+}
+
+.snapshot .dot.auto {
+	background: #5b4d7a;
+	box-shadow: 0 0 0 3px rgba(91, 77, 122, 0.25);
+}
+
+.snapshot .dot.pinned {
+	background: #f5b041;
+	box-shadow: 0 0 0 3px rgba(245, 176, 65, 0.25);
+}
+
+.snapshot .heading {
+	font-weight: 700;
+}
+
+.snapshot .comment {
+	color: rgba(236, 231, 245, 0.8);
+}
+
+.badge {
+	font-size: 10px;
+	font-weight: 600;
+	padding: 1px 7px;
+	border-radius: 8px;
+	background: rgba(255, 255, 255, 0.08);
+	color: rgba(236, 231, 245, 0.75);
+}
+
+.badge.accent {
+	background: rgba(245, 176, 65, 0.18);
+	color: #f5c266;
+}
+
+.badge.warning {
+	background: rgba(240, 96, 122, 0.16);
+	color: #f58da0;
+}
+
+.details {
+	padding: 28px 32px;
+}
+
+.title-1 {
+	font-size: 26px;
+	font-weight: 800;
+}
+
+.title-2 {
+	font-size: 18px;
+	font-weight: 700;
+}
+
+.section {
+	font-weight: 700;
+	margin-top: 18px;
+	color: #b794ff;
+}
+
+.placeholder {
+	color: rgba(236, 231, 245, 0.55);
+	font-size: 15px;
+	margin: 48px;
+}
+
+.dialog {
+	padding: 24px;
+}
+
+.error {
+	color: #f0607a;
+}
+
+.toast {
+	background: rgba(29, 24, 40, 0.97);
+	border: 1px solid rgba(139, 92, 246, 0.45);
+	border-radius: 14px;
+	padding: 10px 18px;
+	margin: 18px;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.toast.error {
+	border-color: rgba(240, 96, 122, 0.7);
+}

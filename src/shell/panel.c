@@ -136,7 +136,7 @@ static gboolean refresh_status(gpointer data)
 		snap_info = g_strdup("The snapshot summary is not available.");
 	} else if (s.snapshots == 0) {
 		snap_text = g_strdup("0");
-		snap_info = g_strdup("No snapshots yet.\n\nTake one as root:  snap now -c \"note\"");
+		snap_info = g_strdup("No snapshots yet.");
 	} else {
 		char *when = relative_time(s.last_date);
 
@@ -352,6 +352,78 @@ static GtkWidget *info_button(const char *icon, const char *tooltip, GtkWidget *
 	return button;
 }
 
+static void snapshot_taken(GObject *source, GAsyncResult *res, gpointer data)
+{
+	GtkWidget *label = data;
+	GError *error = NULL;
+
+	if (g_subprocess_wait_check_finish(G_SUBPROCESS(source), res, &error)) {
+		gtk_label_set_text(GTK_LABEL(label), "Snapshot taken.");
+	} else {
+		gtk_label_set_text(GTK_LABEL(label), "No snapshot: only administrators can "
+				   "take one.");
+		g_error_free(error);
+	}
+	refresh_status(NULL);
+	g_object_unref(label);
+}
+
+static void take_snapshot(GtkButton *button, gpointer data)
+{
+	struct panel *panel = data;
+	GError *error = NULL;
+	GSubprocess *proc = g_subprocess_new(G_SUBPROCESS_FLAGS_STDOUT_SILENCE |
+					     G_SUBPROCESS_FLAGS_STDERR_SILENCE, &error,
+					     "/usr/lib/worm/snapshots", "now", "system",
+					     "From the panel", NULL);
+
+	(void)button;
+	if (!proc) {
+		g_warning("cannot take a snapshot: %s", error->message);
+		g_error_free(error);
+		return;
+	}
+	gtk_label_set_text(GTK_LABEL(panel->snap_info), "Taking a snapshot...");
+	g_subprocess_wait_check_async(proc, NULL, snapshot_taken, g_object_ref(panel->snap_info));
+	g_object_unref(proc);
+}
+
+static void open_snapshots(GtkButton *button, gpointer data)
+{
+	GError *error = NULL;
+
+	(void)button;
+	gtk_popover_popdown(GTK_POPOVER(data));
+	if (!g_spawn_command_line_async("wormos-snapshots", &error)) {
+		g_warning("cannot open Snapshots: %s", error->message);
+		g_error_free(error);
+	}
+}
+
+/* The snapshot menu: the summary and the two things people do most. */
+static GtkWidget *snapshot_button(struct panel *panel)
+{
+	GtkWidget *button = info_button("camera-photo-symbolic", "Snapshots", &panel->snap_info,
+					&panel->snap_label);
+	GtkWidget *popover = GTK_WIDGET(gtk_menu_button_get_popover(GTK_MENU_BUTTON(button)));
+	GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8), *row, *take, *open;
+
+	g_object_ref(panel->snap_info);
+	gtk_popover_set_child(GTK_POPOVER(popover), box);
+	gtk_box_append(GTK_BOX(box), panel->snap_info);
+	g_object_unref(panel->snap_info);
+	row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+	take = gtk_button_new_with_label("Take a snapshot");
+	gtk_widget_add_css_class(take, "suggested-action");
+	g_signal_connect(take, "clicked", G_CALLBACK(take_snapshot), panel);
+	open = gtk_button_new_with_label("Open Snapshots");
+	g_signal_connect(open, "clicked", G_CALLBACK(open_snapshots), popover);
+	gtk_box_append(GTK_BOX(row), take);
+	gtk_box_append(GTK_BOX(row), open);
+	gtk_box_append(GTK_BOX(box), row);
+	return button;
+}
+
 static void launcher_clicked(GtkButton *button, gpointer data)
 {
 	(void)button;
@@ -415,8 +487,7 @@ static void panel_new(GdkMonitor *monitor)
 
 	end = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
 	gtk_widget_add_css_class(end, "status");
-	gtk_box_append(GTK_BOX(end), info_button("camera-photo-symbolic", "Snapshots",
-						 &panel->snap_info, &panel->snap_label));
+	gtk_box_append(GTK_BOX(end), snapshot_button(panel));
 	panel->shield = info_button("security-high-symbolic", "Protection",
 				    &panel->shield_info, NULL);
 	gtk_box_append(GTK_BOX(end), panel->shield);

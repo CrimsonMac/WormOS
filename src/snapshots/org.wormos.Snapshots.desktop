@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Snapshots
+GenericName=System snapshots
+Comment=Go back in time: take snapshots, bring back files, rewind the system
+Exec=wormos-snapshots
+Icon=org.wormos.Snapshots
+Categories=System;Utility;
+Keywords=snapshot;backup;rewind;restore;undo;timeline;
+StartupNotify=true

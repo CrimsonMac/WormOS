@@ -11,6 +11,9 @@
     <menu id="apps" label="Applications" execute="/usr/lib/worm/apps-menu" />
     <separator />
     <menu id="snapshots" label="Snapshots">
+      <item label="Open Snapshots">
+        <action name="Execute" command="wormos-snapshots" />
+      </item>
       <item label="Take a snapshot">
         <action name="Execute" command="foot --hold --title Snapshot su -c 'snap now -c &quot;From the desktop&quot;'" />
       </item>

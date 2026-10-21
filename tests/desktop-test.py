@@ -312,6 +312,20 @@ def near(pixels, width, x, y, rgb, tolerance):
     return all(abs(pixels[i + k] - rgb[k]) < tolerance for k in range(3))
 
 
+def solid_block(pixels, width, height, rgb):
+    """Centre of the solid area in colour rgb (a button, not a 1-pixel border)."""
+    xs, ys = [], []
+    for y in range(0, height - 8, 2):
+        for x in range(0, width - 16, 2):
+            if (near(pixels, width, x, y, rgb, 14) and near(pixels, width, x, y + 8, rgb, 14)
+                    and near(pixels, width, x + 16, y, rgb, 14)):
+                xs.append(x)
+                ys.append(y)
+    if not xs:
+        return None
+    return (min(xs) + max(xs) + 16) // 2, (min(ys) + max(ys) + 8) // 2
+
+
 def region_diff(a, b, width, box):
     """Count pixels that differ between two screens inside box (x0, y0, x1, y1)."""
     x0, y0, x1, y1 = box
@@ -364,7 +378,7 @@ def main():
     passed = failures = 0
     total = (len(DEVICE_CHECKS) + 1 + len(AFTER_SETUP_CHECKS) + len(SESSION_CHECKS) +
              len(TYPING_CHECKS) + len(SHORTCUT_CHECKS) + len(BUDGET_CHECKS) +
-             len(RESIZES) + len(WELCOME_CHECKS) + len(GTK_CHECKS) + 17)
+             len(RESIZES) + len(WELCOME_CHECKS) + len(GTK_CHECKS) + 21)
 
     def check(name, ok, out=""):
         nonlocal passed, failures
@@ -576,6 +590,30 @@ def main():
             out = wait_for(con, f"su {USER} -c '/tmp/in-session {SCALE}'", r"1\.25", 90)
             check("chosen scale applied", "1.25" in out, out)
             vnc.resize(1280, 800)
+            time.sleep(5)
+
+            # The Snapshots program: take a snapshot with its button.
+            # Through a script, so that a crash shows up in the log.
+            put_file(con, b"wormos-snapshots\necho exited with status $?\n", "/tmp/run-snapshots")
+            con.run(f"su {USER} -c '/tmp/in-session sh /tmp/run-snapshots > /tmp/snapshots.log 2>&1 &'")
+            out = wait_for(con, "pidof wormos-snapshots", r"^\d+$", 60)
+            check("Snapshots program started", re.search(r"^\d+$", out, re.M) is not None,
+                  con.run("cat /tmp/snapshots.log"))
+            time.sleep(6)
+            width, height, pixels = screen("snapshots")
+            button = solid_block(pixels, width, height, (0x7c, 0x3a, 0xed))
+            check("Snapshots shows its button", button is not None)
+            if button:
+                qmp.click(button[0], button[1], width, height, "left")
+                time.sleep(2)
+                mon.type("From the desktop test\n")
+            out = wait_for(con, "snap list", r"From the desktop test", 90)
+            check("snapshot taken from the program", "From the desktop test" in out, out[-300:])
+            time.sleep(3)
+            screen("snapshots-after")
+            check("no warnings from Snapshots",
+                  con.run("grep -c -i -e critical -e warning /tmp/snapshots.log") == "0",
+                  con.run("cat /tmp/snapshots.log"))
 
             run_checks(con, BUDGET_CHECKS)
             used = con.run("free -m | awk '/^Mem:/ { print $3 }'")

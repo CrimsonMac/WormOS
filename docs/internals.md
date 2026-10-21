@@ -96,6 +96,8 @@ in the README.
   `@`. The kernel keeps running.
 - Staging (`stage.c`): `snap stage begin|commit [--try]|abort|keep|status`
   works on `@.next`.
+- `snap list --raw` prints one tab-separated line per snapshot for
+  programs: ID, Unix time, scope, type, pinned, suspect, comment.
 - `status.c` keeps a summary readable by everyone in `/run/snap-status`
   (`count`, `last`, `last_date`, `last_comment`, `auto`, `pending`),
   rewritten whenever the boot menu is and by `snap status`, which the
@@ -405,9 +407,35 @@ in the README.
   then.
 - Restart and shut down use `/usr/lib/worm/power` (from the worm package),
   setuid root: it takes only `off` or `reboot`, clears its environment,
-  requires the caller (real user and groups) to be root or in `wheel`, and
-  signals PID 1 as busybox `poweroff` and `reboot` do. Logging out runs
-  `labwc --exit`.
+  requires the caller (real user and groups) to be root or in `wheel`
+  (`src/worm/admin.c`), and signals PID 1 as busybox `poweroff` and
+  `reboot` do. Logging out runs `labwc --exit`.
+- The snapshot menu also takes a snapshot (through the snapshots helper,
+  below) and opens the Snapshots program.
+
+## Snapshots program
+
+- `src/snapshots/` is `wormos-snapshots` (GTK, `org.wormos.Snapshots`):
+  the snapshots newest first, grouped by day, with badges for scope,
+  automatic, pinned and suspect ones; a details pane to edit the comment,
+  pin or unpin, show the changes since the snapshot (`snap diff`, system
+  only), restore a file or folder, rewind (the scope can be chosen for
+  snapshots holding both) and delete; and a header button that takes a
+  snapshot with a comment and scope.
+- Everything goes through `/usr/lib/worm/snapshots` (`src/worm/snapshots.c`),
+  setuid root, for root and members of `wheel`. Listing, taking a snapshot,
+  pinning, commenting and showing system changes run right away. Unpinning,
+  deleting, rewinding, restoring and turning automatic snapshots on or off
+  also need root's password on standard input, checked against
+  `/etc/shadow` with libxcrypt (two seconds' wait after a wrong one; an
+  empty field takes an empty password, a locked one none). A program
+  running as the user can add snapshots but cannot remove protection or
+  change the system. Arguments are checked (IDs, comments up to 200
+  characters without control characters, absolute paths without `..`);
+  the helper then clears the environment, becomes root completely and runs
+  snap with an argument list of its own.
+- The program passes the password from its dialog to the helper's input
+  and keeps the dialog open after a wrong one (exit status 3).
 - Launcher (`launcher.c`): an overlay layer surface with exclusive keyboard
   focus: a search field over a grid of the desktop entries GIO lists
   (`g_app_info_should_show`), filtered by name, description, generic name,
