@@ -8,11 +8,14 @@
 # --snapshot discards all disk writes when QEMU exits.
 # QEMU_HOSTFWD forwards host ports to the VM, e.g. tcp:127.0.0.1:2222-:22
 # (several separated by spaces). QEMU_EXTRA adds options (split on spaces).
+# IMAGE boots another image (raw, or qcow2 such as a release image).
 
 . "$(dirname "$0")/env.sh"
 
-IMAGE=$OUT/wormos.img
+IMAGE=${IMAGE:-$OUT/wormos.img}
 [ -f "$IMAGE" ] || die "no image, run scripts/mkimage.sh first"
+format=raw
+case $IMAGE in *.qcow2) format=qcow2 ;; esac
 
 OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
 OVMF_VARS=$OUT/OVMF_VARS.fd
@@ -43,7 +46,7 @@ exec qemu-system-x86_64 \
 	-m "${QEMU_MEM:-1024}" \
 	-drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
 	-drive if=pflash,format=raw,file="$OVMF_VARS" \
-	-drive file="$IMAGE",format=raw,if=none,id=disk0 \
+	-drive file="$IMAGE",format=$format,if=none,id=disk0 \
 	-device virtio-blk-pci,drive=disk0,bootindex=0 \
 	-netdev "$netdev" \
 	-device virtio-net-pci,netdev=net0 \

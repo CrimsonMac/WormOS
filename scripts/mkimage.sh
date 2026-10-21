@@ -43,7 +43,9 @@ mkdir -p "$TMP" "$OUT"
 # Hardening: no merged slab caches (harder heap exploits), no debugfs, a
 # strict IOMMU (no DMA passthrough, also not before the kernel takes over).
 HARDENING="slab_nomerge debugfs=off iommu.passthrough=0 iommu.strict=1 efi=disable_early_pci_dma"
-KERNEL_CMDLINE="root=UUID=$FS_UUID rootflags=subvol=@,compress=zstd ro $HARDENING console=tty0 console=ttyS0,115200"
+# quiet: only warnings and errors from the kernel on the consoles (the
+# first-boot setup and the login share tty1 with them); dmesg has the rest.
+KERNEL_CMDLINE="root=UUID=$FS_UUID rootflags=subvol=@,compress=zstd ro $HARDENING quiet console=tty0 console=ttyS0,115200"
 
 msg "Applying file ownership"
 fakeroot -i "$STATE" -- find "$FSROOT" -printf '%U %G %m %y %P\0' > "$TMP/owners"
