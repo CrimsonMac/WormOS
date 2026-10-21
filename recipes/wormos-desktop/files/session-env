@@ -1,0 +1,55 @@
+# The environment of a labwc session, for the desktop (session) and the
+# login screen (greeter-session). Sourced; defines run_labwc.
+
+export LANG=${LANG:-C.UTF-8}
+export XDG_SESSION_TYPE=wayland
+export XDG_CURRENT_DESKTOP=labwc:wlroots
+export XDG_CONFIG_DIRS=/etc/xdg
+export XDG_DATA_DIRS=/usr/local/share:/usr/share
+export LIBSEAT_BACKEND=seatd
+export MOZ_ENABLE_WAYLAND=1 QT_QPA_PLATFORM=wayland GDK_BACKEND=wayland
+export SDL_VIDEODRIVER=wayland ELECTRON_OZONE_PLATFORM_HINT=wayland
+
+# GPUs with a hardware OpenGL driver (Intel, VMware with 3D acceleration)
+# render with OpenGL ES; everything else uses the software renderer, which
+# is faster than OpenGL emulated on the CPU.
+if [ -z "${WLR_RENDERER:-}" ]; then
+	renderer=pixman
+	for driver in /sys/class/drm/card*/device/driver; do
+		case $(basename "$(readlink "$driver")") in
+		i915|xe|vmwgfx) renderer= ;;
+		esac
+	done
+	[ -n "$renderer" ] && export WLR_RENDERER=$renderer
+fi
+# There is no accessibility bus (at-spi) yet.
+export GTK_A11Y=none
+# Without a hardware OpenGL driver, GTK draws with cairo too.
+[ "${WLR_RENDERER:-}" = pixman ] && export GSK_RENDERER=cairo
+
+# VMware's cursor plane stays invisible with wlroots: draw the cursor into
+# the frame instead.
+for driver in /sys/class/drm/card*/device/driver; do
+	[ "$(basename "$(readlink "$driver")")" = vmwgfx ] &&
+		export WLR_NO_HARDWARE_CURSORS=1
+done
+
+# run_labwc LOG [ARGS...]: run labwc with its output in LOG. If OpenGL ES
+# fails right at the start (such as VMware with 3D acceleration off), it
+# starts again with the software renderer (the first log is kept as
+# LOG.gles). Returns labwc's exit status.
+run_labwc() {
+	log=$1
+	shift
+	started=$(date +%s)
+	labwc "$@" > "$log" 2>&1
+	status=$?
+	if [ $status -ne 0 ] && [ "${WLR_RENDERER:-}" != pixman ] &&
+	   [ $(($(date +%s) - started)) -lt 15 ]; then
+		mv "$log" "$log.gles"
+		export WLR_RENDERER=pixman GSK_RENDERER=cairo
+		labwc "$@" > "$log" 2>&1
+		status=$?
+	fi
+	return $status
+}

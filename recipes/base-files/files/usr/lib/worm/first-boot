@@ -2,9 +2,42 @@
 # First-boot setup: create the first user account and set the root
 # password. Runs on the first console while no user account exists.
 # --needed only tells (by its exit status) whether setup is needed.
+# --create NAME FULL-NAME LAYOUT creates the account without asking (for
+# the graphical setup): the user's and root's passwords are read from
+# standard input, one per line; LAYOUT is a keyboard layout such as de.
 
 needed() {
 	! awk -F: '$3 >= 1000 && $3 < 65534 { found = 1 } END { exit !found }' /etc/passwd
+}
+
+valid_name() {
+	case $1 in
+	""|*[!a-z0-9_-]*|[!a-z_]*) return 1 ;;
+	esac
+	[ ${#1} -le 32 ] && ! grep -q "^$1:" /etc/passwd /etc/group
+}
+
+# create_account NAME FULL-NAME LAYOUT USER-PASSWORD ROOT-PASSWORD
+create_account() {
+	worm unlock > /dev/null || return 1
+	ok=1
+	adduser -D -s /bin/sh -g "${2:-$1}" "$1" || ok=
+	if [ -n "$ok" ]; then
+		for group in wheel video input audio render kvm; do
+			addgroup "$1" "$group" || ok=
+		done
+		printf '%s:%s\nroot:%s\n' "$1" "$4" "$5" | chpasswd -c sha512 || ok=
+	fi
+	worm lock -c "First boot: created $1" > /dev/null
+	[ -n "$ok" ] || return 1
+	/usr/lib/worm/runtime-dirs
+	# The keyboard layout for the desktop.
+	if [ -n "$3" ] && [ "$3" != us ]; then
+		mkdir -p "/home/$1/.config/labwc" &&
+		echo "XKB_DEFAULT_LAYOUT=$3" > "/home/$1/.config/labwc/environment" &&
+		chown -R "$1:$1" "/home/$1/.config"
+	fi
+	return 0
 }
 
 if [ "$1" = --needed ]; then
@@ -12,6 +45,28 @@ if [ "$1" = --needed ]; then
 	exit
 fi
 needed || exit 0
+
+if [ "$1" = --create ]; then
+	[ $# -eq 4 ] || { echo "usage: first-boot --create NAME FULL-NAME LAYOUT" >&2; exit 2; }
+	valid_name "$2" || { echo "That user name cannot be used." >&2; exit 2; }
+	case $3$4 in
+	*:*|*,*) echo "The full name cannot contain : or ," >&2; exit 2 ;;
+	esac
+	case $4 in
+	*[!a-z]*) echo "Unknown keyboard layout." >&2; exit 2 ;;
+	esac
+	read -r user_password || exit 2
+	read -r root_password || exit 2
+	if [ -z "$user_password" ] || [ -z "$root_password" ]; then
+		echo "The passwords cannot be empty." >&2
+		exit 2
+	fi
+	create_account "$2" "$3" "$4" "$user_password" "$root_password" || {
+		echo "Setting up the account failed." >&2
+		exit 1
+	}
+	exit 0
+fi
 
 trap 'stty echo 2>/dev/null' EXIT INT TERM
 
@@ -56,7 +111,7 @@ while :; do
 	*)
 		if [ ${#name} -gt 32 ]; then
 			echo "At most 32 characters."
-		elif grep -q "^$name:" /etc/passwd /etc/group; then
+		elif ! valid_name "$name"; then
 			echo "That name is already in use."
 		else
 			break
@@ -72,24 +127,12 @@ password= again=
 
 echo
 echo "Creating the account..."
-worm unlock > /dev/null || exit 1
-ok=1
-adduser -D -s /bin/sh -g "$name" "$name" || ok=
-if [ -n "$ok" ]; then
-	for group in wheel video input audio render kvm; do
-		addgroup "$name" "$group" || ok=
-	done
-	printf '%s:%s\nroot:%s\n' "$name" "$user_password" "$root_password" |
-		chpasswd -c sha512 || ok=
-fi
-user_password= root_password=
-worm lock -c "First boot: created $name" > /dev/null
-
-if [ -z "$ok" ]; then
+if ! create_account "$name" "$name" us "$user_password" "$root_password"; then
+	user_password= root_password=
 	echo "Setting up the account failed; it will be tried again." >&2
 	sleep 5
 	exit 1
 fi
-/usr/lib/worm/runtime-dirs
+user_password= root_password=
 echo "Done. Log in as $name to start the desktop."
 echo

@@ -1,6 +1,7 @@
 #!/bin/sh
-# Start the WormOS desktop (the labwc compositor) for the user logged in on
-# this console. Its output goes to $XDG_RUNTIME_DIR/desktop.log.
+# Start the WormOS desktop (the labwc compositor) for the user who logged
+# in (wormlogin, or a console login on tty1). Its output goes to
+# $XDG_RUNTIME_DIR/desktop.log.
 
 export XDG_RUNTIME_DIR=/run/user/$(id -u)
 if [ ! -d "$XDG_RUNTIME_DIR" ] || [ ! -O "$XDG_RUNTIME_DIR" ]; then
@@ -14,38 +15,7 @@ fi
 
 # Programs started from the desktop begin in the home folder.
 cd "$HOME" 2>/dev/null || cd /
-export LANG=${LANG:-C.UTF-8}
-export XDG_SESSION_TYPE=wayland
-export XDG_CURRENT_DESKTOP=labwc:wlroots
-export XDG_CONFIG_DIRS=/etc/xdg
-export XDG_DATA_DIRS=/usr/local/share:/usr/share
-export LIBSEAT_BACKEND=seatd
-export MOZ_ENABLE_WAYLAND=1 QT_QPA_PLATFORM=wayland GDK_BACKEND=wayland
-export SDL_VIDEODRIVER=wayland ELECTRON_OZONE_PLATFORM_HINT=wayland
-
-# GPUs with a hardware OpenGL driver (Intel, VMware with 3D acceleration)
-# render with OpenGL ES; everything else uses the software renderer, which
-# is faster than OpenGL emulated on the CPU.
-if [ -z "${WLR_RENDERER:-}" ]; then
-	renderer=pixman
-	for driver in /sys/class/drm/card*/device/driver; do
-		case $(basename "$(readlink "$driver")") in
-		i915|xe|vmwgfx) renderer= ;;
-		esac
-	done
-	[ -n "$renderer" ] && export WLR_RENDERER=$renderer
-fi
-# There is no accessibility bus (at-spi) yet.
-export GTK_A11Y=none
-# Without a hardware OpenGL driver, GTK draws with cairo too.
-[ "${WLR_RENDERER:-}" = pixman ] && export GSK_RENDERER=cairo
-
-# VMware's cursor plane stays invisible with wlroots: draw the cursor into
-# the frame instead.
-for driver in /sys/class/drm/card*/device/driver; do
-	[ "$(basename "$(readlink "$driver")")" = vmwgfx ] &&
-		export WLR_NO_HARDWARE_CURSORS=1
-done
+. /usr/lib/worm/session-env
 
 # Standard folders, recorded where GTK's file chooser and other programs
 # look for them.
@@ -75,18 +45,8 @@ if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && command -v dbus-daemon > /dev/null;
 fi
 
 log=$XDG_RUNTIME_DIR/desktop.log
-started=$(date +%s)
-labwc > "$log" 2>&1
+run_labwc "$log"
 status=$?
-# If OpenGL ES failed right at the start (such as VMware with 3D
-# acceleration off), start again with the software renderer.
-if [ $status -ne 0 ] && [ "${WLR_RENDERER:-}" != pixman ] &&
-   [ $(($(date +%s) - started)) -lt 15 ]; then
-	mv "$log" "$log.gles"
-	export WLR_RENDERER=pixman GSK_RENDERER=cairo
-	labwc > "$log" 2>&1
-	status=$?
-fi
 [ -n "$bus" ] && kill "$bus" 2> /dev/null
 if [ $status -ne 0 ]; then
 	echo "desktop: labwc exited with status $status; the end of $log:" >&2

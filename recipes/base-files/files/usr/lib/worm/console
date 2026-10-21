@@ -1,8 +1,12 @@
 #!/bin/sh
-# Login prompt on a virtual console (worminit service). On the first
-# console, a system without any user account first runs the first-boot
-# setup.
+# Login on a virtual console (worminit service). On the first console the
+# graphical login (wormlogin) takes over when it is installed, unless it
+# gave up since the last restart; otherwise a system without any user
+# account first runs the first-boot setup there, then the login prompt.
 tty=$1
+if [ "$tty" = tty1 ] && [ -x /usr/lib/worm/wormlogin ] && [ ! -e /run/wormlogin/console ]; then
+	exec /usr/lib/worm/wormlogin < /dev/null > /dev/null 2>&1
+fi
 if [ "$tty" = tty1 ] && /usr/lib/worm/first-boot --needed; then
 	setsid -c /usr/lib/worm/first-boot < "/dev/$tty" > "/dev/$tty" 2>&1
 fi

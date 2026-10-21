@@ -1,4 +1,5 @@
-# The first console: first-boot setup if needed, then the login prompt
-# (logging in there starts the desktop).
+# The first console: the graphical login (wormlogin), or, without it, the
+# first-boot setup if needed and the login prompt (logging in there starts
+# the desktop).
 type = respawn
 exec = /usr/lib/worm/console tty1
