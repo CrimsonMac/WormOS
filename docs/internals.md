@@ -278,7 +278,7 @@ in the README.
 
 ## Devices and modules
 
-- The kernel builds Intel's i915 and xe, VMware's vmwgfx, uinput and the
+- The kernel builds Intel's i915 and xe, VMware's vmwgfx, QXL, uinput and the
   VMware guest drivers as modules (zstd-compressed, signed); everything a
   VM needs to boot stays built in. `linux-firmware` ships only the Intel GPU
   firmware (`i915/`, `xe/`), zstd-compressed; the kernel decompresses it.
@@ -325,7 +325,12 @@ in the README.
   output in `$XDG_RUNTIME_DIR/desktop.log`.
 - Renderer: OpenGL ES when a card is driven by i915, xe or vmwgfx;
   otherwise wlroots' pixman renderer (`WLR_RENDERER=pixman`), which beats
-  OpenGL emulated on the CPU.
+  OpenGL emulated on the CPU. wlroots does not fall back to pixman by itself
+  when a render node exists, so if labwc fails within 15 seconds with
+  OpenGL ES, the session starts it again with pixman (the first log is kept
+  as `desktop.log.gles`). The session starts in the user's home folder.
+- `xcompose` ships libX11's UTF-8 Compose table (`/usr/share/X11/locale`,
+  mapped to every UTF-8 locale) so dead keys and the Compose key work.
 - labwc's configuration is in `/etc/xdg/labwc` (`rc.xml`, `menu.xml`,
   `autostart`, `environment`), the theme in `/usr/share/themes/WormOS`,
   foot's in `/etc/xdg/foot/foot.ini`. `autostart` starts swaybg with the

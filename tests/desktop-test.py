@@ -9,7 +9,12 @@ desktop), types into the terminal and opens a new one with a shortcut.
 It also checks the screen itself (screendump) and measures memory use.
 The full console output is written to build/desktop.log.
 
-Usage: tests/desktop-test.py [--timeout SECONDS]
+With --release IMAGE it checks a release image instead (such as
+out/release/wormos-VERSION-x86_64.qcow2), where root has no password until
+the first-boot setup: the setup is typed first, then root logs in on the
+serial console with the password it set.
+
+Usage: tests/desktop-test.py [--timeout SECONDS] [--release IMAGE]
 """
 
 import argparse
@@ -53,8 +58,9 @@ DEVICE_CHECKS = [
     ("seat socket for the video group", "stat -c '%G %a' /run/seatd.sock", r"^video 770$"),
     ("Intel GPU firmware present", "ls /usr/lib/firmware/i915 | grep -c 'dmc.*\\.bin\\.zst'", r"^[1-9]"),
     ("su is setuid root", "stat -c '%U %a' /usr/bin/su", r"^root 4755$"),
-    ("first-boot setup waiting on tty1", "cat /dev/vcs1", r"Username:"),
 ]
+
+SETUP_WAITING_CHECK = ("first-boot setup waiting on tty1", "cat /dev/vcs1", r"Username:")
 
 AFTER_SETUP_CHECKS = [
     ("user created", f"grep -c '^{USER}:x:1000:' /etc/passwd", r"^1$"),
@@ -88,8 +94,11 @@ SHORTCUT_CHECKS = [
 
 GRIM = (f"su {USER} -c 'XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 "
         "grim /tmp/shot.png' && od -An -c -N4 /tmp/shot.png")
+FOOT = (f"cd /tmp && su {USER} -c 'XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 "
+        "foot true' 2>&1 | grep -c -e compose -e locale; true")
 BUDGET_CHECKS = [
     ("screenshot with grim", GRIM, r"P\s+N\s+G"),
+    ("terminal has a UTF-8 locale and compose table", FOOT, r"^0$"),
 ]
 
 
@@ -157,6 +166,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--timeout", type=int, default=600,
                         help="seconds to wait for the login prompt")
+    parser.add_argument("--release", metavar="IMAGE",
+                        help="check this release image (root locked until set up)")
     args = parser.parse_args()
 
     tmp = tempfile.mkdtemp(prefix="wormos-desktop-")
@@ -165,11 +176,13 @@ def main():
              f"-device virtio-keyboard-pci,addr=0x11 -device virtio-tablet-pci,addr=0x12 "
              f"-monitor unix:{mon_path},server,nowait")
     env = dict(os.environ, QEMU_EXTRA=extra, QEMU_MEM="1024")
+    if args.release:
+        env["IMAGE"] = os.path.abspath(args.release)
     proc = subprocess.Popen([os.path.join(ROOT, "scripts", "run-qemu.sh"), "--snapshot"],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, env=env)
     passed = failures = 0
-    total = (len(DEVICE_CHECKS) + len(AFTER_SETUP_CHECKS) + len(SESSION_CHECKS) +
+    total = (len(DEVICE_CHECKS) + 1 + len(AFTER_SETUP_CHECKS) + len(SESSION_CHECKS) +
              len(TYPING_CHECKS) + len(SHORTCUT_CHECKS) + len(BUDGET_CHECKS) + 5)
 
     def check(name, ok, out=""):
@@ -199,19 +212,47 @@ def main():
         con = boot_test.Console(proc, log)
         try:
             con.expect("login:", args.timeout)
-            con.send("root\n")
-            con.expect("# ", 60)
             print(f"booted to login prompt in {time.time() - start:.0f}s")
             mon = Monitor(mon_path)
-            run_checks(con, DEVICE_CHECKS)
 
-            # First-boot setup on tty1, typed on the keyboard.
-            mon.type(USER + "\n")
-            for secret in (USER_PASSWORD, USER_PASSWORD, ROOT_PASSWORD, ROOT_PASSWORD):
-                time.sleep(1)
-                mon.type(secret + "\n")
-            out = wait_for(con, "cat /dev/vcs1", r"Done\. Log in as", 300)
-            check("first-boot setup finished", "Done. Log in as" in out, out[-300:])
+            def first_boot():
+                """Answer the first-boot setup on tty1, on the keyboard."""
+                mon.type(USER + "\n")
+                for secret in (USER_PASSWORD, USER_PASSWORD, ROOT_PASSWORD, ROOT_PASSWORD):
+                    time.sleep(1)
+                    mon.type(secret + "\n")
+
+            if args.release:
+                # Root cannot log in before the setup; afterwards it can,
+                # with the password typed into the setup.
+                con.send("root\n")
+                con.expect("Password:", 60)
+                con.send("\n")
+                out = con.expect("login:", 120)
+                check("root locked before the setup", "incorrect" in out, out[-200:])
+                time.sleep(5)
+                first_boot()
+                deadline = time.time() + 600
+                while True:
+                    con.send("root\n")
+                    con.expect("Password:", 60)
+                    con.send(ROOT_PASSWORD + "\n")
+                    try:
+                        con.expect("# ", 15)
+                        break
+                    except TimeoutError:
+                        if time.time() > deadline:
+                            raise
+                        con.expect("login:", 60)
+                check("first-boot setup finished", True)
+                run_checks(con, DEVICE_CHECKS)
+            else:
+                con.send("root\n")
+                con.expect("# ", 60)
+                run_checks(con, DEVICE_CHECKS + [SETUP_WAITING_CHECK])
+                first_boot()
+                out = wait_for(con, "cat /dev/vcs1", r"Done\. Log in as", 300)
+                check("first-boot setup finished", "Done. Log in as" in out, out[-300:])
             run_checks(con, AFTER_SETUP_CHECKS)
 
             # Log in on tty1: the desktop starts.

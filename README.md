@@ -73,9 +73,15 @@ idles at well under 100 MB of memory.
   terminal.
 - Settings: `/etc/xdg/labwc` (copy files to `~/.config/labwc` to change
   them; `environment` sets the keyboard layout) and `/etc/xdg/foot/foot.ini`.
+- Screen resolution: `wlr-randr` lists outputs and their modes, and
+  `wlr-randr --output NAME --custom-mode 1920x1080` changes one. To keep a
+  setting, add the command to `~/.config/labwc/autostart`. (Without guest
+  tools, VMware does not resize the screen with its window.)
 
 Graphics: Intel GPUs (with the i915/xe firmware) and VMware's virtual GPU
-use OpenGL ES through Mesa; other virtual GPUs use a fast software renderer.
+use OpenGL ES through Mesa; other virtual GPUs (virtio, QXL, bochs) use a
+fast software renderer, and so does any GPU on which OpenGL ES fails to
+start.
 Programs installed from Debian or Kali that support Wayland open on the
 desktop as well (they see the system's fonts); X11-only programs do not
 work yet.
