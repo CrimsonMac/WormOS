@@ -329,13 +329,42 @@ in the README.
   when a render node exists, so if labwc fails within 15 seconds with
   OpenGL ES, the session starts it again with pixman (the first log is kept
   as `desktop.log.gles`). The session starts in the user's home folder.
+  On vmwgfx it sets `WLR_NO_HARDWARE_CURSORS=1`: VMware's cursor plane
+  stays invisible with wlroots.
+- Screen size: the virtual GPUs (virtio-gpu, QXL, vmwgfx) change their
+  preferred mode when the viewer's window is resized, but wlroots only reads
+  an output's modes when it connects. `recipes/wlroots/files/
+  follow-preferred-mode.patch` makes the DRM backend look at the preferred
+  mode on every hotplug event for outputs with a virtual connector or the
+  `hotplug_mode_update` property; when it changes, the mode is added to the
+  output and requested through `request_state`, which labwc applies. A mode
+  set by hand (wlr-randr) stays until the window size changes again.
+- VMware passes the window size to the guest only through its tools:
+  `open-vm-tools` builds just the root service (vmtoolsd) with the
+  resolutionKMS plugin (window size to vmwgfx), timeSync, powerOps
+  (shutdown and reboot call busybox `poweroff`/`reboot`, no scripts) and
+  guestInfo. The plugins that let the host reach into the guest (vix:
+  running programs and copying files; shared folders; guestStore, gdp and
+  componentMgr; appInfo, which lists running programs; vmbackup) are
+  removed. The service `48-vmtools` starts it only when `vmware-checkvm`
+  finds VMware. open-vm-tools needs libtirpc and libxcrypt (glibc no longer
+  ships Sun RPC or crypt); libxcrypt is built with the strong hashes only.
 - `xcompose` ships libX11's UTF-8 Compose table (`/usr/share/X11/locale`,
   mapped to every UTF-8 locale) so dead keys and the Compose key work.
 - labwc's configuration is in `/etc/xdg/labwc` (`rc.xml`, `menu.xml`,
   `autostart`, `environment`), the theme in `/usr/share/themes/WormOS`,
-  foot's in `/etc/xdg/foot/foot.ini`. `autostart` starts swaybg with the
-  wallpaper (drawn at build time by `wallpaper.py`) and, once per user, a
-  welcome terminal. The menu's "Applications" entry is a pipe menu
+  foot's in `/etc/xdg/foot/foot.ini`. `rc.xml` clears labwc's default
+  left and middle button bindings on the background, so only the right
+  button opens the menu. `autostart` starts swaybg with the wallpaper
+  (2560x1440, drawn at build time with pycairo by `wallpaper.py`) and, once
+  per user, a welcome terminal showing the full guide (`welcome --full`).
+- foot starts login shells, so every new terminal reads `/etc/profile`;
+  `/etc/profile.d/motd.sh` runs `welcome` (system details, main commands
+  and a random line from `/usr/share/wormos/tips`) in interactive shells
+  with `WAYLAND_DISPLAY` set, unless `~/.hushlogin` exists. It exports
+  `WORMOS_GREETED` so shells started inside the terminal stay quiet; `su -`
+  starts with a clean environment without `WAYLAND_DISPLAY`, so it stays
+  quiet too. The menu's "Applications" entry is a pipe menu
   (`/usr/lib/worm/apps-menu`) listing desktop entries in wormholes whose
   program wh exported.
 - Wormholes: whc shares `/run` (so the Wayland socket) and `/dev/dri`, and
@@ -379,7 +408,11 @@ in the README.
 - `tests/desktop-test.py` (also run by `make test`) adds a virtio GPU,
   keyboard and tablet and a QEMU monitor socket, types on tty1 with
   `sendkey`, reads the console text from `/dev/vcs1` over the serial
-  console, and checks `screendump` output for the wallpaper's colours. With
+  console, and checks `screendump` output for the wallpaper's colours. It
+  clicks on the background through QMP (`input-send-event` on the tablet)
+  and compares screen regions, and resizes the screen through QEMU's VNC
+  server (a minimal client sending ExtendedDesktopSize `SetDesktopSize`,
+  which QEMU forwards to virtio-gpu like a window resize). With
   `--release IMAGE` it checks a release image: it types the first-boot
   setup blind, then logs in as root on the serial console with the
   password it set.

@@ -6,7 +6,8 @@ The test logs in as root on the serial console for checks, and types on
 the graphical console through the monitor (sendkey), as a user would:
 it answers the first-boot setup on tty1, logs in there (which starts the
 desktop), types into the terminal and opens a new one with a shortcut.
-It also checks the screen itself (screendump) and measures memory use.
+It also checks the screen itself (screendump), resizes the screen the way a
+viewer window would (through QEMU's VNC server) and measures memory use.
 The full console output is written to build/desktop.log.
 
 With --release IMAGE it checks a release image instead (such as
@@ -19,9 +20,11 @@ Usage: tests/desktop-test.py [--timeout SECONDS] [--release IMAGE]
 
 import argparse
 import importlib.util
+import json
 import os
 import re
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -92,6 +95,16 @@ SHORTCUT_CHECKS = [
     ("Super+Enter opens a terminal", "pidof foot | wc -w", r"^2$"),
 ]
 
+# A new terminal greets the user (its login shell runs /etc/profile).
+GREETING = ("echo exit | env -u WORMOS_GREETED su " + USER +
+            " -c 'WAYLAND_DISPLAY=wayland-0 sh -il' 2>&1")
+WELCOME_CHECKS = [
+    ("new terminals start login shells", "grep -c '^login-shell=yes' /etc/xdg/foot/foot.ini",
+     r"^1$"),
+    ("new terminal shows the welcome", GREETING, r"Tip: .+"),
+    ("welcome --full shows the guide", "welcome --full", r"Welcome to WormOS"),
+]
+
 GRIM = (f"su {USER} -c 'XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 "
         "grim /tmp/shot.png' && od -An -c -N4 /tmp/shot.png")
 FOOT = (f"cd /tmp && su {USER} -c 'XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 "
@@ -100,6 +113,10 @@ BUDGET_CHECKS = [
     ("screenshot with grim", GRIM, r"P\s+N\s+G"),
     ("terminal has a UTF-8 locale and compose table", FOOT, r"^0$"),
 ]
+
+
+# Window sizes a viewer asks for, including odd ones; the desktop follows.
+RESIZES = [(1600, 900), (1366, 768), (2560, 1440), (1131, 777)]
 
 
 class Monitor:
@@ -153,6 +170,89 @@ class Monitor:
                 self.key(ch)
 
 
+class Qmp:
+    """QEMU's machine protocol, for pointer events on the tablet (the
+    monitor's mouse_move only moves relative pointers)."""
+
+    def __init__(self, path):
+        self.sock = socket.socket(socket.AF_UNIX)
+        self.sock.settimeout(10)
+        self.sock.connect(path)
+        self.file = self.sock.makefile("rw")
+        self.file.readline()                       # greeting
+        self.execute("qmp_capabilities")
+
+    def execute(self, command, **arguments):
+        self.file.write(json.dumps({"execute": command, "arguments": arguments}) + "\n")
+        self.file.flush()
+        while True:
+            reply = json.loads(self.file.readline())
+            if "return" in reply or "error" in reply:
+                return reply
+
+    def click(self, x, y, width, height, button):
+        """Move the tablet to (x, y) on a width x height screen and click."""
+        def abs_(axis, v, size):
+            return {"type": "abs", "data": {"axis": axis, "value": v * 0x7fff // size}}
+        self.execute("input-send-event",
+                     events=[abs_("x", x, width), abs_("y", y, height)])
+        time.sleep(0.5)
+        for down in (True, False):
+            self.execute("input-send-event", events=[
+                {"type": "btn", "data": {"down": down, "button": button}}])
+            time.sleep(0.2)
+
+
+class Vnc:
+    """A minimal VNC client for QEMU's server: it only asks for a new size,
+    as a viewer does when its window is resized (ExtendedDesktopSize)."""
+
+    def __init__(self, path):
+        self.sock = socket.socket(socket.AF_UNIX)
+        self.sock.settimeout(10)
+        self.sock.connect(path)
+        self.recv(12)                              # ProtocolVersion
+        self.sock.sendall(b"RFB 003.008\n")
+        count = self.recv(1)[0]
+        if 1 not in self.recv(count):              # security type None
+            raise RuntimeError("VNC server wants authentication")
+        self.sock.sendall(b"\x01")
+        if struct.unpack(">I", self.recv(4))[0] != 0:
+            raise RuntimeError("VNC security handshake failed")
+        self.sock.sendall(b"\x01")                 # ClientInit: shared
+        header = self.recv(24)                     # ServerInit
+        self.recv(struct.unpack(">I", header[20:24])[0])
+        # SetEncodings: raw and the ExtendedDesktopSize pseudo-encoding.
+        self.sock.sendall(struct.pack(">BxHii", 2, 2, 0, -308))
+
+    def recv(self, n):
+        data = b""
+        while len(data) < n:
+            chunk = self.sock.recv(n - len(data))
+            if not chunk:
+                raise RuntimeError("VNC connection closed")
+            data += chunk
+        return data
+
+    def resize(self, width, height):
+        """SetDesktopSize with one screen."""
+        self.sock.sendall(struct.pack(">BxHHBx", 251, width, height, 1) +
+                          struct.pack(">IHHHHI", 0, 0, 0, width, height, 0))
+
+
+def region_diff(a, b, width, box):
+    """Count pixels that differ between two screens inside box (x0, y0, x1, y1)."""
+    x0, y0, x1, y1 = box
+    n = 0
+    for y in range(y0, y1, 2):
+        row = 3 * (y * width)
+        for x in range(x0, x1, 2):
+            i = row + 3 * x
+            if a[i:i + 3] != b[i:i + 3]:
+                n += 1
+    return n
+
+
 def read_ppm(path):
     """Return (width, height, pixels) of a binary PPM (P6) file."""
     with open(path, "rb") as f:
@@ -172,9 +272,12 @@ def main():
 
     tmp = tempfile.mkdtemp(prefix="wormos-desktop-")
     mon_path = os.path.join(tmp, "monitor")
+    vnc_path = os.path.join(tmp, "vnc")
+    qmp_path = os.path.join(tmp, "qmp")
     extra = (f"-vga none -device virtio-gpu-pci,addr=0x10 "
              f"-device virtio-keyboard-pci,addr=0x11 -device virtio-tablet-pci,addr=0x12 "
-             f"-monitor unix:{mon_path},server,nowait")
+             f"-monitor unix:{mon_path},server,nowait -vnc unix:{vnc_path} "
+             f"-qmp unix:{qmp_path},server,nowait")
     env = dict(os.environ, QEMU_EXTRA=extra, QEMU_MEM="1024")
     if args.release:
         env["IMAGE"] = os.path.abspath(args.release)
@@ -183,7 +286,8 @@ def main():
                             stderr=subprocess.STDOUT, env=env)
     passed = failures = 0
     total = (len(DEVICE_CHECKS) + 1 + len(AFTER_SETUP_CHECKS) + len(SESSION_CHECKS) +
-             len(TYPING_CHECKS) + len(SHORTCUT_CHECKS) + len(BUDGET_CHECKS) + 5)
+             len(TYPING_CHECKS) + len(SHORTCUT_CHECKS) + len(BUDGET_CHECKS) +
+             len(RESIZES) + len(WELCOME_CHECKS) + 7)
 
     def check(name, ok, out=""):
         nonlocal passed, failures
@@ -290,6 +394,49 @@ def main():
             check("screen shows the desktop",
                   width >= 1024 and len(colors) > 50 and purple > 5,
                   f"{width}x{height}, {len(colors)} colours, {purple} purple")
+
+            run_checks(con, WELCOME_CHECKS)
+
+            # Clicks on the background: the left button does nothing, the
+            # right one opens the menu. New windows open in the middle; the
+            # strip along the right edge shows only the wallpaper.
+            def screen(name):
+                path = os.path.join(ROOT, "build", f"desktop-{name}.ppm")
+                mon.cmd(f"screendump {path}")
+                time.sleep(1)
+                return read_ppm(path)
+            qmp = Qmp(qmp_path)
+            px, py = width - 60, height - 80
+            box = (width - width // 8, 0, width, height)
+            before = screen("before-click")[2]
+            qmp.click(px, py, width, height, "left")
+            time.sleep(2)
+            changed = region_diff(before, screen("left-click")[2], width, box)
+            check("left click on the desktop opens no menu", changed < 50,
+                  f"{changed} pixels changed")
+            qmp.click(px, py, width, height, "right")
+            time.sleep(2)
+            changed = region_diff(before, screen("right-click")[2], width, box)
+            check("right click on the desktop opens the menu", changed > 1000,
+                  f"{changed} pixels changed")
+            mon.key("esc")
+            time.sleep(1)
+
+            # The screen follows the viewer's window size.
+            vnc = Vnc(vnc_path)
+            for want in RESIZES:
+                vnc.resize(*want)
+                deadline = time.time() + 60
+                while True:
+                    time.sleep(2)
+                    mon.cmd(f"screendump {shot}")
+                    time.sleep(1)
+                    got = read_ppm(shot)[:2]
+                    if got == want or time.time() > deadline:
+                        break
+                check(f"screen follows the window: {want[0]}x{want[1]}", got == want,
+                      f"{got[0]}x{got[1]}; " +
+                      con.run("grep -i 'preferred mode' /run/user/1000/desktop.log | tail -n 3"))
 
             run_checks(con, BUDGET_CHECKS)
             used = con.run("free -m | awk '/^Mem:/ { print $3 }'")
