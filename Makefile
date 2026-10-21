@@ -11,6 +11,7 @@ PACKAGES := base-files busybox worminit wormrd snap \
 	libxkbcommon libevdev mtdev libinput hwdata libdisplay-info mesa \
 	libpng freetype harfbuzz fribidi fontconfig pcre2 glib libxml2 cairo pango \
 	font-inter font-hack wlroots labwc tllist fcft foot grim swaybg wlr-randr xcompose \
+	libtirpc libxcrypt open-vm-tools \
 	wormos-desktop
 
 all: image

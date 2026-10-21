@@ -1,0 +1,4 @@
+# VMware guest tools, only inside VMware: follows the window size, keeps
+# time and handles shutdown requests from the host.
+type = daemon
+exec = vmware-checkvm > /dev/null 2>&1 && exec vmtoolsd

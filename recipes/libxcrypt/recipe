@@ -1,0 +1,23 @@
+name=libxcrypt
+version=4.5.2
+description="Password hashing library (crypt(3))"
+depends=(glibc)
+# Signed by Björn Esser (678CE3FEE430311596DB8C16F52E98007594C21D).
+source=(https://github.com/besser82/libxcrypt/releases/download/v$version/libxcrypt-$version.tar.xz)
+sha256=(71513a31c01a428bccd5367a32fd95f115d6dac50fb5b60c779d5c7942aec071)
+
+build() {
+	# Only strong hashes: yescrypt, SHA-512/256 crypt (what chpasswd -c
+	# sha512 writes) and bcrypt. No -Werror: glibc's const-preserving
+	# strchr warns in code that is not built anyway.
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-static --disable-failure-tokens --disable-obsolete-api \
+		--disable-werror --enable-hashes=yescrypt,sha512crypt,sha256crypt,bcrypt,bcrypt_y
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man"
+}

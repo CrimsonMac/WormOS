@@ -1,0 +1,54 @@
+name=open-vm-tools
+version=13.1.0
+description="VMware guest tools: the screen follows the window size, time sync, clean shutdown"
+depends=(glibc glib libtirpc libxcrypt libdrm eudev)
+# Upstream publishes no signature: checksum pinned from the release download
+# (it matches the digest GitHub records for the release asset).
+source=(https://github.com/vmware/open-vm-tools/releases/download/stable-$version/open-vm-tools-$version-25218885.tar.gz)
+sha256=(67a23d505aca77127b081445f758e269b1009e8824cf7f6f2d6efafb0b14d0fd)
+
+build() {
+	# glib 2.78+ defines g_free as a macro; the stub must not expand it.
+	sed -i 's/^void g_free(void \*p)/void (g_free)(void *p)/' lib/rpcChannel/glib_stubs.c
+	# Shutdown requests from the host: there is no shutdown(8), but
+	# poweroff and reboot signal worminit.
+	sed -i 's|"/sbin/shutdown -r now"|"/sbin/reboot"|; s|"/sbin/shutdown -h now"|"/sbin/poweroff"|' \
+		lib/system/systemLinux.c
+	# Only the service that runs as root (vmsvc) and its resolutionKMS
+	# plugin, which passes the window size to the vmwgfx driver. No X11
+	# desktop parts, shared folders, vgauth or guest customisation.
+	# glibc's const-preserving strchr and friends warn under its -Werror.
+	CFLAGS="$CFLAGS -Wno-error=discarded-qualifiers" ./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--sysconfdir=/etc --localstatedir=/var --disable-static \
+		--without-x --without-gtk3 --without-gtk4 --without-gtkmm3 --without-gtkmm4 \
+		--without-pam --without-ssl --without-xmlsec1 --without-xml2 \
+		--without-fuse --without-dnet --without-icu --without-kernel-modules \
+		--disable-vgauth --disable-deploypkg --disable-containerinfo \
+		--disable-servicediscovery --disable-docs --disable-tests \
+		--disable-glibc-check --enable-resolutionkms --enable-vmwgfxctrl \
+		--with-udev-rules-dir=/usr/lib/udev/rules.d
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	find "$pkgdir" -name '*.la' -delete
+	# Keep the screen size, time sync, power operations and guest info (the
+	# host shows the address and that the tools run). Leave out everything
+	# that lets the host reach into the guest: running programs and file
+	# transfers (vix), shared folders, installing components, pushing
+	# content (guestStore, gdp), listing running programs (appInfo) and
+	# quiescing for host snapshots.
+	local p=$pkgdir/usr/lib/open-vm-tools/plugins
+	rm -rf "$p/common"
+	rm -f "$p"/vmsvc/lib{appInfo,componentMgr,gdp,guestStore,vmbackup}.so
+	rm -f "$pkgdir"/usr/lib/lib{guestStoreClient,hgfs}.so*
+	rm -rf "$pkgdir"/usr/include "$pkgdir"/usr/lib/pkgconfig "$pkgdir/etc/pam.d"
+	rm -f "$pkgdir"/usr/bin/{vm-support,vmware-hgfsclient,vmware-namespace-cmd,vmware-xferlogs}
+	# The power scripts expect systemd's network tools; none are run.
+	rm -rf "$pkgdir"/etc/vmware-tools/{*-vm-default,statechange.subr,scripts}
+	find "$pkgdir/usr/share/open-vm-tools/messages" -mindepth 1 -maxdepth 1 ! -name en \
+		-exec rm -rf {} +
+	install -Dm644 "$recipedir/files/tools.conf" "$pkgdir/etc/vmware-tools/tools.conf"
+	install -Dm644 "$recipedir/files/48-vmtools" "$pkgdir/etc/worm/services/48-vmtools"
+}
