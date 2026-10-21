@@ -1,0 +1,24 @@
+name=libjpeg-turbo
+version=3.2.0
+description="JPEG image codec"
+depends=(glibc)
+# Signed by the libjpeg-turbo Project (0338C8D8D9FDA62CF9C421BD7EC2DBB6F4DBF434).
+source=(https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/$version/libjpeg-turbo-$version.tar.gz)
+sha256=(6f30092cef9fb839779646608f4ee14ae3cbac989c47fa05e841b0841f09878e)
+
+build() {
+	# The SIMD code is assembled with this machine's nasm.
+	cmake -S . -B build -G Ninja -DCMAKE_SYSTEM_NAME=Linux \
+		-DCMAKE_SYSTEM_PROCESSOR=x86_64 -DCMAKE_C_COMPILER="$CC" \
+		-DCMAKE_FIND_ROOT_PATH="$SYSROOT" -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+		-DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+		-DCMAKE_BUILD_TYPE=None -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
+		-DENABLE_STATIC=OFF -DWITH_TURBOJPEG=OFF -DWITH_JAVA=OFF -DWITH_TOOLS=OFF \
+		-DWITH_TESTS=OFF -DCMAKE_ASM_NASM_COMPILER=nasm
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	rm -rf "$pkgdir/usr/share" "$pkgdir/usr/bin" "$pkgdir/usr/lib/cmake"
+}

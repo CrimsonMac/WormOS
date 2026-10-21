@@ -1,0 +1,17 @@
+name=dconf
+version=51.0
+description="Settings store for GSettings (programs keep their settings)"
+depends=(glibc glib dbus)
+# GNOME publishes no signatures; matches the release's sha256sum file.
+source=(https://download.gnome.org/sources/dconf/${version%.*}/dconf-$version.tar.xz)
+sha256=(e65c1b7867f836faad9f9ee04acf5c5a6cae2bbc784833fe093207e0cb590248)
+
+build() {
+	meson_build -Dbash_completion=false -Dman=false -Dgtk_doc=false -Dvapi=false
+}
+
+package() {
+	meson_package
+	# The service is started on demand by the session bus.
+	rm -rf "$pkgdir/usr/lib/systemd"
+}

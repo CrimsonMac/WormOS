@@ -1,0 +1,16 @@
+name=libepoxy
+version=1.5.10
+description="OpenGL function pointer management library"
+depends=(glibc mesa)
+# GNOME publishes no signatures; matches the release's sha256sum file.
+source=(https://download.gnome.org/sources/libepoxy/${version%.*}/libepoxy-$version.tar.xz)
+sha256=(072cda4b59dd098bba8c2363a6247299db1fa89411dc221c8b81b8ee8192e623)
+
+build() {
+	# EGL only: there is no X11 and no GLX.
+	meson_build -Degl=yes -Dglx=no -Dx11=false -Dtests=false -Ddocs=false
+}
+
+package() {
+	meson_package
+}

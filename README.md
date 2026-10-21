@@ -321,6 +321,7 @@ sudo apt install build-essential bison flex gawk texinfo m4 help2man \
     btrfs-progs dosfstools mtools fakeroot grub-efi-amd64-bin \
     qemu-system-x86 qemu-utils ovmf zip unzip \
     ninja-build gperf pipx python3-mako python3-yaml python3-ply python3-packaging python3-cairo \
+    cmake nasm sassc gettext \
     libexpat1-dev llvm-19-dev libclang-19-dev libclang-cpp19-dev \
     libllvmspirvlib-19-dev spirv-tools libclc-19-dev
 pipx install meson==1.12.1

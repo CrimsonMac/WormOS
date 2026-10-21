@@ -1,0 +1,15 @@
+name=hicolor-icon-theme
+version=0.18
+description="Fallback icon theme that programs install their icons into"
+depends=()
+# Checksum matches the one in Debian's source package.
+source=(https://icon-theme.freedesktop.org/releases/hicolor-icon-theme-$version.tar.xz)
+sha256=(db0e50a80aa3bf64bb45cbca5cf9f75efd9348cf2ac690b907435238c3cf81d7)
+
+build() {
+	meson_build
+}
+
+package() {
+	meson_package
+}

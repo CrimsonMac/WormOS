@@ -1,0 +1,22 @@
+name=shared-mime-info
+version=2.5.1
+description="Database of file types"
+depends=(glibc glib libxml2)
+# Upstream publishes no signature: checksum pinned from the release download
+# (it matches Arch Linux's package).
+source=(https://gitlab.freedesktop.org/xdg/shared-mime-info/-/archive/$version/shared-mime-info-$version.tar.bz2)
+sha256=(b75b420da9b0be9a3d99b1bee6ed87957b56ab54583ac1a97fbd0dc98ddddb25)
+
+build() {
+	# The database is compiled on the target by a wh hook, since other
+	# packages add their own types.
+	meson_build -Dupdate-mimedb=false -Dbuild-tests=false \
+		-Dbuild-translations=false -Dbuild-tools=true -Dbuild-spec=false
+}
+
+package() {
+	meson_package
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/gettext"
+	install -Dm644 "$recipedir/files/mime-database.hook" \
+		"$pkgdir/usr/share/wh/hooks/mime-database.hook"
+}

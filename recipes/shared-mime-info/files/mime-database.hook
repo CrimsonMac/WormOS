@@ -1,0 +1,3 @@
+# Compile the file type database from the definitions packages install.
+path = usr/share/mime/packages
+exec = /usr/bin/update-mime-database /usr/share/mime

@@ -9,9 +9,11 @@ PACKAGES := base-files busybox worminit wormrd snap \
 	kmod eudev seatd linux-firmware \
 	libffi wayland wayland-protocols libdrm pixman xkeyboard-config \
 	libxkbcommon libevdev mtdev libinput hwdata libdisplay-info mesa \
-	libpng freetype harfbuzz fribidi fontconfig pcre2 glib libxml2 cairo pango \
+	libpng freetype fribidi fontconfig pcre2 glib harfbuzz libxml2 cairo pango \
 	font-inter font-hack wlroots labwc tllist fcft foot grim swaybg wlr-randr xcompose \
 	libtirpc libxcrypt open-vm-tools \
+	libjpeg-turbo libtiff shared-mime-info gdk-pixbuf libepoxy graphene gtk4 \
+	gtk4-layer-shell dconf hicolor-icon-theme adwaita-icon-theme wormos-gtk-theme \
 	wormos-desktop
 
 all: image

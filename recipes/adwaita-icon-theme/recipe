@@ -1,0 +1,22 @@
+name=adwaita-icon-theme
+version=51.0
+description="Adwaita icons and cursors"
+depends=(hicolor-icon-theme)
+# GNOME publishes no signatures; matches the release's sha256sum file.
+source=(https://download.gnome.org/sources/adwaita-icon-theme/${version%.*}/adwaita-icon-theme-$version.tar.xz)
+sha256=(ba561cf3c96305a47179fa5605856ad695c9238ea07f7093aebd9ba80c4e323b)
+
+build() {
+	meson_build
+}
+
+package() {
+	meson_package
+	rm -rf "$pkgdir/usr/share/licenses"
+	# The theme owns its folder, so its cache is built here (with the
+	# target's tool, through the sysroot's loader).
+	"$SYSROOT/usr/lib/ld-linux-x86-64.so.2" --library-path "$SYSROOT/usr/lib" \
+		"$PKGDIR/gtk4/usr/bin/gtk4-update-icon-cache" -q -f -t \
+		"$pkgdir/usr/share/icons/Adwaita"
+	[ -s "$pkgdir/usr/share/icons/Adwaita/icon-theme.cache" ] || die "no icon cache"
+}

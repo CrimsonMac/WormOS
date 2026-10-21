@@ -1,0 +1,21 @@
+name=libtiff
+version=4.7.2
+description="TIFF image library"
+depends=(glibc zlib libjpeg-turbo)
+# Signed by Even Rouault (B1FA7D81EEB8E66399178B9733EBBFC47B3DD87D).
+source=(https://download.osgeo.org/libtiff/tiff-$version.tar.xz)
+sha256=(4996f0c4f93094719b1ca5c6279b20e588773ba8a247533e486416fb662ddb88)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-static --disable-cxx --disable-tools --disable-tests \
+		--disable-contrib --disable-docs --disable-lzma --disable-zstd \
+		--disable-webp --disable-jbig --disable-lerc --disable-libdeflate
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share"
+}
