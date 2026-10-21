@@ -36,6 +36,13 @@ if [ -z "${WLR_RENDERER:-}" ]; then
 	[ -n "$renderer" ] && export WLR_RENDERER=$renderer
 fi
 
+# VMware's cursor plane stays invisible with wlroots: draw the cursor into
+# the frame instead.
+for driver in /sys/class/drm/card*/device/driver; do
+	[ "$(basename "$(readlink "$driver")")" = vmwgfx ] &&
+		export WLR_NO_HARDWARE_CURSORS=1
+done
+
 log=$XDG_RUNTIME_DIR/desktop.log
 started=$(date +%s)
 labwc > "$log" 2>&1

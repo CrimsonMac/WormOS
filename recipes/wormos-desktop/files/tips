@@ -1,0 +1,21 @@
+# One tip per line; a new terminal shows one at random.
+Right click on the desktop (or Super+Space) opens the menu.
+Super+Enter opens a terminal and Super+Q closes the focused window.
+Print saves a screenshot to ~/Pictures.
+snap now -c "before the update" names a snapshot so you find it later.
+snap diff ID shows what changed since a snapshot.
+snap restore ID PATH brings back a single file from a snapshot.
+snap pin ID keeps a snapshot from ever being pruned.
+wh install --try PKG is a trial: run wh keep, or it goes back later.
+wh undo reverts the last package change.
+wh install --from kali PKG takes a package from Kali's archive.
+Programs from wormholes run on the desktop like any other app.
+bh open gives you a sandbox with no network and no access to your files.
+bh put NAME FILE copies a file into a blackhole's inbox.
+worm panic cuts the network, closes all blackholes and takes a snapshot.
+worm anon on sends all traffic through Tor.
+worm fw allow 22 opens a port; everything else coming in is blocked.
+The boot menu can rewind to any recent snapshot before anything starts.
+The system is read-only: worm unlock opens it, worm lock snapshots it.
+Ctrl+Alt+F2 has a second console, for logging in as root.
+wlr-randr lists your screens and their modes.

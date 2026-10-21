@@ -1,0 +1,40 @@
+#!/bin/sh
+# Greet a new terminal: system details, the main commands and a tip.
+# welcome --full prints the whole guide.
+
+if [ "${1:-}" = --full ]; then
+	cat /usr/share/wormos/guide
+	exit
+fi
+
+. /etc/os-release
+read -r up _ < /proc/uptime
+up=${up%.*}
+if [ "$up" -ge 86400 ]; then
+	uptime="$((up / 86400))d $((up % 86400 / 3600))h"
+elif [ "$up" -ge 3600 ]; then
+	uptime="$((up / 3600))h $((up % 3600 / 60))m"
+else
+	uptime="$((up / 60))m"
+fi
+mem=$(awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 }
+	END { printf "%.1f / %.1f GiB", (t - a) / 1048576, t / 1048576 }' /proc/meminfo)
+if [ -e /etc/worm/anon ]; then anon="on"; else anon="off"; fi
+
+tip=$(awk -v seed="$$$(date +%s)" '
+	/^[^#]/ && NF { tips[n++] = $0 }
+	END { if (n) { srand(seed); print tips[int(rand() * n)] } }' /usr/share/wormos/tips)
+
+m='\033[35m' b='\033[1m' d='\033[2m' r='\033[0m'
+printf "\n"
+printf "   ${m}.-~~~-.${r}\n"
+printf "  ${m}(  (o)  )${r}   ${b}%s${r}  ${d}·${r}  Linux %s  ${d}·${r}  up %s\n" \
+	"$PRETTY_NAME" "$(uname -r)" "$uptime"
+printf "   ${m}'-~~~-'${r}    Memory %s  ${d}·${r}  Tor mode %s\n" "$mem" "$anon"
+printf "\n"
+printf "  ${b}snap now${r}    take a snapshot        ${b}wh install${r}   add software\n"
+printf "  ${b}snap list${r}   snapshots, ${b}rewind${r}      ${b}bh open${r}      disposable sandbox\n"
+printf "  ${b}worm status${r} protections            ${b}su -${r}         administration\n"
+printf "\n"
+[ -n "$tip" ] && printf "  ${m}Tip:${r} %s\n" "$tip"
+printf "  ${d}welcome --full shows the guide; touch ~/.hushlogin hides this.${r}\n\n"

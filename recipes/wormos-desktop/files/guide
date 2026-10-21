@@ -1,6 +1,6 @@
 
    [35m.-~~~-.[0m
-  [35m(  (o)  )[0m   Welcome to WormOS 1.0
+  [35m(  (o)  )[0m   Welcome to WormOS
    [35m'-~~~-'[0m
 
   The desktop
@@ -8,7 +8,8 @@
     Super+Enter opens a terminal, Super+Q closes a window,
     Alt+Tab switches windows, Print saves a screenshot to ~/Pictures.
     Ctrl+Alt+F2 has a second console, for logging in as root.
-    Screen size:  wlr-randr  lists outputs and modes, e.g.
+    The screen follows the size of the virtual machine's window. To pick
+    a size yourself:  wlr-randr  lists outputs and modes, e.g.
       wlr-randr --output Virtual-1 --custom-mode 1920x1080
 
   Administration happens as root: run  su -  (or the menu's "Root terminal").

@@ -32,6 +32,11 @@
   </keyboard>
   <mouse>
     <default />
+    <!-- labwc opens the menu on any button; keep it on the right one. -->
+    <context name="Root">
+      <mousebind button="Left" action="Press"><action name="None" /></mousebind>
+      <mousebind button="Middle" action="Press"><action name="None" /></mousebind>
+    </context>
   </mouse>
   <libinput>
     <device category="touchpad">

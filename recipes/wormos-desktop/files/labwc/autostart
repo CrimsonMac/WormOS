@@ -3,5 +3,5 @@ swaybg -i /usr/share/backgrounds/wormos.png -m fill > /dev/null 2>&1 &
 # A welcome terminal the first time a user starts the desktop.
 if [ ! -e "$HOME/.config/wormos/welcomed" ]; then
 	mkdir -p "$HOME/.config/wormos" && touch "$HOME/.config/wormos/welcomed"
-	foot --title "Welcome to WormOS" sh -c 'cat /usr/share/wormos/welcome; exec sh -l' > /dev/null 2>&1 &
+	foot --title "Welcome to WormOS" sh -c 'welcome --full; WORMOS_GREETED=1 exec sh -l' > /dev/null 2>&1 &
 fi
