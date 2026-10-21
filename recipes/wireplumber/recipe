@@ -1,0 +1,21 @@
+name=wireplumber
+version=0.5.18
+description="PipeWire session manager: devices, default outputs, volumes"
+depends=(glibc pipewire glib lua)
+# Upstream publishes no signature: checksum pinned from the release download.
+source=(https://gitlab.freedesktop.org/pipewire/wireplumber/-/archive/$version/wireplumber-$version.tar.gz)
+sha256=(8c8a326a5b2a570681c1503c83f1fce0cc54ba862019815604b2bc92a7d483a1)
+
+build() {
+	meson_build -Dsystem-lua=true -Dintrospection=disabled -Ddoc=disabled \
+		-Delogind=disabled -Dsystemd=disabled -Dsystemd-system-service=false \
+		-Dsystemd-user-service=false -Dtests=false -Ddbus-tests=false
+}
+
+package() {
+	meson_package
+	rm -rf "$pkgdir/usr/share/locale" "$pkgdir/usr/share/doc" \
+		"$pkgdir/usr/share/zsh" "$pkgdir/usr/share/bash-completion"
+	install -Dm644 "$recipedir/files/90-wormos.conf" \
+		"$pkgdir/usr/share/wireplumber/wireplumber.conf.d/90-wormos.conf"
+}

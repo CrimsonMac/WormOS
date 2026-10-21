@@ -1,0 +1,50 @@
+name=pipewire
+version=1.6.9
+description="Sound server: PipeWire with its PulseAudio and ALSA compatibility"
+depends=(glibc alsa-lib eudev dbus libsndfile)
+# Upstream publishes no signature: checksum pinned from the release download.
+source=(https://gitlab.freedesktop.org/pipewire/pipewire/-/archive/$version/pipewire-$version.tar.gz)
+sha256=(dbc3624cf71215c26a22fc98f6f71f7b8599f5f6b415eab4a5c90ca96c170c7c)
+
+build() {
+	# Audio only: ALSA devices, the PulseAudio server (built in) and the
+	# ALSA plugin. No video, Bluetooth, JACK, network audio or systemd.
+	# The session manager is the wireplumber package.
+	meson_build -Ddocs=disabled -Dman=disabled -Dexamples=disabled -Dtests=disabled \
+		-Dinstalled_tests=disabled -Dgstreamer=disabled \
+		-Dgstreamer-device-provider=disabled -Dlibsystemd=disabled -Dlogind=disabled \
+		-Dsystemd-system-service=disabled -Dsystemd-user-service=disabled \
+		-Dselinux=disabled -Dpipewire-alsa=enabled -Dpipewire-jack=disabled \
+		-Dpipewire-v4l2=disabled -Djack-devel=false -Dalsa=enabled \
+		-Daudiomixer=enabled -Daudioconvert=enabled -Dbluez5=disabled \
+		-Dcontrol=enabled -Daudiotestsrc=enabled -Dffmpeg=disabled -Djack=disabled \
+		-Dsupport=enabled -Devl=disabled -Dtest=disabled -Dv4l2=disabled \
+		-Ddbus=enabled -Dlibcamera=disabled -Dvideoconvert=disabled \
+		-Dvideotestsrc=disabled -Dvolume=disabled -Dvulkan=disabled -Dpw-cat=enabled \
+		-Dpw-cat-ffmpeg=disabled -Dudev=enabled -Dudevrulesdir=/usr/lib/udev/rules.d \
+		-Dsdl2=disabled -Dsndfile=enabled -Dlibmysofa=disabled -Dlibpulse=disabled \
+		-Droc=disabled -Davahi=disabled -Decho-cancel-webrtc=disabled \
+		-Dlibusb=disabled -Dsession-managers=[] -Draop=disabled -Dlv2=disabled \
+		-Dx11=disabled -Dx11-xfixes=disabled -Dlibcanberra=disabled \
+		-Dlegacy-rtkit=false -Davb=disabled -Dflatpak=disabled -Dreadline=disabled \
+		-Dgsettings=disabled -Dcompress-offload=disabled -Dpam-defaults-install=false \
+		-Drlimits-install=false -Dopus=disabled -Dlibffado=disabled \
+		-Dgsettings-pulse-schema=disabled -Dsnap=disabled -Debur128=disabled \
+		-Dfftw=disabled -Donnxruntime=disabled
+}
+
+package() {
+	meson_package
+	rm -rf "$pkgdir/usr/share/locale" "$pkgdir/usr/share/doc"
+	# No network audio (RTP, AES67, AVB, VBAN, NetJACK, raw TCP streams)
+	# and no JACK.
+	rm -f "$pkgdir"/usr/lib/pipewire-0.3/libpipewire-module-{rtp-*,vban-*,netjack2-*,protocol-simple}.so \
+		"$pkgdir"/usr/bin/pipewire-{aes67,avb} \
+		"$pkgdir"/usr/share/pipewire/{pipewire-aes67,pipewire-avb,jack}.conf
+	# ALSA programs play through PipeWire: alsa-lib reads /etc/alsa/conf.d.
+	install -d "$pkgdir/etc/alsa/conf.d"
+	for conf in 50-pipewire.conf 99-pipewire-default.conf; do
+		[ -f "$pkgdir/usr/share/alsa/alsa.conf.d/$conf" ] || die "$conf is missing"
+		ln -s "../../../usr/share/alsa/alsa.conf.d/$conf" "$pkgdir/etc/alsa/conf.d/$conf"
+	done
+}

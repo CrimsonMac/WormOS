@@ -14,6 +14,7 @@ PACKAGES := base-files busybox worminit wormrd snap \
 	libtirpc libxcrypt open-vm-tools \
 	libjpeg-turbo libtiff shared-mime-info gdk-pixbuf libepoxy graphene gtk4 \
 	gtk4-layer-shell dconf hicolor-icon-theme adwaita-icon-theme wormos-gtk-theme worm-shell wormos-snapshots \
+	alsa-lib libsndfile pipewire lua wireplumber \
 	wormos-login \
 	wormos-desktop
 

@@ -1,0 +1,26 @@
+name=libsndfile
+version=1.2.2
+description="Sound file library (WAV, AIFF, AU and other uncompressed formats)"
+depends=(glibc)
+# Signed by David Seifert (B8D5315DA00072C0A860889FCE36E117202E3842).
+source=(https://github.com/libsndfile/libsndfile/releases/download/$version/libsndfile-$version.tar.xz)
+sha256=(3799ca9924d3125038880367bf1468e53a1b7e3686a934f098b7e1d286cdb80e)
+
+build() {
+	# No external codecs (FLAC, Vorbis, Opus, MP3): uncompressed formats only.
+	cmake -S . -B build -G Ninja -DCMAKE_SYSTEM_NAME=Linux \
+		-DCMAKE_SYSTEM_PROCESSOR=x86_64 -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
+		-DCMAKE_FIND_ROOT_PATH="$SYSROOT" -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+		-DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+		-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY \
+		-DCMAKE_BUILD_TYPE=None -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON -DBUILD_PROGRAMS=OFF -DBUILD_EXAMPLES=OFF \
+		-DBUILD_TESTING=OFF -DENABLE_EXTERNAL_LIBS=OFF -DENABLE_MPEG=OFF \
+		-DENABLE_CPACK=OFF -DINSTALL_MANPAGES=OFF -DENABLE_PACKAGE_CONFIG=OFF
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	rm -rf "$pkgdir/usr/share/doc" "$pkgdir/usr/lib/cmake"
+}

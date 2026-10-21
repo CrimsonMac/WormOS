@@ -44,9 +44,27 @@ if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && command -v dbus-daemon > /dev/null;
 	export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
 fi
 
+# Sound: PipeWire, its session manager WirePlumber and its PulseAudio
+# server (most programs speak PulseAudio, also in wormholes, which share
+# /run). Their messages go to $XDG_RUNTIME_DIR/sound.log.
+sound=
+if command -v pipewire > /dev/null && command -v wireplumber > /dev/null; then
+	pipewire > "$XDG_RUNTIME_DIR/sound.log" 2>&1 &
+	sound=$!
+	for _ in 1 2 3 4 5 6 7 8 9 10; do
+		[ -S "$XDG_RUNTIME_DIR/pipewire-0" ] && break
+		sleep 0.2
+	done
+	wireplumber >> "$XDG_RUNTIME_DIR/sound.log" 2>&1 &
+	sound="$sound $!"
+	pipewire-pulse >> "$XDG_RUNTIME_DIR/sound.log" 2>&1 &
+	sound="$sound $!"
+fi
+
 log=$XDG_RUNTIME_DIR/desktop.log
 run_labwc "$log"
 status=$?
+[ -n "$sound" ] && kill $sound 2> /dev/null
 [ -n "$bus" ] && kill "$bus" 2> /dev/null
 if [ $status -ne 0 ]; then
 	echo "desktop: labwc exited with status $status; the end of $log:" >&2

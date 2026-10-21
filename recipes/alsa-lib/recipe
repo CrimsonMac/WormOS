@@ -1,0 +1,22 @@
+name=alsa-lib
+version=1.2.16.1
+description="ALSA library: sound devices (used by PipeWire)"
+depends=(glibc)
+# Signed by the ALSA Release Team (F04DF50737AC1A884C4B3D718380596DA6E59C91).
+source=(https://www.alsa-project.org/files/pub/lib/alsa-lib-$version.tar.bz2)
+sha256=(f740db7f488255944ffd4428416ee3390a96742856916433df468c281436480e)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--libdir=/usr/lib --sysconfdir=/etc --disable-static --disable-python \
+		--disable-old-symbols --disable-topology --without-debug
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/aclocal"
+	# Tool to test ALSA configuration files.
+	rm -f "$pkgdir/usr/bin/aserver"
+}
