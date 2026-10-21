@@ -63,7 +63,7 @@ static int touched_below(const char *dir)
 static void run_hook(const char *name, char *exec)
 {
 	char *words[MAX_WORDS], *argv[MAX_WORDS + 4], abs[MAX_WORDS][PATH_MAX];
-	char loader[PATH_MAX], libs[PATH_MAX], *preload;
+	char loader[PATH_MAX], libs[PATH_MAX], share[PATH_MAX], *preload, *data;
 	int nwords = 0, argc = 0;
 
 	for (char *w = strtok(exec, " \t"); w; w = strtok(NULL, " \t")) {
@@ -102,11 +102,23 @@ static void run_hook(const char *name, char *exec)
 	if (preload && !(preload = strdup(preload)))
 		die("out of memory");
 	unsetenv("LD_PRELOAD");
+	/* Data is looked up in the root being changed. */
+	data = getenv("XDG_DATA_DIRS");
+	if (data && !(data = strdup(data)))
+		die("out of memory");
+	root_path(share, sizeof(share), "usr/share");
+	setenv("XDG_DATA_DIRS", share, 1);
 	if (run(argv, NULL, 0) != 0)
 		warn("hook %s failed", name);
 	if (preload) {
 		setenv("LD_PRELOAD", preload, 1);
 		free(preload);
+	}
+	if (data) {
+		setenv("XDG_DATA_DIRS", data, 1);
+		free(data);
+	} else {
+		unsetenv("XDG_DATA_DIRS");
 	}
 }
 

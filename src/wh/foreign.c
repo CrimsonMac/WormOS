@@ -19,7 +19,9 @@
  * container. From then on its own apt manages it.
  *
  * Commands of the packages a user asks for are exported as small wrapper
- * scripts in /usr/local/bin (on /var), which run them through whc.
+ * scripts in /usr/local/bin (on /var), which run them through whc. Their
+ * desktop entries and icons are exported to /usr/local/share, so the
+ * programs appear in the launcher (see export_desktop()).
  */
 
 #define _GNU_SOURCE
@@ -33,8 +35,10 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 #include <linux/btrfs.h>
+#include <linux/openat2.h>
 
 #include "wh.h"
 
@@ -43,6 +47,8 @@
 #define FOREIGN_DB     "/var/lib/wh/foreign"
 #define SOURCE_CACHE   "/var/cache/wh/sources"
 #define EXPORT_DIR     "/usr/local/bin"
+#define EXPORT_SHARE   "/usr/local/share"
+#define MAX_EXPORT_FILE (8 << 20)
 #define ARCH           "amd64"
 #define MAX_SOURCES    8
 #define MAX_APT        8
@@ -756,11 +762,190 @@ int foreign_installed(const char *pkg, char *source, size_t len)
 	return found;
 }
 
+/* ---- desktop entries and icons ---- */
+
+/* Paths wh may remove when a package goes (records are on /var). */
+static int exported_path(const char *path)
+{
+	return !strncmp(path, EXPORT_DIR "/", strlen(EXPORT_DIR) + 1) ||
+	       !strncmp(path, EXPORT_SHARE "/applications/", strlen(EXPORT_SHARE) + 14) ||
+	       !strncmp(path, EXPORT_SHARE "/icons/", strlen(EXPORT_SHARE) + 7) ||
+	       !strncmp(path, EXPORT_SHARE "/pixmaps/", strlen(EXPORT_SHARE) + 9);
+}
+
+/*
+ * Read a file of the wormhole, resolving every link inside it: a package
+ * cannot make wh read the host's files. Only regular files, up to 8 MiB.
+ */
+static char *read_inside(const char *source, const char *path, size_t *len)
+{
+	struct open_how how = {
+		.flags = O_RDONLY | O_NOFOLLOW | O_CLOEXEC,
+		.resolve = RESOLVE_IN_ROOT | RESOLVE_NO_MAGICLINKS,
+	};
+	char dir[PATH_MAX], *buf = NULL;
+	struct stat st;
+	int dfd, fd = -1;
+
+	wormhole_dir(dir, sizeof(dir), source);
+	if ((dfd = open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC)) < 0)
+		return NULL;
+	while (*path == '/')
+		path++;
+	fd = syscall(SYS_openat2, dfd, path, &how, sizeof(how));
+	close(dfd);
+	if (fd < 0)
+		return NULL;
+	if (fstat(fd, &st) == 0 && S_ISREG(st.st_mode) && st.st_size <= MAX_EXPORT_FILE &&
+	    (buf = malloc(st.st_size + 1))) {
+		ssize_t n = 0, r;
+
+		while (n < st.st_size && (r = read(fd, buf + n, st.st_size - n)) > 0)
+			n += r;
+		buf[n] = '\0';
+		*len = n;
+	}
+	close(fd);
+	return buf;
+}
+
+static int write_export(const char *dest, const char *data, size_t len)
+{
+	char dir[PATH_MAX], tmp[PATH_MAX + 16];
+	char *slash;
+	FILE *f;
+
+	snprintf(dir, sizeof(dir), "%s", dest);
+	if ((slash = strrchr(dir, '/')))
+		*slash = '\0';
+	mkdirs_at(AT_FDCWD, dir, 0755);
+	snprintf(tmp, sizeof(tmp), "%s.wh-new", dest);
+	if (!(f = fopen(tmp, "we")))
+		return -1;
+	if (fwrite(data, 1, len, f) != len || fclose(f) != 0 || chmod(tmp, 0644) < 0 ||
+	    rename(tmp, dest) < 0) {
+		unlink(tmp);
+		return -1;
+	}
+	return 0;
+}
+
+static int word_is_exported(const char *cmd, char *const *cmds, int ncmds)
+{
+	for (int i = 0; i < ncmds; i++)
+		if (strcmp(cmd, cmds[i]) == 0)
+			return 1;
+	return 0;
+}
+
+/*
+ * A desktop entry for the host: only the [Desktop Entry] group, with Exec
+ * pointing at the exported wrapper. Actions, TryExec and D-Bus activation
+ * would refer to programs or services the host does not have. Returns
+ * NULL if the entry's program was not exported.
+ */
+static char *host_entry(const char *text, char *const *cmds, int ncmds, size_t *len)
+{
+	char *out = malloc(strlen(text) + 256), *copy = strdup(text), *line, *save;
+	int main_group = 0, has_exec = 0;
+	size_t n = 0;
+
+	if (!out || !copy)
+		die("out of memory");
+	for (line = strtok_r(copy, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
+		if (line[0] == '[') {
+			main_group = strcmp(line, "[Desktop Entry]") == 0;
+			if (main_group)
+				n += sprintf(out + n, "%s\n", line);
+			continue;
+		}
+		if (!main_group || !strncmp(line, "Actions=", 8) ||
+		    !strncmp(line, "TryExec=", 8) || !strncmp(line, "DBusActivatable=", 16))
+			continue;
+		if (!strncmp(line, "Exec=", 5)) {
+			char *prog = line + 5, *end, *base, quote = 0;
+
+			if (*prog == '"')
+				quote = *prog++;
+			end = prog + strcspn(prog, quote ? "\"" : " ");
+			base = memrchr(prog, '/', end - prog);
+			base = base ? base + 1 : prog;
+			{
+				char name[256];
+
+				snprintf(name, sizeof(name), "%.*s", (int)(end - base), base);
+				if (!word_is_exported(name, cmds, ncmds))
+					break;
+				n += sprintf(out + n, "Exec=%s%s\n", name,
+					     *end && quote ? end + 1 : end);
+			}
+			has_exec = 1;
+			continue;
+		}
+		n += sprintf(out + n, "%s\n", line);
+	}
+	free(copy);
+	if (!has_exec || line) {        /* no Exec, or a program not exported */
+		free(out);
+		return NULL;
+	}
+	n += sprintf(out + n, "X-WormOS-Wormhole=true\n");
+	*len = n;
+	return out;
+}
+
+/*
+ * Export the desktop entries and icons in the package's file list (list,
+ * one path per line), for the commands just exported. Records each file.
+ */
+static void export_desktop(const char *source, const char *list, char *const *cmds,
+			   int ncmds, FILE *record)
+{
+	char *copy = strdup(list), *line, *save;
+
+	if (!copy)
+		die("out of memory");
+	for (line = strtok_r(copy, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
+		char dest[PATH_MAX + 32], host[PATH_MAX + 32], *data, *entry;
+		const char *rel = NULL;
+		size_t len, elen;
+
+		if (!strncmp(line, "/usr/share/applications/", 24) &&
+		    !strchr(line + 24, '/') && strstr(line, ".desktop")) {
+			snprintf(host, sizeof(host), "/usr/share/applications/%s", line + 24);
+			if (access(host, F_OK) == 0 || !(data = read_inside(source, line, &len)))
+				continue;
+			entry = host_entry(data, cmds, ncmds, &elen);
+			free(data);
+			if (!entry)
+				continue;
+			snprintf(dest, sizeof(dest), EXPORT_SHARE "/applications/%s", line + 24);
+			if (write_export(dest, entry, elen) == 0)
+				fprintf(record, "export = %s\n", dest);
+			free(entry);
+			continue;
+		}
+		if (!strncmp(line, "/usr/share/icons/", 17))
+			rel = line + 17;
+		else if (!strncmp(line, "/usr/share/pixmaps/", 19))
+			rel = line + 19;
+		if (!rel || strstr(rel, "..") || !(data = read_inside(source, line, &len)))
+			continue;
+		snprintf(dest, sizeof(dest), EXPORT_SHARE "/%s/%s",
+			 rel == line + 17 ? "icons" : "pixmaps", rel);
+		if (write_export(dest, data, len) == 0)
+			fprintf(record, "export = %s\n", dest);
+		free(data);
+	}
+	free(copy);
+}
+
 /* Export the commands of pkg as wrappers. Writes the record. */
 static void export_commands(const char *source, const char *pkg)
 {
 	static char out[1 << 20];
-	char record[PATH_MAX], *line, *save;
+	char record[PATH_MAX], *line, *save, *list, *cmds[256];
+	int ncmds = 0;
 	FILE *f;
 
 	if (in_wormhole(source, (char *[]){ "dpkg-query", "-L", (char *)pkg, NULL },
@@ -773,6 +958,8 @@ static void export_commands(const char *source, const char *pkg)
 		die("cannot record %s: %s", pkg, strerror(errno));
 	fprintf(f, "source = %s\n", source);
 
+	if (!(list = strdup(out)))
+		die("out of memory");
 	for (line = strtok_r(out, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
 		static const char *const bindirs[] = { "/usr/bin/", "/usr/sbin/", "/bin/",
 						      "/sbin/", "/usr/games/", NULL };
@@ -820,7 +1007,13 @@ static void export_commands(const char *source, const char *pkg)
 		chmod(wrapper, 0755);
 		fprintf(f, "export = %s\n", wrapper);
 		info("  %s -> %s (%s)", cmd, line, source);
+		if (ncmds < (int)(sizeof(cmds) / sizeof(cmds[0])) && !(cmds[ncmds++] = strdup(cmd)))
+			die("out of memory");
 	}
+	export_desktop(source, list, cmds, ncmds, f);
+	for (int i = 0; i < ncmds; i++)
+		free(cmds[i]);
+	free(list);
 	fclose(f);
 }
 
@@ -833,8 +1026,7 @@ static void unexport(const char *pkg)
 	if (!(f = fopen(record, "re")))
 		return;
 	while (fgets(line, sizeof(line), f))
-		if (sscanf(line, "export = %4095s", path) == 1 &&
-		    !strncmp(path, EXPORT_DIR "/", strlen(EXPORT_DIR) + 1))
+		if (sscanf(line, "export = %4095s", path) == 1 && exported_path(path))
 			unlink(path);
 	fclose(f);
 	unlink(record);
