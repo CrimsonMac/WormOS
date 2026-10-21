@@ -42,7 +42,7 @@ static void usage(FILE *out)
 "usage: snap COMMAND [ARGS]\n"
 "\n"
 "  now [-c COMMENT]         take a snapshot (--suspect: never used by safe mode)\n"
-"  list                     list snapshots\n"
+"  list [--raw]             list snapshots (--raw: tab-separated, for programs)\n"
 "  rewind [ID] [-y]         go back to the last snapshot (or ID) and restart\n"
 "  diff ID [ID2]            show what changed since ID, or between ID and ID2\n"
 "  restore ID PATH          bring back one file or folder from ID\n"
@@ -233,15 +233,41 @@ static int cmd_now(int argc, char **argv)
 	return 0;
 }
 
+/*
+ * For programs (the Snapshots application): one line per snapshot, fields
+ * separated by tabs: ID, date (Unix time), scope, type, pinned (0 or 1),
+ * suspect (0 or 1), comment. Tabs and line breaks in comments become
+ * spaces.
+ */
+static int list_raw(void)
+{
+	struct snapshot *list;
+	int n;
+
+	open_store();
+	n = store_list(&list);
+	for (int i = 0; i < n; i++) {
+		for (char *c = list[i].comment; *c; c++)
+			if (*c == '\t' || *c == '\n' || *c == '\r')
+				*c = ' ';
+		printf("%d\t%lld\t%s\t%s\t%d\t%d\t%s\n", list[i].id, (long long)list[i].date,
+		       scope_name(list[i].scope), list[i].type, list[i].pinned != 0,
+		       list[i].suspect != 0, list[i].comment);
+	}
+	free(list);
+	return 0;
+}
+
 static int cmd_list(int argc, char **argv)
 {
 	struct snapshot *list;
 	char date[32];
 	int n, pid, pscope;
 
-	(void)argv;
+	if (argc == 2 && strcmp(argv[1], "--raw") == 0)
+		return list_raw();
 	if (argc != 1)
-		die("usage: snap list");
+		die("usage: snap list [--raw]");
 	open_store();
 	n = store_list(&list);
 	if (n == 0) {
