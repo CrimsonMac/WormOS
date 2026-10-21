@@ -24,7 +24,7 @@ fi
 PACKAGES=(base-files glibc gcc-libs busybox worminit wormrd snap wh worm linux
 	zstd curl gnupg wormhole-keyrings libmnl libnftnl nftables bh expat unbound
 	libevent tor kmod eudev seatd linux-firmware
-	wormos-desktop labwc wlroots mesa foot swaybg grim font-inter font-hack)
+	wormos-desktop labwc wlroots mesa foot swaybg grim wlr-randr xcompose font-inter font-hack)
 WH=$BUILD/host/wh
 
 [ -x "$WH" ] && [ -f "$REPO/index" ] || die "run tools/wrepo first"

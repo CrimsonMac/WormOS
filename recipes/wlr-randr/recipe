@@ -1,0 +1,16 @@
+name=wlr-randr
+version=0.5.0
+description="Screen resolution and layout for Wayland compositors"
+depends=(glibc wayland)
+# Signed by Simon Ser (34FF9526CFEF0E97A340E2E40FDE7BE0E88F5E48).
+source=(https://gitlab.freedesktop.org/emersion/wlr-randr/-/releases/v$version/downloads/wlr-randr-$version.tar.gz)
+sha256=(a64b6eb296d1c75af098fa2d229f9aaf3ceae45eeff24056930bd4bc613c6a5e)
+
+build() {
+	meson_build
+}
+
+package() {
+	meson_package
+	rm -rf "$pkgdir/usr/share"
+}

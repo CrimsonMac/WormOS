@@ -1,8 +1,8 @@
 name=wormos-desktop
 version=1.0
-release=2
+release=4
 description="The WormOS desktop session: labwc, foot and the WormOS look"
-depends=(labwc foot swaybg grim seatd font-inter font-hack base-files)
+depends=(labwc foot swaybg grim wlr-randr xcompose seatd font-inter font-hack base-files)
 
 build() {
 	python3 "$recipedir/files/wallpaper.py" wormos.png 1920 1080

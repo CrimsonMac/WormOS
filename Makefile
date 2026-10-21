@@ -10,7 +10,7 @@ PACKAGES := base-files busybox worminit wormrd snap \
 	libffi wayland wayland-protocols libdrm pixman xkeyboard-config \
 	libxkbcommon libevdev mtdev libinput hwdata libdisplay-info mesa \
 	libpng freetype harfbuzz fribidi fontconfig pcre2 glib libxml2 cairo pango \
-	font-inter font-hack wlroots labwc tllist fcft foot grim swaybg \
+	font-inter font-hack wlroots labwc tllist fcft foot grim swaybg wlr-randr xcompose \
 	wormos-desktop
 
 all: image

@@ -12,6 +12,8 @@ if ! id -Gn | grep -qw video; then
 	exit 1
 fi
 
+# Programs started from the desktop begin in the home folder.
+cd "$HOME" 2>/dev/null || cd /
 export LANG=${LANG:-C.UTF-8}
 export XDG_SESSION_TYPE=wayland
 export XDG_CURRENT_DESKTOP=labwc:wlroots
@@ -35,8 +37,18 @@ if [ -z "${WLR_RENDERER:-}" ]; then
 fi
 
 log=$XDG_RUNTIME_DIR/desktop.log
+started=$(date +%s)
 labwc > "$log" 2>&1
 status=$?
+# If OpenGL ES failed right at the start (such as VMware with 3D
+# acceleration off), start again with the software renderer.
+if [ $status -ne 0 ] && [ "${WLR_RENDERER:-}" != pixman ] &&
+   [ $(($(date +%s) - started)) -lt 15 ]; then
+	mv "$log" "$log.gles"
+	export WLR_RENDERER=pixman
+	labwc > "$log" 2>&1
+	status=$?
+fi
 if [ $status -ne 0 ]; then
 	echo "desktop: labwc exited with status $status; the end of $log:" >&2
 	tail -n 15 "$log" >&2

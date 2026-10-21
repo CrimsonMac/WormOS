@@ -1,0 +1,31 @@
+name=xcompose
+version=1.8.14
+release=2
+description="Compose sequences (dead keys and the Compose key), from libX11"
+# Signed by Alan Coopersmith (3AB285232C46AE43D8E192F4DAB0F78EA6E7E2D2).
+source=(https://www.x.org/releases/individual/lib/libX11-$version.tar.xz)
+sha256=(bbc78c46217174655c2b32b138ad119f3ac15f50808b4d0b3a2677a4b1afc950)
+
+# Only the data libxkbcommon reads: the UTF-8 Compose table, used for every
+# UTF-8 locale, and the locale aliases. The sources go through the C
+# preprocessor and sed, as in libX11's build (comments, XCOMM lines).
+nls() {
+	cpp -undef -traditional < "nls/$1" | sed \
+		-e '/^#  *[0-9][0-9]*  *.*$/d' \
+		-e '/^#line  *[0-9][0-9]*  *.*$/d' \
+		-e '/^[	 ]*XCOMM$/s/XCOMM/#/' \
+		-e '/^[	 ]*XCOMM[^a-zA-Z0-9_]/s/XCOMM/#/' \
+		-e '/^[	 ]*XHASH/s/XHASH/#/' \
+		-e '/@@$/s/@@$/\\/' \
+		-e '/^$/d'
+}
+
+package() {
+	local dir=$pkgdir/usr/share/X11/locale
+	mkdir -p "$dir/en_US.UTF-8"
+	nls en_US.UTF-8/Compose.pre > "$dir/en_US.UTF-8/Compose"
+	nls locale.alias.pre > "$dir/locale.alias"
+	nls compose.dir.pre | grep '^en_US\.UTF-8/Compose:' > "$dir/compose.dir"
+	chmod 644 "$dir/en_US.UTF-8/Compose" "$dir/locale.alias" "$dir/compose.dir"
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/xcompose/COPYING"
+}
