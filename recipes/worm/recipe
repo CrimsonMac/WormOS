@@ -3,12 +3,13 @@ version=0.1.0
 release=6
 description="WormOS system features (worm status, panic, fw, unlock, lock)"
 depends=(glibc snap nftables libxcrypt)
-localsrc=src/worm
+# Builds src/worm, which also uses sources from src/common.
+localsrc=src
 
 build() {
-	make CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+	make -C worm CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
 }
 
 package() {
-	make DESTDIR="$pkgdir" install
+	make -C worm DESTDIR="$pkgdir" install
 }
