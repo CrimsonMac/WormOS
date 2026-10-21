@@ -57,6 +57,7 @@ CHECKS = [
      "gsettings list-schemas | grep -c '^org.gtk.gtk4.Settings'", r"^[1-9]$"),
     ("file type database compiled by the hook",
      "stat -c %s /usr/share/mime/mime.cache; gio mime text/plain 2>&1 | head -1", r"^[1-9]\d+\n"),
+    ("snapshot summary written at boot", "cat /run/snap-status", r"^count = 0$"),
     ("machine ID kept in /var", "readlink /etc/machine-id; cat /etc/machine-id",
      r"^\.\./var/lib/dbus/machine-id\n[0-9a-f]{32}$"),
     ("hostname", "hostname", r"^wormos$"),
@@ -203,6 +204,10 @@ BLACKHOLE_CHECKS = [
     ("user's blackhole is private", "ls -ld /var/lib/blackholes/$(id -u tester)",
      r"^drwx------\s+\d+\s+tester\s"),
     ("user closes it", "su tester -c 'bh close u1'", r"^Closed blackhole u1\.$"),
+    ("power helper is setuid root", "stat -c '%U %a' /usr/lib/worm/power", r"^root 4755$"),
+    ("power helper only for administrators",
+     "su tester -c '/usr/lib/worm/power reboot'; echo rc=$?",
+     r"only administrators(.|\n)*^rc=1$"),
 ]
 
 # whc without network access: a tiny wormhole made of busybox and its
@@ -293,6 +298,9 @@ SNAPSHOT_CHECKS = [
     ("snap list", "snap list", r"^\s+1\s.*system\s+manual\s+test base$"),
     ("snap verify", "snap verify", r"^snapshot 1 \(system\): ok$"),
     ("store stays hidden after use", "grep -c snapshots /proc/mounts", r"^0$"),
+    ("summary readable by everyone",
+     "stat -c %a /run/snap-status; grep -E '^(count|last|last_comment) ' /run/snap-status",
+     r"^644\ncount = 1\nlast = 1\nlast_comment = test base$"),
 ]
 
 # Inside "snap browse 1", a read-only shell in the snapshot.

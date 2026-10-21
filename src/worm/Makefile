@@ -6,7 +6,7 @@ LDFLAGS += -Wl,-z,relro,-z,now
 PREFIX  ?= /usr
 BINDIR  ?= $(PREFIX)/bin
 
-all: worm
+all: worm power
 
 OBJS = worm.o fw.o panic.o status.o anon.o
 
@@ -15,10 +15,14 @@ worm: $(OBJS)
 
 $(OBJS): worm.h
 
-install: worm
+power: power.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ power.c
+
+install: worm power
 	install -Dm755 worm $(DESTDIR)$(BINDIR)/worm
+	install -Dm4755 power $(DESTDIR)$(PREFIX)/lib/worm/power
 
 clean:
-	rm -f worm $(OBJS)
+	rm -f worm power $(OBJS)
 
 .PHONY: all install clean
