@@ -1,0 +1,9 @@
+// The WormOS GTK 4 theme: GTK's own theme sources with WormOS colours and
+// rounder corners.
+$variant: 'dark';
+$contrast: 'normal';
+
+@import 'colors';
+@import 'drawing';
+@import 'common';
+@import 'colors-public';

@@ -1,0 +1,26 @@
+name=wormos-gtk-theme
+version=1.0
+description="The WormOS look for GTK 4 programs"
+depends=()
+# GTK's theme sources (the GTK release; GNOME publishes no signatures, this
+# matches the release's sha256sum file).
+source=(https://download.gnome.org/sources/gtk/4.24/gtk-4.24.1.tar.xz)
+sha256=(e98abe720e16129c8c0f50761dee0a2e9ae2478055e31018f6cf977fcf6513e9)
+
+build() {
+	cd gtk/theme/Default
+	cp "$recipedir/files/_colors.scss" "$recipedir/files/WormOS.scss" .
+	# Rounder buttons, menus and popovers.
+	sed -i 's/^\$button_radius: 5px;/$button_radius: 8px;/; s/^\$menu_radius: 5px;/$menu_radius: 7px;/' \
+		_common.scss
+	grep -q '^\$button_radius: 8px;' _common.scss || die "button radius not found"
+	sassc -M -t compact WormOS.scss gtk.css
+}
+
+package() {
+	local d=$pkgdir/usr/share/themes/WormOS/gtk-4.0
+	install -Dm644 gtk/theme/Default/gtk.css "$d/gtk.css"
+	install -Dm644 gtk/theme/Default/gtk.css "$d/gtk-dark.css"
+	cp -r gtk/theme/Default/assets "$d/assets"
+	chmod -R go-w "$d"
+}

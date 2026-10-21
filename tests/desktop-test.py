@@ -19,6 +19,8 @@ Usage: tests/desktop-test.py [--timeout SECONDS] [--release IMAGE]
 """
 
 import argparse
+import base64
+import hashlib
 import importlib.util
 import json
 import os
@@ -128,6 +130,52 @@ BUDGET_CHECKS = [
 
 # Window sizes a viewer asks for, including odd ones; the desktop follows.
 RESIZES = [(1600, 900), (1366, 768), (2560, 1440), (1131, 777)]
+
+
+def build_gtk_check():
+    """Compile tests/gtk-check.c with the WormOS toolchain; return its bytes."""
+    sysroot = os.path.join(ROOT, "build", "sysroot")
+    env = dict(os.environ, PKG_CONFIG_SYSROOT_DIR=sysroot,
+               PKG_CONFIG_LIBDIR=f"{sysroot}/usr/lib/pkgconfig:{sysroot}/usr/share/pkgconfig")
+    flags = subprocess.run(["pkg-config", "--cflags", "--libs", "gtk4"], env=env,
+                           check=True, capture_output=True, text=True).stdout.split()
+    out = os.path.join(ROOT, "build", "gtk-check")
+    subprocess.run([os.path.join(ROOT, "build", "tools", "bin", "x86_64-wormos-linux-gnu-gcc"),
+                    "-O2", "-s", "-o", out, os.path.join(ROOT, "tests", "gtk-check.c")] + flags,
+                   check=True)
+    with open(out, "rb") as f:
+        return f.read()
+
+
+def put_file(con, data, path, mode="755"):
+    """Copy data into the VM over the serial console (base64, in pieces)."""
+    text = base64.b64encode(data).decode()
+    lines = [text[i:i + 76] for i in range(0, len(text), 76)]
+    con.run(f"rm -f {path}.b64")
+    for i in range(0, len(lines), 12):
+        quoted = " ".join(f"'{line}'" for line in lines[i:i + 12])
+        con.run(f"printf '%s\\n' {quoted} >> {path}.b64")
+    con.run(f"base64 -d {path}.b64 > {path}; rm {path}.b64; chmod {mode} {path}")
+    # Short commands: a long one wraps on the console and hides its output.
+    out = con.run(f"sha256sum {path}")
+    return hashlib.sha256(data).hexdigest() in out
+
+
+# A program started on the desktop, with the session's environment.
+GTK_RUN = r"""pid=$(pidof labwc)
+set -- $(tr '\0' '\n' < /proc/$pid/environ | grep -E '^(WAYLAND_DISPLAY|XDG_[A-Z_]+|DBUS_SESSION_BUS_ADDRESS|GSK_RENDERER|GTK_A11Y|LANG|HOME|PATH)=')
+exec env -i "$@" /tmp/gtk-check
+"""
+
+GTK_CHECKS = [
+    ("GTK uses the WormOS theme", "cat /tmp/gtk.out", r"^theme=WormOS$"),
+    ("GTK finds the Adwaita icons", "cat /tmp/gtk.out", r"^icons=Adwaita$(.|\n)*^folder icon=yes$"),
+    ("GTK uses the Adwaita cursors", "cat /tmp/gtk.out", r"^cursor=Adwaita$"),
+    ("GTK uses the system font", "cat /tmp/gtk.out", r"^font=Inter Variable 10$"),
+    ("settings are kept by dconf", "cat /tmp/gtk.out", r"^settings store=DConfSettingsBackend$"),
+    ("GTK draws with cairo on a virtual GPU", "cat /tmp/gtk.out", r"^renderer=GskCairoRenderer$"),
+    ("no GTK warnings", "grep -c -i -e warning -e critical /tmp/gtk.out", r"^0$"),
+]
 
 
 class Monitor:
@@ -270,7 +318,12 @@ def read_ppm(path):
         data = f.read()
     fields = re.match(rb"P6\s+(\d+)\s+(\d+)\s+(\d+)\s", data)
     width, height = int(fields.group(1)), int(fields.group(2))
-    return width, height, data[fields.end():]
+    pixels = data[fields.end():]
+    # QEMU pads rows at odd widths (1131 pixels are written as 1132).
+    row = len(pixels) // height
+    if row != 3 * width:
+        pixels = b"".join(pixels[y * row:y * row + 3 * width] for y in range(height))
+    return width, height, pixels
 
 
 def main():
@@ -298,7 +351,7 @@ def main():
     passed = failures = 0
     total = (len(DEVICE_CHECKS) + 1 + len(AFTER_SETUP_CHECKS) + len(SESSION_CHECKS) +
              len(TYPING_CHECKS) + len(SHORTCUT_CHECKS) + len(BUDGET_CHECKS) +
-             len(RESIZES) + len(WELCOME_CHECKS) + 7)
+             len(RESIZES) + len(WELCOME_CHECKS) + len(GTK_CHECKS) + 10)
 
     def check(name, ok, out=""):
         nonlocal passed, failures
@@ -448,6 +501,21 @@ def main():
                 check(f"screen follows the window: {want[0]}x{want[1]}", got == want,
                       f"{got[0]}x{got[1]}; " +
                       con.run("grep -i 'preferred mode' /run/user/1000/desktop.log | tail -n 3"))
+
+            # A GTK program on the desktop.
+            check("GTK test program copied in", put_file(con, build_gtk_check(), "/tmp/gtk-check"))
+            put_file(con, GTK_RUN.encode(), "/tmp/gtk-run")
+            con.run(f"su {USER} -c 'sh /tmp/gtk-run > /tmp/gtk.out 2>&1 &'")
+            out = wait_for(con, "cat /tmp/gtk.out", r"^shown$", 120)
+            check("GTK window shown", re.search(r"^shown$", out, re.M) is not None, out)
+            time.sleep(3)
+            width, height, pixels = screen("gtk")
+            accent = sum(1 for i in range(0, len(pixels), 3)
+                         if abs(pixels[i] - 0x7c) < 16 and abs(pixels[i + 1] - 0x3a) < 16
+                         and abs(pixels[i + 2] - 0xed) < 16)
+            run_checks(con, GTK_CHECKS)
+            check("GTK window drawn in the WormOS colours", accent > 2000, f"{accent} pixels")
+            con.run("kill $(pidof gtk-check)")
 
             run_checks(con, BUDGET_CHECKS)
             used = con.run("free -m | awk '/^Mem:/ { print $3 }'")

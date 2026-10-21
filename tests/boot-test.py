@@ -50,6 +50,13 @@ CHECKS = [
     ("system bus answers",
      "dbus-send --system --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus "
      "org.freedesktop.DBus.GetId", r'string "[0-9a-f]{32}"'),
+    ("VMware tools installed, idle outside VMware",
+     "ls /usr/bin/vmtoolsd && echo running=$(pidof vmtoolsd | wc -w)",
+     r"^/usr/bin/vmtoolsd\nrunning=0$"),
+    ("settings schemas compiled by the hook",
+     "gsettings list-schemas | grep -c '^org.gtk.gtk4.Settings'", r"^[1-9]$"),
+    ("file type database compiled by the hook",
+     "stat -c %s /usr/share/mime/mime.cache; gio mime text/plain 2>&1 | head -1", r"^[1-9]\d+\n"),
     ("machine ID kept in /var", "readlink /etc/machine-id; cat /etc/machine-id",
      r"^\.\./var/lib/dbus/machine-id\n[0-9a-f]{32}$"),
     ("hostname", "hostname", r"^wormos$"),

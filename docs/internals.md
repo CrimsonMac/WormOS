@@ -108,6 +108,19 @@ in the README.
   before-snapshot ID) → SIGHUP to PID 1 → `snap boot` renames `@.next` to `@`.
   Downloads and history use the live `/var`. With `--try`, the next boot rolls
   back unless `snap stage keep` was run.
+- Hooks (`hooks.c`) rebuild caches that several packages contribute to.
+  A package providing the tool ships `usr/share/wh/hooks/NAME.hook` with
+  one or more `path =` lines and an `exec =` line. After a transaction
+  that installed or removed anything beneath a path (or installed the hook
+  itself), wh runs exec in the changed root, before committing it: words
+  starting with `/` are taken inside the root, and the program runs through
+  the root's own loader (`ld-linux-x86-64.so.2 --library-path ROOT/usr/lib`),
+  so the same hook works for a staged system and for an image assembled on
+  the build machine (without `LD_PRELOAD`, which the root's loader cannot
+  satisfy; build-rootfs gives the files their owner afterwards). Hooks:
+  `gsettings-schemas` (glib) and `mime-database` (shared-mime-info).
+  Caches that belong to one package's own folder, such as the Adwaita icon
+  cache, are built when the package is built instead.
 
 ## Wormholes
 
@@ -330,6 +343,26 @@ in the README.
   labwc's `autostart` passes `WAYLAND_DISPLAY` and `XDG_CURRENT_DESKTOP` to
   the bus (`dbus-update-activation-environment`) for programs it starts on
   demand.
+
+## GTK
+
+- GTK 4.24 with the Wayland backend only: no X11, Vulkan, GStreamer,
+  printing or desktop search. Its dependencies: gdk-pixbuf (PNG, JPEG and
+  TIFF loaders built into the library, so no loader cache; no glycin),
+  libjpeg-turbo (CMake, SIMD assembled with the build machine's nasm),
+  libtiff, libepoxy (EGL only), graphene, shared-mime-info, cairo with
+  cairo-gobject and harfbuzz with its subset library and GLib integration.
+  SVG icons are drawn by GTK's own SVG renderer; there is no librsvg.
+- `wormos-gtk-theme` compiles GTK's own theme sources (from the GTK
+  release) with sassc, with `_colors.scss` replaced by the WormOS palette
+  and rounder corners, into `/usr/share/themes/WormOS/gtk-4.0` (dark only;
+  `gtk-dark.css` is the same file).
+- `/etc/gtk-4.0/settings.ini` selects the theme, the Adwaita icons and
+  cursors, Inter and the dark colour scheme. labwc uses the same cursors
+  (`XCURSOR_THEME`). With wlroots' pixman renderer the session also sets
+  `GSK_RENDERER=cairo`: GTK's OpenGL renderer would run on softpipe.
+- dconf keeps GSettings values (its service is started on demand by the
+  session bus). gtk4-layer-shell is there for the shell's panel.
 
 ## Desktop session
 
