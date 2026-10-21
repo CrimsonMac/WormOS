@@ -1,5 +1,7 @@
 # One tip per line; a new terminal shows one at random.
-Right click on the desktop (or Super+Space) opens the menu.
+The Super key opens the launcher; type to find a program.
+Right click on the desktop opens a menu with the main tools.
+The camera icon in the panel shows your snapshots.
 Super+Enter opens a terminal and Super+Q closes the focused window.
 Print saves a screenshot to ~/Pictures.
 snap now -c "before the update" names a snapshot so you find it later.

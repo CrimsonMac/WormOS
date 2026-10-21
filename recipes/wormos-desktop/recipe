@@ -1,9 +1,9 @@
 name=wormos-desktop
 version=1.0
-release=7
+release=8
 description="The WormOS desktop session: labwc, foot and the WormOS look"
 depends=(labwc foot swaybg grim wlr-randr xcompose seatd dbus font-inter font-hack base-files
-	gtk4 gtk4-layer-shell wormos-gtk-theme adwaita-icon-theme dconf)
+	gtk4 gtk4-layer-shell wormos-gtk-theme adwaita-icon-theme dconf worm-shell)
 
 build() {
 	python3 "$recipedir/files/wallpaper.py" wormos.png 2560 1440
@@ -20,6 +20,8 @@ package() {
 	install -Dm644 "$f/theme/themerc" "$pkgdir/usr/share/themes/WormOS/labwc/themerc"
 	install -Dm644 "$f/foot.ini" "$pkgdir/etc/xdg/foot/foot.ini"
 	install -Dm644 "$f/gtk-settings.ini" "$pkgdir/etc/gtk-4.0/settings.ini"
+	install -Dm644 "$f/root-terminal.desktop" \
+		"$pkgdir/usr/share/applications/org.wormos.RootTerminal.desktop"
 	install -Dm755 "$f/welcome" "$pkgdir/usr/bin/welcome"
 	install -Dm644 "$f/motd.sh" "$pkgdir/etc/profile.d/motd.sh"
 	install -Dm644 -t "$pkgdir/usr/share/wormos" "$f/guide" "$f/tips"

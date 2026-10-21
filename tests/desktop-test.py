@@ -87,6 +87,7 @@ SESSION_CHECKS = [
      r"^[1-9]"),
     ("wallpaper running", "pidof swaybg", r"^\d+"),
     ("welcome terminal open", "pidof foot", r"^\d+$"),
+    ("shell running", "pidof worm-shell", r"^\d+$"),
     ("session bus for the user", "stat -c '%U %F' /run/user/1000/bus",
      rf"^{USER} socket$"),
     ("session bus answers",
@@ -161,11 +162,18 @@ def put_file(con, data, path, mode="755"):
     return hashlib.sha256(data).hexdigest() in out
 
 
-# A program started on the desktop, with the session's environment.
-GTK_RUN = r"""pid=$(pidof labwc)
-set -- $(tr '\0' '\n' < /proc/$pid/environ | grep -E '^(WAYLAND_DISPLAY|XDG_[A-Z_]+|DBUS_SESSION_BUS_ADDRESS|GSK_RENDERER|GTK_A11Y|LANG|HOME|PATH)=')
-exec env -i "$@" /tmp/gtk-check
+# Runs a command as on the desktop, with the session's environment.
+IN_SESSION = r"""pid=$(pidof labwc)
+vars=$(tr '\0' '\n' < /proc/$pid/environ | grep -E '^(WAYLAND_DISPLAY|XDG_[A-Z_]+|DBUS_SESSION_BUS_ADDRESS|GSK_RENDERER|GTK_A11Y|LANG|HOME|PATH|LABWC_PID)=')
+exec env -i $vars "$@"
 """
+
+NOTIFY = ("gdbus call --session --dest org.freedesktop.Notifications "
+          "--object-path /org/freedesktop/Notifications "
+          "--method org.freedesktop.Notifications.Notify "
+          "Tests 0 dialog-information-symbolic 'Snapshot taken' 'Number 3: before the update' "
+          "'[]' '{}' 20000")
+SCALE = "wlr-randr | grep -i scale"
 
 GTK_CHECKS = [
     ("GTK uses the WormOS theme", "cat /tmp/gtk.out", r"^theme=WormOS$"),
@@ -299,6 +307,11 @@ class Vnc:
                           struct.pack(">IHHHHI", 0, 0, 0, width, height, 0))
 
 
+def near(pixels, width, x, y, rgb, tolerance):
+    i = 3 * (y * width + x)
+    return all(abs(pixels[i + k] - rgb[k]) < tolerance for k in range(3))
+
+
 def region_diff(a, b, width, box):
     """Count pixels that differ between two screens inside box (x0, y0, x1, y1)."""
     x0, y0, x1, y1 = box
@@ -351,7 +364,7 @@ def main():
     passed = failures = 0
     total = (len(DEVICE_CHECKS) + 1 + len(AFTER_SETUP_CHECKS) + len(SESSION_CHECKS) +
              len(TYPING_CHECKS) + len(SHORTCUT_CHECKS) + len(BUDGET_CHECKS) +
-             len(RESIZES) + len(WELCOME_CHECKS) + len(GTK_CHECKS) + 10)
+             len(RESIZES) + len(WELCOME_CHECKS) + len(GTK_CHECKS) + 17)
 
     def check(name, ok, out=""):
         nonlocal passed, failures
@@ -504,8 +517,12 @@ def main():
 
             # A GTK program on the desktop.
             check("GTK test program copied in", put_file(con, build_gtk_check(), "/tmp/gtk-check"))
-            put_file(con, GTK_RUN.encode(), "/tmp/gtk-run")
-            con.run(f"su {USER} -c 'sh /tmp/gtk-run > /tmp/gtk.out 2>&1 &'")
+            put_file(con, IN_SESSION.encode(), "/tmp/in-session")
+
+            def session(cmd):
+                return con.run(f"su {USER} -c '/tmp/in-session {cmd}'")
+
+            con.run(f"su {USER} -c '/tmp/in-session /tmp/gtk-check > /tmp/gtk.out 2>&1 &'")
             out = wait_for(con, "cat /tmp/gtk.out", r"^shown$", 120)
             check("GTK window shown", re.search(r"^shown$", out, re.M) is not None, out)
             time.sleep(3)
@@ -516,6 +533,49 @@ def main():
             run_checks(con, GTK_CHECKS)
             check("GTK window drawn in the WormOS colours", accent > 2000, f"{accent} pixels")
             con.run("kill $(pidof gtk-check)")
+
+            # The shell: notifications, the launcher, the panel, the scale.
+            put_file(con, NOTIFY.encode(), "/tmp/notify.sh")
+            out = session("sh /tmp/notify.sh")
+            check("notification accepted", re.search(r"\(uint32 \d+,\)", out) is not None, out)
+            time.sleep(3)
+            width, height, pixels = screen("notification")
+            corner = sum(1 for y in range(0, 220) for x in range(width - 420, width)
+                         if near(pixels, width, x, y, (0x8b, 0x5c, 0xf6), 30))
+            check("notification shown at the top right", corner > 100, f"{corner} pixels")
+
+            before = screen("before-launcher")[2]
+            feet = len(con.run("pidof foot").split())
+            session("worm-shell --launcher")
+            time.sleep(3)
+            changed = region_diff(before, screen("launcher")[2], width, (0, 0, width, height))
+            check("launcher covers the screen", changed > width * height // 8 // 2,
+                  f"{changed} of {width * height // 4} sampled pixels changed")
+            mon.type("foot")
+            time.sleep(2)
+            mon.key("ret")
+            out = wait_for(con, "pidof foot | wc -w", rf"^{feet + 1}$", 60)
+            check("launcher starts the program typed", out.strip() == str(feet + 1), out)
+
+            session("worm-shell --quit")
+            time.sleep(3)
+            gone = screen("no-panel")[2]
+            con.run(f"su {USER} -c '/tmp/in-session worm-shell > /dev/null 2>&1 &'")
+            time.sleep(8)
+            back = screen("panel")[2]
+            changed = region_diff(gone, back, width, (0, 0, width, 30))
+            check("panel drawn along the top", changed > width // 4, f"{changed} pixels changed")
+
+            vnc.resize(3840, 2160)
+            out = wait_for(con, f"su {USER} -c '/tmp/in-session {SCALE}'", r"2\.0+", 90)
+            check("automatic scale 2 on a 4K screen", re.search(r"2\.0+", out) is not None, out)
+            con.run(f"mkdir -p /home/{USER}/.config/wormos && echo 'scale = 1.25' > "
+                    f"/home/{USER}/.config/wormos/display && chown -R {USER} /home/{USER}/.config")
+            session("worm-shell --quit")
+            con.run(f"su {USER} -c '/tmp/in-session worm-shell > /dev/null 2>&1 &'")
+            out = wait_for(con, f"su {USER} -c '/tmp/in-session {SCALE}'", r"1\.25", 90)
+            check("chosen scale applied", "1.25" in out, out)
+            vnc.resize(1280, 800)
 
             run_checks(con, BUDGET_CHECKS)
             used = con.run("free -m | awk '/^Mem:/ { print $3 }'")

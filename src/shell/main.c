@@ -1,0 +1,62 @@
+/*
+ * worm-shell - the WormOS desktop shell: the panel, the application
+ * launcher and desktop notifications, in one program started with the
+ * desktop. It runs once per session; "worm-shell --launcher" (bound to the
+ * Super key) asks the running shell to open or close the launcher.
+ */
+
+#include "shell.h"
+
+static void load_css(void)
+{
+	GtkCssProvider *css = gtk_css_provider_new();
+
+	gtk_css_provider_load_from_path(css, SHELL_CSS);
+	gtk_style_context_add_provider_for_display(gdk_display_get_default(),
+						   GTK_STYLE_PROVIDER(css),
+						   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+	g_object_unref(css);
+}
+
+static void startup(GApplication *gapp, gpointer data)
+{
+	(void)data;
+	load_css();
+	wayland_init();
+	panels_init(GTK_APPLICATION(gapp));
+	notify_init(GTK_APPLICATION(gapp));
+	/* The shell lives as long as the session, with or without windows. */
+	g_application_hold(gapp);
+}
+
+static int command_line(GApplication *gapp, GApplicationCommandLine *cmd, gpointer data)
+{
+	GVariantDict *options = g_application_command_line_get_options_dict(cmd);
+
+	(void)data;
+	if (g_variant_dict_contains(options, "launcher"))
+		launcher_toggle(GTK_APPLICATION(gapp));
+	if (g_variant_dict_contains(options, "quit"))
+		g_application_quit(gapp);
+	return 0;
+}
+
+int main(int argc, char **argv)
+{
+	static const GOptionEntry entries[] = {
+		{ "launcher", 0, 0, G_OPTION_ARG_NONE, NULL,
+		  "Open or close the application launcher", NULL },
+		{ "quit", 0, 0, G_OPTION_ARG_NONE, NULL, "Stop the running shell", NULL },
+		{ NULL, 0, 0, 0, NULL, NULL, NULL },
+	};
+	GtkApplication *app = gtk_application_new(SHELL_APP_ID,
+						  G_APPLICATION_HANDLES_COMMAND_LINE);
+	int status;
+
+	g_application_add_main_option_entries(G_APPLICATION(app), entries);
+	g_signal_connect(app, "startup", G_CALLBACK(startup), NULL);
+	g_signal_connect(app, "command-line", G_CALLBACK(command_line), NULL);
+	status = g_application_run(G_APPLICATION(app), argc, argv);
+	g_object_unref(app);
+	return status;
+}

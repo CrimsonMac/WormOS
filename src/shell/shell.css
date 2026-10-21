@@ -1,0 +1,217 @@
+/* The look of worm-shell, on top of the WormOS GTK theme. */
+
+@define-color shell_bg rgba(16, 13, 24, 0.86);
+@define-color shell_fg #ece7f5;
+@define-color shell_dim rgba(236, 231, 245, 0.6);
+@define-color shell_hover rgba(255, 255, 255, 0.08);
+@define-color shell_pressed rgba(255, 255, 255, 0.14);
+@define-color shell_accent #8b5cf6;
+@define-color shell_card rgba(29, 24, 40, 0.97);
+
+/* ---- panel ---- */
+
+window.panel {
+	background: @shell_bg;
+	color: @shell_fg;
+	border-bottom: 1px solid rgba(139, 92, 246, 0.18);
+}
+
+window.panel .bar {
+	min-height: 34px;
+	padding: 3px 6px;
+}
+
+window.panel button,
+window.panel menubutton > button {
+	background: none;
+	border: none;
+	box-shadow: none;
+	color: @shell_fg;
+	border-radius: 9px;
+	min-height: 26px;
+	padding: 2px 10px;
+	transition: background 120ms ease-out;
+}
+
+window.panel button:hover,
+window.panel menubutton > button:hover {
+	background: @shell_hover;
+}
+
+window.panel button:active,
+window.panel menubutton > button:checked {
+	background: @shell_pressed;
+}
+
+window.panel .launcher-button {
+	padding: 2px 9px;
+}
+
+window.panel .launcher-button image {
+	color: @shell_accent;
+	-gtk-icon-size: 18px;
+}
+
+window.panel .tasks {
+	margin-left: 6px;
+}
+
+window.panel .task {
+	padding: 2px 10px;
+	color: @shell_dim;
+}
+
+window.panel .task image {
+	-gtk-icon-size: 16px;
+}
+
+window.panel .task.active {
+	color: @shell_fg;
+	background: rgba(139, 92, 246, 0.20);
+	box-shadow: inset 0 -2px 0 @shell_accent;
+}
+
+window.panel .task.minimized {
+	opacity: 0.55;
+}
+
+window.panel .clock > button {
+	font-weight: 600;
+	font-feature-settings: "tnum";
+}
+
+window.panel .status image {
+	-gtk-icon-size: 16px;
+}
+
+window.panel menubutton.warning > button {
+	color: #f0607a;
+	background: rgba(240, 96, 122, 0.15);
+}
+
+window.panel menubutton.tor > button {
+	color: #b794ff;
+}
+
+popover .info {
+	padding: 6px 4px;
+	line-height: 1.4;
+}
+
+popover .heading {
+	font-weight: 700;
+	padding: 2px 4px 6px;
+}
+
+popover .power-action {
+	padding: 6px 10px;
+}
+
+popover .power-action > box {
+	margin-right: 24px;
+}
+
+/* ---- launcher ---- */
+
+window.launcher {
+	background: rgba(8, 6, 14, 0.82);
+	color: @shell_fg;
+}
+
+window.launcher .launcher-content {
+	margin: 72px 48px 48px;
+}
+
+window.launcher .launcher-search {
+	min-width: 420px;
+	min-height: 40px;
+	font-size: 15px;
+	border-radius: 20px;
+	padding: 0 14px;
+	background: rgba(255, 255, 255, 0.07);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	box-shadow: none;
+}
+
+window.launcher .launcher-search:focus-within {
+	border-color: @shell_accent;
+	background: rgba(139, 92, 246, 0.10);
+}
+
+window.launcher flowbox {
+	background: none;
+}
+
+window.launcher flowboxchild {
+	border-radius: 14px;
+	padding: 14px 10px 10px;
+	min-width: 112px;
+	transition: background 120ms ease-out;
+}
+
+window.launcher flowboxchild:hover {
+	background: @shell_hover;
+}
+
+window.launcher flowboxchild:focus-visible {
+	background: rgba(139, 92, 246, 0.25);
+	outline: none;
+}
+
+window.launcher .app label {
+	font-size: 12px;
+}
+
+/* ---- notifications ---- */
+
+window.notifications {
+	background: none;
+}
+
+window.notifications .notification {
+	background: @shell_card;
+	color: @shell_fg;
+	border-radius: 14px;
+	border: 1px solid rgba(255, 255, 255, 0.07);
+	box-shadow: inset 3px 0 0 @shell_accent, 0 6px 18px rgba(0, 0, 0, 0.45);
+	padding: 12px 10px 12px 14px;
+	margin: 4px 8px 8px;
+	min-width: 340px;
+}
+
+window.notifications .notification.critical {
+	box-shadow: inset 3px 0 0 #f0607a, 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+window.notifications .source {
+	font-size: 11px;
+	color: @shell_dim;
+}
+
+window.notifications .summary {
+	font-weight: 700;
+}
+
+window.notifications .body {
+	color: rgba(236, 231, 245, 0.85);
+}
+
+window.notifications .actions {
+	margin-top: 6px;
+}
+
+window.notifications .close {
+	background: none;
+	border: none;
+	box-shadow: none;
+	min-width: 24px;
+	min-height: 24px;
+	padding: 0;
+	border-radius: 12px;
+	color: @shell_dim;
+}
+
+window.notifications .close:hover {
+	background: @shell_hover;
+	color: @shell_fg;
+}

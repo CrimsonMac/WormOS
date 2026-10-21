@@ -2,6 +2,8 @@
 # Programs the message bus starts on demand need the display too.
 dbus-update-activation-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP > /dev/null 2>&1
 swaybg -i /usr/share/backgrounds/wormos.png -m fill > /dev/null 2>&1 &
+# The panel, the application launcher and notifications.
+worm-shell > "$XDG_RUNTIME_DIR/shell.log" 2>&1 &
 # A welcome terminal the first time a user starts the desktop.
 if [ ! -e "$HOME/.config/wormos/welcomed" ]; then
 	mkdir -p "$HOME/.config/wormos" && touch "$HOME/.config/wormos/welcomed"

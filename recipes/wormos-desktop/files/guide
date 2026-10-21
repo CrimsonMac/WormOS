@@ -4,7 +4,9 @@
    [35m'-~~~-'[0m
 
   The desktop
-    Right click on the background (or Super+Space) for the menu.
+    The Super key (or the grid at the top left) opens the launcher.
+    Right click on the background for a menu with the main tools.
+    The power icon at the top right has the display scale and shutdown.
     Super+Enter opens a terminal, Super+Q closes a window,
     Alt+Tab switches windows, Print saves a screenshot to ~/Pictures.
     Ctrl+Alt+F2 has a second console, for logging in as root.
@@ -12,7 +14,7 @@
     a size yourself:  wlr-randr  lists outputs and modes, e.g.
       wlr-randr --output Virtual-1 --custom-mode 1920x1080
 
-  Administration happens as root: run  su -  (or the menu's "Root terminal").
+  Administration happens as root: run  su -  (or the "Root Terminal" program).
     snap now -c "note"     take a snapshot of the system
     snap list              list snapshots;  snap rewind  goes back
     worm status            protections at a glance

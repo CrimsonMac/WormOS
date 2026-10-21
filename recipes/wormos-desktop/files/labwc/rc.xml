@@ -23,7 +23,9 @@
     <default />
     <keybind key="W-Return"><action name="Execute" command="foot" /></keybind>
     <keybind key="W-t"><action name="Execute" command="foot" /></keybind>
-    <keybind key="W-space"><action name="ShowMenu" menu="root-menu" /></keybind>
+    <!-- Super on its own, or Super+Space: the application launcher. -->
+    <keybind key="Super_L" onRelease="yes"><action name="Execute" command="worm-shell --launcher" /></keybind>
+    <keybind key="W-space"><action name="Execute" command="worm-shell --launcher" /></keybind>
     <keybind key="W-q"><action name="Close" /></keybind>
     <keybind key="W-Up"><action name="ToggleMaximize" /></keybind>
     <keybind key="W-Left"><action name="SnapToEdge" direction="left" /></keybind>

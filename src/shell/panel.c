@@ -1,0 +1,472 @@
+/*
+ * The panel along the top of every screen: the launcher button and the
+ * open windows on the left, the clock in the middle, and on the right the
+ * snapshots, the protections, the network and the power menu.
+ */
+
+#include <gtk4-layer-shell.h>
+
+#include "shell.h"
+
+struct panel {
+	GtkWidget *window;
+	GdkMonitor *monitor;
+	GtkWidget *tasks;
+	GtkWidget *clock;
+	GtkWidget *calendar;
+	GtkWidget *snap_label, *snap_info;
+	GtkWidget *shield, *shield_info;
+	GtkWidget *network, *network_info;
+	GtkWidget *confirm;             /* the power action waiting for a second click */
+};
+
+static GtkApplication *app;
+static GPtrArray *panels;               /* of struct panel */
+
+static void keyboard_while_open(GtkWidget *popover);
+
+/* ---- the task list ---- */
+
+static void task_clicked(GtkButton *button, gpointer data)
+{
+	struct toplevel *t = data;
+
+	(void)button;
+	if (t->activated && !t->minimized)
+		toplevel_minimize(t);
+	else
+		toplevel_activate(t);
+}
+
+static void task_middle_click(GtkGestureClick *gesture, int n, double x, double y,
+			      gpointer data)
+{
+	(void)gesture;
+	(void)n;
+	(void)x;
+	(void)y;
+	toplevel_close(data);
+}
+
+static GtkWidget *task_button(struct toplevel *t)
+{
+	GtkWidget *button = gtk_button_new(), *box, *label;
+	GIcon *icon = app_icon(t->app_id);
+	GtkGesture *middle;
+
+	box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+	gtk_box_append(GTK_BOX(box), gtk_image_new_from_gicon(icon));
+	label = gtk_label_new(t->title && *t->title ? t->title : t->app_id);
+	gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
+	gtk_label_set_max_width_chars(GTK_LABEL(label), 24);
+	gtk_box_append(GTK_BOX(box), label);
+	gtk_button_set_child(GTK_BUTTON(button), box);
+	gtk_widget_add_css_class(button, "task");
+	if (t->activated)
+		gtk_widget_add_css_class(button, "active");
+	if (t->minimized)
+		gtk_widget_add_css_class(button, "minimized");
+	gtk_widget_set_tooltip_text(button, t->title);
+	g_signal_connect(button, "clicked", G_CALLBACK(task_clicked), t);
+	middle = gtk_gesture_click_new();
+	gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(middle), 2);
+	g_signal_connect(middle, "released", G_CALLBACK(task_middle_click), t);
+	gtk_widget_add_controller(button, GTK_EVENT_CONTROLLER(middle));
+	g_object_unref(icon);
+	return button;
+}
+
+static void tasks_changed(void)
+{
+	GPtrArray *list = toplevels_list();
+
+	for (guint p = 0; p < panels->len; p++) {
+		struct panel *panel = g_ptr_array_index(panels, p);
+		GtkWidget *child;
+
+		while ((child = gtk_widget_get_first_child(panel->tasks)))
+			gtk_box_remove(GTK_BOX(panel->tasks), child);
+		for (guint i = 0; i < list->len; i++) {
+			struct toplevel *t = g_ptr_array_index(list, i);
+
+			if (t->ready)
+				gtk_box_append(GTK_BOX(panel->tasks), task_button(t));
+		}
+	}
+}
+
+/* ---- clock and status ---- */
+
+static gboolean tick(gpointer data)
+{
+	GDateTime *now = g_date_time_new_now_local();
+	char *text = g_date_time_format(now, "%a %e %b   %H:%M");
+
+	(void)data;
+	for (guint p = 0; p < panels->len; p++) {
+		struct panel *panel = g_ptr_array_index(panels, p);
+
+		if (g_strcmp0(gtk_menu_button_get_label(GTK_MENU_BUTTON(panel->clock)), text))
+			gtk_menu_button_set_label(GTK_MENU_BUTTON(panel->clock), text);
+	}
+	g_free(text);
+	g_date_time_unref(now);
+	return G_SOURCE_CONTINUE;
+}
+
+static void set_class(GtkWidget *w, const char *name, gboolean on)
+{
+	if (on)
+		gtk_widget_add_css_class(w, name);
+	else
+		gtk_widget_remove_css_class(w, name);
+}
+
+static gboolean refresh_status(gpointer data)
+{
+	struct status s;
+	char *snap_text, *snap_info, *shield_info, *network_info;
+	const char *shield_icon, *network_icon;
+
+	(void)data;
+	status_read(&s);
+
+	if (s.snapshots < 0) {
+		snap_text = g_strdup("?");
+		snap_info = g_strdup("The snapshot summary is not available.");
+	} else if (s.snapshots == 0) {
+		snap_text = g_strdup("0");
+		snap_info = g_strdup("No snapshots yet.\n\nTake one as root:  snap now -c \"note\"");
+	} else {
+		char *when = relative_time(s.last_date);
+
+		snap_text = g_strdup_printf("%d", s.snapshots);
+		snap_info = g_strdup_printf(
+			"%d snapshot%s\nLast: number %d, %s%s%s%s\nAutomatic snapshots: %s%s",
+			s.snapshots, s.snapshots == 1 ? "" : "s", s.last_id, when,
+			*s.last_comment ? "\n\xe2\x80\x9c" : "", s.last_comment,
+			*s.last_comment ? "\xe2\x80\x9d" : "", s.auto_snapshots ? "on" : "off",
+			!strcmp(s.pending, "rewind") ? "\n\nA rewind happens at the next restart." :
+			!strcmp(s.pending, "change") ? "\n\nA package change waits for a restart." :
+			!strcmp(s.pending, "trial") ? "\n\nA trial is running (wh keep keeps it)." : "");
+		g_free(when);
+	}
+
+	if (s.network_cut) {
+		shield_icon = "security-low-symbolic";
+		shield_info = g_strdup("The network is cut (worm panic or safe mode).");
+	} else if (s.anon) {
+		shield_icon = "network-vpn-symbolic";
+		shield_info = g_strdup("Firewall: incoming connections blocked\n"
+				       "Anonymous mode: all traffic goes through Tor");
+	} else {
+		shield_icon = "security-high-symbolic";
+		shield_info = g_strdup("Firewall: incoming connections blocked\n"
+				       "Anonymous mode: off (worm anon on)");
+	}
+	network_icon = s.online ? "network-wired-symbolic" : "network-wired-disconnected-symbolic";
+	network_info = s.online ? g_strdup_printf("Connected%s%s", *s.address ? "\n" : "",
+						  s.address)
+				: g_strdup("Not connected");
+
+	for (guint p = 0; p < panels->len; p++) {
+		struct panel *panel = g_ptr_array_index(panels, p);
+
+		gtk_label_set_text(GTK_LABEL(panel->snap_label), snap_text);
+		gtk_label_set_text(GTK_LABEL(panel->snap_info), snap_info);
+		gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(panel->shield), shield_icon);
+		set_class(panel->shield, "warning", s.network_cut);
+		set_class(panel->shield, "tor", s.anon && !s.network_cut);
+		gtk_label_set_text(GTK_LABEL(panel->shield_info), shield_info);
+		gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(panel->network), network_icon);
+		gtk_widget_set_tooltip_text(panel->network, network_info);
+		gtk_label_set_text(GTK_LABEL(panel->network_info), network_info);
+	}
+	g_free(snap_text);
+	g_free(snap_info);
+	g_free(shield_info);
+	g_free(network_info);
+	return G_SOURCE_CONTINUE;
+}
+
+/* ---- the power menu ---- */
+
+static const double scales[] = { 0, 1, 1.25, 1.5, 1.75, 2 };
+
+static void scale_selected(GtkDropDown *dropdown, GParamSpec *pspec, gpointer data)
+{
+	guint i = gtk_drop_down_get_selected(dropdown);
+
+	(void)pspec;
+	(void)data;
+	if (i < G_N_ELEMENTS(scales) && scales[i] != outputs_scale_setting())
+		outputs_set_scale(scales[i]);
+}
+
+static void power_label(GtkWidget *button, const char *text)
+{
+	GtkWidget *label = g_object_get_data(G_OBJECT(button), "text");
+
+	gtk_label_set_text(GTK_LABEL(label),
+			   text ? text : g_object_get_data(G_OBJECT(button), "label"));
+}
+
+static void power_clicked(GtkButton *button, gpointer data)
+{
+	struct panel *panel = data;
+	const char *action = g_object_get_data(G_OBJECT(button), "action");
+
+	/* Restart and shut down ask for a second click. */
+	if (strcmp(action, "logout") && panel->confirm != GTK_WIDGET(button)) {
+		if (panel->confirm)
+			power_label(panel->confirm, NULL);
+		panel->confirm = GTK_WIDGET(button);
+		power_label(GTK_WIDGET(button), !strcmp(action, "off")
+				? "Click again to shut down" : "Click again to restart");
+		return;
+	}
+	if (!strcmp(action, "logout"))
+		power_logout();
+	else if (!power_request(action))
+		power_label(GTK_WIDGET(button), "Only administrators can do this");
+}
+
+static GtkWidget *power_button(struct panel *panel, const char *icon, const char *label,
+			       const char *action)
+{
+	GtkWidget *button = gtk_button_new(), *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+	GtkWidget *text = gtk_label_new(label);
+
+	gtk_box_append(GTK_BOX(box), gtk_image_new_from_icon_name(icon));
+	gtk_box_append(GTK_BOX(box), text);
+	gtk_button_set_child(GTK_BUTTON(button), box);
+	g_object_set_data(G_OBJECT(button), "action", (gpointer)action);
+	g_object_set_data(G_OBJECT(button), "label", (gpointer)label);
+	g_object_set_data(G_OBJECT(button), "text", text);
+	gtk_widget_add_css_class(button, "power-action");
+	if (!strcmp(action, "off"))
+		gtk_widget_add_css_class(button, "destructive-action");
+	g_signal_connect(button, "clicked", G_CALLBACK(power_clicked), panel);
+	return button;
+}
+
+static void power_menu_closed(GtkPopover *popover, gpointer data)
+{
+	struct panel *panel = data;
+
+	(void)popover;
+	if (panel->confirm)
+		power_label(panel->confirm, NULL);
+	panel->confirm = NULL;
+}
+
+static GtkWidget *power_menu(struct panel *panel)
+{
+	static const char *const names[] = { "Automatic", "100%", "125%", "150%", "175%",
+					     "200%", NULL };
+	GtkWidget *button = gtk_menu_button_new(), *popover = gtk_popover_new();
+	GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6), *row, *dropdown, *user;
+	double current = outputs_scale_setting();
+
+	gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(button), "system-shutdown-symbolic");
+	gtk_widget_set_tooltip_text(button, "Display and power");
+
+	user = gtk_label_new(g_get_real_name() && strcmp(g_get_real_name(), "Unknown")
+			     ? g_get_real_name() : g_get_user_name());
+	gtk_widget_add_css_class(user, "heading");
+	gtk_widget_set_halign(user, GTK_ALIGN_START);
+	gtk_box_append(GTK_BOX(box), user);
+
+	row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+	gtk_box_append(GTK_BOX(row), gtk_image_new_from_icon_name("video-display-symbolic"));
+	gtk_box_append(GTK_BOX(row), gtk_label_new("Display scale"));
+	dropdown = gtk_drop_down_new_from_strings(names);
+	gtk_widget_set_hexpand(dropdown, TRUE);
+	gtk_widget_set_halign(dropdown, GTK_ALIGN_END);
+	for (guint i = 0; i < G_N_ELEMENTS(scales); i++)
+		if (scales[i] == current)
+			gtk_drop_down_set_selected(GTK_DROP_DOWN(dropdown), i);
+	g_signal_connect(dropdown, "notify::selected", G_CALLBACK(scale_selected), NULL);
+	gtk_box_append(GTK_BOX(row), dropdown);
+	gtk_box_append(GTK_BOX(box), row);
+
+	gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+	gtk_box_append(GTK_BOX(box), power_button(panel, "system-log-out-symbolic", "Log out",
+						  "logout"));
+	gtk_box_append(GTK_BOX(box), power_button(panel, "system-reboot-symbolic", "Restart",
+						  "reboot"));
+	gtk_box_append(GTK_BOX(box), power_button(panel, "system-shutdown-symbolic",
+						  "Shut down", "off"));
+	gtk_popover_set_child(GTK_POPOVER(popover), box);
+	g_signal_connect(popover, "closed", G_CALLBACK(power_menu_closed), panel);
+	keyboard_while_open(popover);
+	gtk_menu_button_set_popover(GTK_MENU_BUTTON(button), popover);
+	return button;
+}
+
+/* ---- building a panel ---- */
+
+static void menu_opened(GtkPopover *popover, gpointer data)
+{
+	(void)data;
+	gtk_layer_set_keyboard_mode(GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(popover))),
+				    GTK_LAYER_SHELL_KEYBOARD_MODE_ON_DEMAND);
+}
+
+static void menu_closed(GtkPopover *popover, gpointer data)
+{
+	(void)data;
+	gtk_layer_set_keyboard_mode(GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(popover))),
+				    GTK_LAYER_SHELL_KEYBOARD_MODE_NONE);
+}
+
+/* Menus can take the keyboard (Escape, typing in fields) while open. */
+static void keyboard_while_open(GtkWidget *popover)
+{
+	g_signal_connect(popover, "show", G_CALLBACK(menu_opened), NULL);
+	g_signal_connect(popover, "closed", G_CALLBACK(menu_closed), NULL);
+}
+
+static GtkWidget *info_button(const char *icon, const char *tooltip, GtkWidget **info,
+			      GtkWidget **label)
+{
+	GtkWidget *button = gtk_menu_button_new(), *popover = gtk_popover_new();
+
+	if (label) {
+		GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+
+		gtk_box_append(GTK_BOX(box), gtk_image_new_from_icon_name(icon));
+		*label = gtk_label_new("");
+		gtk_box_append(GTK_BOX(box), *label);
+		gtk_menu_button_set_child(GTK_MENU_BUTTON(button), box);
+	} else {
+		gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(button), icon);
+	}
+	gtk_widget_set_tooltip_text(button, tooltip);
+	*info = gtk_label_new("");
+	gtk_label_set_xalign(GTK_LABEL(*info), 0);
+	gtk_widget_add_css_class(*info, "info");
+	gtk_popover_set_child(GTK_POPOVER(popover), *info);
+	gtk_menu_button_set_popover(GTK_MENU_BUTTON(button), popover);
+	keyboard_while_open(popover);
+	return button;
+}
+
+static void launcher_clicked(GtkButton *button, gpointer data)
+{
+	(void)button;
+	(void)data;
+	launcher_toggle(app);
+}
+
+static void calendar_opened(GtkPopover *popover, gpointer data)
+{
+	struct panel *panel = data;
+	GDateTime *now = g_date_time_new_now_local();
+
+	(void)popover;
+	gtk_calendar_set_date(GTK_CALENDAR(panel->calendar), now);
+	g_date_time_unref(now);
+}
+
+static void panel_new(GdkMonitor *monitor)
+{
+	struct panel *panel = g_new0(struct panel, 1);
+	GtkWidget *window = gtk_application_window_new(app), *bar, *start, *end, *button;
+	GtkWidget *popover;
+
+	panel->window = window;
+	panel->monitor = monitor;
+	gtk_layer_init_for_window(GTK_WINDOW(window));
+	gtk_layer_set_namespace(GTK_WINDOW(window), "wormos-panel");
+	gtk_layer_set_layer(GTK_WINDOW(window), GTK_LAYER_SHELL_LAYER_TOP);
+	gtk_layer_set_monitor(GTK_WINDOW(window), monitor);
+	gtk_layer_set_anchor(GTK_WINDOW(window), GTK_LAYER_SHELL_EDGE_TOP, TRUE);
+	gtk_layer_set_anchor(GTK_WINDOW(window), GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
+	gtk_layer_set_anchor(GTK_WINDOW(window), GTK_LAYER_SHELL_EDGE_RIGHT, TRUE);
+	gtk_layer_auto_exclusive_zone_enable(GTK_WINDOW(window));
+	/* No keyboard focus, except while a menu of the panel is open. */
+	gtk_layer_set_keyboard_mode(GTK_WINDOW(window), GTK_LAYER_SHELL_KEYBOARD_MODE_NONE);
+	gtk_widget_add_css_class(window, "panel");
+
+	bar = gtk_center_box_new();
+	gtk_widget_add_css_class(bar, "bar");
+
+	start = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+	button = gtk_button_new_from_icon_name("view-app-grid-symbolic");
+	gtk_widget_add_css_class(button, "launcher-button");
+	gtk_widget_set_tooltip_text(button, "Applications (Super)");
+	g_signal_connect(button, "clicked", G_CALLBACK(launcher_clicked), NULL);
+	gtk_box_append(GTK_BOX(start), button);
+	panel->tasks = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+	gtk_widget_add_css_class(panel->tasks, "tasks");
+	gtk_box_append(GTK_BOX(start), panel->tasks);
+	gtk_center_box_set_start_widget(GTK_CENTER_BOX(bar), start);
+
+	panel->clock = gtk_menu_button_new();
+	gtk_widget_add_css_class(panel->clock, "clock");
+	popover = gtk_popover_new();
+	panel->calendar = gtk_calendar_new();
+	gtk_popover_set_child(GTK_POPOVER(popover), panel->calendar);
+	g_signal_connect(popover, "show", G_CALLBACK(calendar_opened), panel);
+	keyboard_while_open(popover);
+	gtk_menu_button_set_popover(GTK_MENU_BUTTON(panel->clock), popover);
+	gtk_center_box_set_center_widget(GTK_CENTER_BOX(bar), panel->clock);
+
+	end = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+	gtk_widget_add_css_class(end, "status");
+	gtk_box_append(GTK_BOX(end), info_button("camera-photo-symbolic", "Snapshots",
+						 &panel->snap_info, &panel->snap_label));
+	panel->shield = info_button("security-high-symbolic", "Protection",
+				    &panel->shield_info, NULL);
+	gtk_box_append(GTK_BOX(end), panel->shield);
+	panel->network = info_button("network-wired-symbolic", "Network",
+				     &panel->network_info, NULL);
+	gtk_box_append(GTK_BOX(end), panel->network);
+	gtk_box_append(GTK_BOX(end), power_menu(panel));
+	gtk_center_box_set_end_widget(GTK_CENTER_BOX(bar), end);
+
+	gtk_window_set_child(GTK_WINDOW(window), bar);
+	g_ptr_array_add(panels, panel);
+	gtk_window_present(GTK_WINDOW(window));
+}
+
+static void panel_free(struct panel *panel)
+{
+	gtk_window_destroy(GTK_WINDOW(panel->window));
+	g_free(panel);
+}
+
+static void monitors_changed(GListModel *monitors, guint pos, guint removed, guint added,
+			     gpointer data)
+{
+	(void)pos;
+	(void)removed;
+	(void)added;
+	(void)data;
+	/* Few monitors, rare changes: rebuild all panels. */
+	while (panels->len)
+		panel_free(g_ptr_array_steal_index(panels, panels->len - 1));
+	for (guint i = 0; i < g_list_model_get_n_items(monitors); i++) {
+		GdkMonitor *m = g_list_model_get_item(monitors, i);
+
+		panel_new(m);
+		g_object_unref(m);
+	}
+	tasks_changed();
+	refresh_status(NULL);
+	tick(NULL);
+}
+
+void panels_init(GtkApplication *application)
+{
+	GListModel *monitors = gdk_display_get_monitors(gdk_display_get_default());
+
+	app = application;
+	panels = g_ptr_array_new();
+	toplevels_watch(tasks_changed);
+	g_signal_connect(monitors, "items-changed", G_CALLBACK(monitors_changed), NULL);
+	monitors_changed(monitors, 0, 0, 0, NULL);
+	g_timeout_add_seconds(1, tick, NULL);
+	g_timeout_add_seconds(5, refresh_status, NULL);
+}

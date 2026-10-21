@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Root Terminal
+GenericName=Administration
+Comment=A terminal for administration (asks for the root password)
+Exec=foot --title "Root terminal" su -
+Icon=foot
+Categories=System;TerminalEmulator;
+Keywords=root;admin;su;shell;

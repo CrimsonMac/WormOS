@@ -13,7 +13,7 @@ PACKAGES := base-files busybox worminit wormrd snap \
 	font-inter font-hack wlroots labwc tllist fcft foot grim swaybg wlr-randr xcompose \
 	libtirpc libxcrypt open-vm-tools \
 	libjpeg-turbo libtiff shared-mime-info gdk-pixbuf libepoxy graphene gtk4 \
-	gtk4-layer-shell dconf hicolor-icon-theme adwaita-icon-theme wormos-gtk-theme \
+	gtk4-layer-shell dconf hicolor-icon-theme adwaita-icon-theme wormos-gtk-theme worm-shell \
 	wormos-desktop
 
 all: image

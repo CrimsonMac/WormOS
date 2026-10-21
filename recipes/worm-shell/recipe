@@ -1,0 +1,14 @@
+name=worm-shell
+version=0.1.0
+description="The WormOS desktop shell: panel, application launcher and notifications"
+depends=(glibc gtk4 gtk4-layer-shell wayland glib worm wormos-gtk-theme adwaita-icon-theme)
+localsrc=src/shell
+
+build() {
+	make CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
+		WAYLAND_SCANNER="$NATIVE/bin/wayland-scanner"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}

@@ -96,6 +96,10 @@ in the README.
   `@`. The kernel keeps running.
 - Staging (`stage.c`): `snap stage begin|commit [--try]|abort|keep|status`
   works on `@.next`.
+- `status.c` keeps a summary readable by everyone in `/run/snap-status`
+  (`count`, `last`, `last_date`, `last_comment`, `auto`, `pending`),
+  rewritten whenever the boot menu is and by `snap status`, which the
+  service `11-snap-status` runs at boot. It is not written with `--top`.
 
 ## wh
 
@@ -137,6 +141,16 @@ in the README.
   5. Run the dpkg second stage inside via `whc --root --dir --bind`.
 - apt inside is pinned to our keyring copy (`signed-by`), recommends are off,
   docs and locales are excluded and `policy-rc.d` exits 101.
+- Besides commands, wh exports a package's desktop entries (to
+  `/usr/local/share/applications`, unless the system has an entry of that
+  name) and icons (`usr/share/icons` and `usr/share/pixmaps`, to the same
+  places under `/usr/local/share`). An entry is only exported when its
+  program is one of the commands just exported; it keeps only the
+  `[Desktop Entry]` group, its `Exec` names the wrapper, and `Actions`,
+  `TryExec` and `DBusActivatable` are dropped. Files are read inside the
+  wormhole with `openat2` (`RESOLVE_IN_ROOT`), regular files of at most
+  8 MiB only, and recorded with the commands, so removing the package
+  removes them.
 - Containers live in subvolumes under `/var/lib/wormholes` (`@wormholes`,
   mounted `nosuid,nodev`, mode 0755). Exported commands are wrappers in
   `/usr/local/bin` (a link to `/var/usrlocal`) and never shadow `/usr/bin` or
@@ -363,6 +377,48 @@ in the README.
   `GSK_RENDERER=cairo`: GTK's OpenGL renderer would run on softpipe.
 - dconf keeps GSettings values (its service is started on demand by the
   session bus). gtk4-layer-shell is there for the shell's panel.
+
+## Desktop shell
+
+- `src/shell/` is `worm-shell`, one GTK program for the panel, the
+  application launcher and notifications, started by labwc's `autostart`.
+  It is a single-instance GtkApplication (`org.wormos.Shell`): `worm-shell
+  --launcher` (the Super key on its own, or Super+Space) toggles the
+  launcher in the running shell; `--quit` stops it.
+- `wayland.c` binds two wlroots protocols on GTK's own connection:
+  wlr-foreign-toplevel-management (`toplevels.c`, the task list: click to
+  focus or minimise, middle click to close) and wlr-output-management
+  (`outputs.c`). The protocol XML is copied from wlroots and compiled with
+  wayland-scanner.
+- Panel (`panel.c`): a layer-shell surface along the top of each monitor
+  with an exclusive zone. It takes no keyboard focus, except while one of
+  its menus is open. Left: the launcher button and the windows; middle: the
+  clock (a calendar on click); right: snapshots (from `/run/snap-status`),
+  protection (firewall, anonymous mode, a cut network), network (a device
+  with a carrier and its address) and the power menu (display scale, log
+  out, restart, shut down; restart and shut down need a second click).
+  Status is refreshed every five seconds (`status.c`).
+- Display scale: `~/.config/wormos/display` holds `scale = auto` or a
+  factor. Automatic is 2 for outputs at least 2000 pixels high and 1
+  otherwise. The shell applies it when the setting changes and when an
+  output appears or changes mode, so a scale set with wlr-randr lasts until
+  then.
+- Restart and shut down use `/usr/lib/worm/power` (from the worm package),
+  setuid root: it takes only `off` or `reboot`, clears its environment,
+  requires the caller (real user and groups) to be root or in `wheel`, and
+  signals PID 1 as busybox `poweroff` and `reboot` do. Logging out runs
+  `labwc --exit`.
+- Launcher (`launcher.c`): an overlay layer surface with exclusive keyboard
+  focus: a search field over a grid of the desktop entries GIO lists
+  (`g_app_info_should_show`), filtered by name, description, generic name,
+  program and keywords. Enter starts the first match, Escape or a click
+  outside closes it.
+- Notifications (`notify.c`): `org.freedesktop.Notifications` on the session
+  bus (Notify, CloseNotification, GetCapabilities, GetServerInformation and
+  the two signals), shown as cards in an overlay surface at the top right.
+  Default timeout six seconds, none for critical ones; body markup is used
+  when Pango accepts it.
+- The look is `/usr/share/wormos/shell/shell.css`, on top of the GTK theme.
 
 ## Desktop session
 

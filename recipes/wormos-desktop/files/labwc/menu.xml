@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<!-- The desktop menu (right click on the background, or Super+Space). -->
+<!-- The desktop menu (right click on the background). -->
 <openbox_menu>
   <menu id="root-menu" label="WormOS">
     <item label="Terminal">

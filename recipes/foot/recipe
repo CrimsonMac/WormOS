@@ -1,5 +1,6 @@
 name=foot
 version=1.28.0
+release=2
 description="Fast, lightweight Wayland terminal"
 depends=(glibc fcft pixman wayland libxkbcommon fontconfig)
 # Upstream publishes no signature: checksum pinned from the release download.
@@ -19,4 +20,6 @@ package() {
 		"$pkgdir/usr/lib/systemd"
 	# The WormOS configuration comes with wormos-desktop.
 	rm -rf "$pkgdir/etc/xdg/foot"
+	# No foot server runs, so its client and server entries would not work.
+	rm -f "$pkgdir"/usr/share/applications/{footclient,foot-server}.desktop
 }
