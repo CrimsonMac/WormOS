@@ -1,0 +1,129 @@
+diff -ruN a/backend/drm/drm.c b/backend/drm/drm.c
+--- a/backend/drm/drm.c
++++ b/backend/drm/drm.c
+@@ -1772,6 +1772,74 @@
+ 
+ static void disconnect_drm_connector(struct wlr_drm_connector *conn);
+ 
++static const drmModeModeInfo *find_preferred_mode(const drmModeConnector *drm_conn) {
++	for (int i = 0; i < drm_conn->count_modes; ++i) {
++		if (drm_conn->modes[i].type & DRM_MODE_TYPE_PREFERRED) {
++			return &drm_conn->modes[i];
++		}
++	}
++	return NULL;
++}
++
++/*
++ * Virtual GPUs (virtio-gpu, QXL, vmwgfx) change their preferred mode when the
++ * window showing the virtual machine is resized; QXL and vmwgfx say so with
++ * the "hotplug_mode_update" property, virtio-gpu only has a virtual
++ * connector. Ask the compositor to follow the preferred mode, but only when
++ * it changes, so that a mode picked by the user stays.
++ */
++static void follow_preferred_mode(struct wlr_drm_connector *conn,
++		const drmModeConnector *drm_conn) {
++	if (conn->props.hotplug_mode_update == 0 &&
++			drm_conn->connector_type != DRM_MODE_CONNECTOR_VIRTUAL) {
++		return;
++	}
++	const drmModeModeInfo *preferred = find_preferred_mode(drm_conn);
++	if (preferred == NULL || (preferred->hdisplay == conn->preferred_width &&
++			preferred->vdisplay == conn->preferred_height)) {
++		return;
++	}
++	conn->preferred_width = preferred->hdisplay;
++	conn->preferred_height = preferred->vdisplay;
++
++	struct wlr_output *output = &conn->output;
++	if (!output->enabled || (output->width == preferred->hdisplay &&
++			output->height == preferred->vdisplay)) {
++		return;
++	}
++	// The output's mode list is only read when it connects: add the new
++	// mode (exactly as the driver gives it) and make it the preferred one.
++	struct wlr_output_mode *wlr_mode, *found = NULL;
++	wl_list_for_each(wlr_mode, &output->modes, link) {
++		struct wlr_drm_mode *mode = wl_container_of(wlr_mode, mode, wlr_mode);
++		wlr_mode->preferred = false;
++		// Only the type (the preferred flag) may differ.
++		drmModeModeInfo info = mode->drm_mode;
++		info.type = preferred->type;
++		if (memcmp(&info, preferred, sizeof(info)) == 0) {
++			found = wlr_mode;
++		}
++	}
++	if (found == NULL) {
++		struct wlr_drm_mode *mode = drm_mode_create(preferred);
++		if (mode == NULL) {
++			wlr_log_errno(WLR_ERROR, "Allocation failed");
++			return;
++		}
++		wl_list_insert(output->modes.prev, &mode->wlr_mode.link);
++		found = &mode->wlr_mode;
++	}
++	found->preferred = true;
++
++	wlr_drm_conn_log(conn, WLR_INFO, "Preferred mode changed to %dx%d",
++		preferred->hdisplay, preferred->vdisplay);
++	struct wlr_output_state state;
++	wlr_output_state_init(&state);
++	wlr_output_state_set_mode(&state, found);
++	wlr_output_send_request_state(output, &state);
++	wlr_output_state_finish(&state);
++}
++
+ void scan_drm_connectors(struct wlr_drm_backend *drm,
+ 		struct wlr_device_hotplug_event *event) {
+ 	if (event != NULL && event->connector_id != 0) {
+@@ -1863,11 +1931,16 @@
+ 				wlr_drm_conn_log(wlr_conn, WLR_ERROR, "Failed to connect DRM connector");
+ 				continue;
+ 			}
++			const drmModeModeInfo *preferred = find_preferred_mode(drm_conn);
++			wlr_conn->preferred_width = preferred ? preferred->hdisplay : 0;
++			wlr_conn->preferred_height = preferred ? preferred->vdisplay : 0;
+ 			new_outputs[new_outputs_len++] = wlr_conn;
+ 		} else if (wlr_conn->status == DRM_MODE_CONNECTED &&
+ 				drm_conn->connection != DRM_MODE_CONNECTED) {
+ 			wlr_log(WLR_INFO, "'%s' disconnected", wlr_conn->name);
+ 			disconnect_drm_connector(wlr_conn);
++		} else if (wlr_conn->status == DRM_MODE_CONNECTED) {
++			follow_preferred_mode(wlr_conn, drm_conn);
+ 		}
+ 
+ 		drmModeFreeConnector(drm_conn);
+diff -ruN a/backend/drm/properties.c b/backend/drm/properties.c
+--- a/backend/drm/properties.c
++++ b/backend/drm/properties.c
+@@ -28,6 +28,7 @@
+ 	{ "HDR_OUTPUT_METADATA", INDEX(hdr_output_metadata) },
+ 	{ "PATH", INDEX(path) },
+ 	{ "content type", INDEX(content_type) },
++	{ "hotplug_mode_update", INDEX(hotplug_mode_update) },
+ 	{ "link-status", INDEX(link_status) },
+ 	{ "max bpc", INDEX(max_bpc) },
+ 	{ "non-desktop", INDEX(non_desktop) },
+diff -ruN a/include/backend/drm/drm.h b/include/backend/drm/drm.h
+--- a/include/backend/drm/drm.h
++++ b/include/backend/drm/drm.h
+@@ -223,6 +223,8 @@
+ 	uint32_t hdr_output_metadata;
+ 
+ 	int32_t refresh;
++	// Size of the preferred mode, for connectors with hotplug_mode_update
++	int32_t preferred_width, preferred_height;
+ };
+ 
+ struct wlr_drm_backend *get_drm_backend_from_backend(
+diff -ruN a/include/backend/drm/properties.h b/include/backend/drm/properties.h
+--- a/include/backend/drm/properties.h
++++ b/include/backend/drm/properties.h
+@@ -22,6 +22,7 @@
+ 	uint32_t panel_orientation; // not guaranteed to exist
+ 	uint32_t content_type; // not guaranteed to exist
+ 	uint32_t max_bpc; // not guaranteed to exist
++	uint32_t hotplug_mode_update; // not guaranteed to exist
+ 
+ 	// atomic-modesetting only
+ 

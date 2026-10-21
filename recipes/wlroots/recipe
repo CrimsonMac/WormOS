@@ -1,5 +1,6 @@
 name=wlroots
 version=0.20.2
+release=2
 description="Modular Wayland compositor library"
 depends=(glibc wayland libxkbcommon libdrm pixman mesa eudev libinput seatd libdisplay-info)
 # Signed by Simon Ser (34FF9526CFEF0E97A340E2E40FDE7BE0E88F5E48).
@@ -7,6 +8,8 @@ source=(https://gitlab.freedesktop.org/wlroots/wlroots/-/releases/$version/downl
 sha256=(80c567d2ed4efb2cfa6b077f22c7a710d9c78ba4e185a75e8694001114af0733)
 
 build() {
+	# Follow the virtual machine's window size (see the patch).
+	patch -p1 < "$recipedir/files/follow-preferred-mode.patch"
 	# The pixman (software) renderer is always built: it is the fallback
 	# without a usable GPU.
 	meson_build -Dxwayland=disabled -Dexamples=false -Drenderers=gles2 \
