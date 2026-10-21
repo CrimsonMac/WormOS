@@ -1,0 +1,3 @@
+# The system message bus. The machine ID is created once, at the first boot.
+type = respawn
+exec = mkdir -p /run/dbus /var/lib/dbus && dbus-uuidgen --ensure && exec dbus-daemon --system --nofork --nopidfile

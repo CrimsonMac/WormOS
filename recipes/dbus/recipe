@@ -1,0 +1,36 @@
+name=dbus
+version=1.16.2
+description="Message bus for desktop programs (system bus and per-login session bus)"
+depends=(glibc expat)
+users=(messagebus)
+# Signed by Simon McVittie (DA98F25C0871C49A59EAFF2C4DE8FF2A63C7CC90).
+source=(https://dbus.freedesktop.org/releases/dbus/dbus-$version.tar.xz)
+sha256=(0ba2a1a4b16afe7bceb2c07e9ce99a8c2c3508e5dec290dbb643384bd6beb7e2)
+
+build() {
+	# Session buses listen on $XDG_RUNTIME_DIR/bus, where clients (also in
+	# wormholes, which share /run) look by default.
+	meson_build -Dsystemd=disabled -Dx11_autolaunch=disabled -Dlaunchd=disabled \
+		-Dapparmor=disabled -Dselinux=disabled -Dlibaudit=disabled \
+		-Dmodular_tests=disabled -Dinstalled_tests=false -Ddoxygen_docs=disabled \
+		-Dducktype_docs=disabled -Dqt_help=disabled -Dxml_docs=disabled \
+		-Dintrusive_tests=false -Dverbose_mode=false -Dstats=false -Dasserts=false \
+		-Druntime_dir=/run \
+		-Dsystem_socket=/run/dbus/system_bus_socket -Dsystem_pid_file=/run/dbus/pid \
+		-Ddbus_user=messagebus -Ddbus_session_bus_listen_address=unix:runtime=yes \
+		-Ddbus_session_bus_connect_address=unix:runtime=yes
+}
+
+package() {
+	meson_package
+	# No system services are started on demand, so the setuid helper that
+	# would do it is left out.
+	rm -f "$pkgdir/usr/libexec/dbus-daemon-launch-helper"
+	rm -rf "$pkgdir/usr/share/doc" "$pkgdir/var" "$pkgdir/run" "$pkgdir/usr/lib/cmake"
+	# dbus-launch is for X11 sessions; the test tool and socket cleaner are
+	# not needed.
+	rm -f "$pkgdir"/usr/bin/{dbus-launch,dbus-test-tool,dbus-cleanup-sockets}
+	# One ID per installation, created at the first boot (/etc is read-only).
+	ln -s ../var/lib/dbus/machine-id "$pkgdir/etc/machine-id"
+	install -Dm644 "$recipedir/files/40-dbus" "$pkgdir/etc/worm/services/40-dbus"
+}
