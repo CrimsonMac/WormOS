@@ -49,6 +49,22 @@ from the release page and check them against `SHA256SUMS`.
       -nic user,model=virtio-net-pci -device virtio-vga \
       -device virtio-keyboard-pci -device virtio-tablet-pci
   ```
+- **QEMU on Windows:** install QEMU from https://qemu.weilnetz.de/w64/
+  (it includes the UEFI firmware). For speed, turn on the Windows feature
+  "Windows Hypervisor Platform" (Settings, Optional features, More Windows
+  features) and restart. Then, in PowerShell, in the folder with the
+  image:
+  ```
+  & "C:\Program Files\qemu\qemu-system-x86_64.exe" -machine q35 `
+      -accel whpx,kernel-irqchip=off -m 2048 -smp 2 `
+      -drive "if=pflash,format=raw,readonly=on,file=C:\Program Files\qemu\share\edk2-x86_64-code.fd" `
+      -drive file=wormos-1.0-x86_64.qcow2,if=virtio `
+      -nic user,model=virtio-net-pci -device virtio-vga -display sdl `
+      -device virtio-keyboard-pci -device virtio-tablet-pci
+  ```
+  If QEMU says WHPX is not available, use `-accel tcg` instead: it works
+  without the Windows feature, but much more slowly. Ctrl+Alt+G releases
+  the mouse.
 - **VMware Workstation / Player:** unzip `wormos-1.0-vmware.zip` and open
   `WormOS.vmx` (UEFI, NVMe disk, 2 GB of memory, 3D acceleration on).
 
