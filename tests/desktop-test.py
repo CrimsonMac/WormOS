@@ -228,8 +228,11 @@ def main():
                 con.send("root\n")
                 con.expect("Password:", 60)
                 con.send("\n")
-                out = con.expect("login:", 120)
-                check("root locked before the setup", "incorrect" in out, out[-200:])
+                # The prompt itself: busybox's error also starts with "login:".
+                out = con.expect("wormos login:", 120)
+                # busybox login refuses a locked password ("!") as a bad salt.
+                check("root locked before the setup",
+                      "incorrect" in out or "bad salt" in out, out[-200:])
                 time.sleep(5)
                 first_boot()
                 deadline = time.time() + 600
@@ -243,7 +246,7 @@ def main():
                     except TimeoutError:
                         if time.time() > deadline:
                             raise
-                        con.expect("login:", 60)
+                        con.expect("wormos login:", 60)
                 check("first-boot setup finished", True)
                 run_checks(con, DEVICE_CHECKS)
             else:

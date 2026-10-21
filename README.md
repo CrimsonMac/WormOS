@@ -332,7 +332,9 @@ keyboard and tablet, and the test types on the graphical console through
 the QEMU monitor like a user would. It answers the first-boot setup, logs
 in (which starts the desktop), types into the terminal, opens another with
 Super+Enter, checks a screendump of the real screen, and compares memory
-use and system size with their budgets.
+use and system size with their budgets. `tests/desktop-test.py --release
+out/release/wormos-1.0-x86_64.qcow2` runs the same checks on a release
+image, where root can only log in once the first-boot setup is done.
 
 `make test` boots a throwaway copy of the image, checks the running system
 and exercises snapshots end to end (take, diff, restore, browse, rewind of

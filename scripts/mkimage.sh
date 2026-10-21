@@ -116,9 +116,9 @@ unit: sectors
 start=$esp_start, size=$esp_size, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=$ESP_PARTUUID, name="EFI"
 start=$root_start, size=$root_size, type=4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709, uuid=$ROOT_PARTUUID, name="WormOS"
 EOF
-# Both partitions start on a MiB boundary.
-dd if="$TMP/esp.img" of="$IMAGE" bs=1M seek=$((esp_start / MB)) conv=notrunc,sparse status=none
-dd if="$TMP/root.img" of="$IMAGE" bs=1M seek=$((root_start / MB)) conv=notrunc,sparse status=none
+# Only the data of the (sparse) partition images is copied.
+"$WORMOS_ROOT/scripts/sparse-copy.py" "$TMP/esp.img" "$IMAGE" $((esp_start * SECTOR))
+"$WORMOS_ROOT/scripts/sparse-copy.py" "$TMP/root.img" "$IMAGE" $((root_start * SECTOR))
 rm -rf "$TMP"
 
 msg "Image ready: $IMAGE ($(du -h "$IMAGE" | cut -f1) used of ${DISK_MB} MiB)"

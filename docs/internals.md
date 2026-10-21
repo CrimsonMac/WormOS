@@ -360,6 +360,9 @@ in the README.
   qcow2, and a monolithic sparse VMDK zipped with `WormOS.vmx` (from
   `scripts/wormos.vmx.in`: UEFI, NVMe, vmxnet3, 3D on). `SHA256SUMS` lists
   both.
+- `mkimage.sh` copies only the data extents of the partition images into
+  the disk image (`scripts/sparse-copy.py`, SEEK_DATA/SEEK_HOLE), so a
+  20 GiB disk takes seconds.
 - GRUB is installed at the removable path `\EFI\BOOT\BOOTX64.EFI`, so the
   images boot with fresh firmware settings. `run-qemu.sh` gives the disk
   `bootindex=0` so that added devices never shift the boot order.
@@ -376,6 +379,9 @@ in the README.
 - `tests/desktop-test.py` (also run by `make test`) adds a virtio GPU,
   keyboard and tablet and a QEMU monitor socket, types on tty1 with
   `sendkey`, reads the console text from `/dev/vcs1` over the serial
-  console, and checks `screendump` output for the wallpaper's colours.
+  console, and checks `screendump` output for the wallpaper's colours. With
+  `--release IMAGE` it checks a release image: it types the first-boot
+  setup blind, then logs in as root on the serial console with the
+  password it set.
 - Faster loop for snap: build natively (`make -C src/snap CC=gcc`) and use
   `--top` on a loopback btrfs image mounted with sudo.
