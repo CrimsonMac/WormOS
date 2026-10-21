@@ -85,6 +85,10 @@ char *db_owner(const char *path, const char *except);   /* caller frees */
 int db_files(const char *name, char ***paths, int *count);
 void db_free_files(char **paths, int count);
 
+/* hooks.c */
+void hook_touch(const char *path);
+void hooks_run(void);
+
 /* pkg.c */
 int pkg_install(const char *wpkg, const char *expect_name);
 int pkg_remove(const char *name);

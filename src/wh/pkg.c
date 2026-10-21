@@ -661,7 +661,8 @@ static void remove_leftovers(const char *name, struct set *now)
 			continue;
 		if ((pfd = open_parent(path, &leaf, 0)) < 0)
 			continue;
-		unlinkat(pfd, leaf, type == 'd' ? AT_REMOVEDIR : 0);
+		if (unlinkat(pfd, leaf, type == 'd' ? AT_REMOVEDIR : 0) == 0)
+			hook_touch(path);
 		close(pfd);
 	}
 	db_free_files(paths, count);
@@ -808,6 +809,7 @@ int pkg_install(const char *wpkg, const char *expect_name)
 			break;
 		}
 		set_add(now, e.path, NULL);
+		hook_touch(e.path);
 		close(pfd);
 		if (e.size && skip(&s, padded(e.size)) < 0)
 			goto out;
@@ -902,8 +904,9 @@ int pkg_remove(const char *name)
 		}
 		if ((pfd = open_parent(path, &leaf, 0)) < 0)
 			continue;
-		if (unlinkat(pfd, leaf, type == 'd' ? AT_REMOVEDIR : 0) < 0 &&
-		    errno != ENOENT && errno != ENOTEMPTY && errno != EEXIST)
+		if (unlinkat(pfd, leaf, type == 'd' ? AT_REMOVEDIR : 0) == 0)
+			hook_touch(path);
+		else if (errno != ENOENT && errno != ENOTEMPTY && errno != EEXIST)
 			warn("cannot remove /%s: %s", path, strerror(errno));
 		close(pfd);
 	}

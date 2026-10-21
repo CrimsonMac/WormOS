@@ -12,7 +12,7 @@ MONO_LIBS   ?= -lmonocypher
 PREFIX  ?= /usr
 BINDIR  ?= $(PREFIX)/bin
 
-SRCS = wh.c repo.c db.c pkg.c foreign.c util.c sig.c ../snap/sha256.c
+SRCS = wh.c repo.c db.c pkg.c foreign.c hooks.c util.c sig.c ../snap/sha256.c
 
 all: wh whc
 

@@ -271,6 +271,8 @@ static void stage_commit(const char *action, const char *packages)
 	char comment[COMMENT_LEN], out[64];
 	int before;
 
+	/* Rebuild the caches the change affects, in the changed root. */
+	hooks_run();
 	if (direct)
 		return;
 	/* Let go of the staged copy (no open directory may keep it busy). */

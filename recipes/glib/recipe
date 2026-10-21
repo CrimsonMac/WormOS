@@ -1,5 +1,6 @@
 name=glib
 version=2.90.1
+release=2
 description="General-purpose utility library (GLib, GObject, GIO)"
 depends=(glibc libffi pcre2 zlib)
 # GNOME publishes no signatures; matches the release's sha256sum file.
@@ -18,4 +19,6 @@ package() {
 	meson_package
 	rm -rf "$pkgdir/usr/share/gdb" "$pkgdir/usr/share/bash-completion" \
 		"$pkgdir/usr/share/gettext" "$pkgdir/usr/libexec/installed-tests"
+	install -Dm644 "$recipedir/files/gsettings-schemas.hook" \
+		"$pkgdir/usr/share/wh/hooks/gsettings-schemas.hook"
 }
