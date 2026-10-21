@@ -1,7 +1,7 @@
 /*
  * The panel along the top of every screen: the launcher button and the
  * open windows on the left, the clock in the middle, and on the right the
- * snapshots, the protections, the network and the power menu.
+ * snapshots, the protections, the network, the volume and the power menu.
  */
 
 #include <gtk4-layer-shell.h>
@@ -17,11 +17,13 @@ struct panel {
 	GtkWidget *snap_label, *snap_info;
 	GtkWidget *shield, *shield_info;
 	GtkWidget *network, *network_info;
+	GtkWidget *volume, *volume_output, *volume_mute, *volume_scale, *volume_percent;
 	GtkWidget *confirm;             /* the power action waiting for a second click */
 };
 
 static GtkApplication *app;
 static GPtrArray *panels;               /* of struct panel */
+static gboolean volume_updating;        /* showing a new reading, not a change */
 
 static void keyboard_while_open(GtkWidget *popover);
 
@@ -186,7 +188,149 @@ static gboolean refresh_status(gpointer data)
 	g_free(snap_info);
 	g_free(shield_info);
 	g_free(network_info);
+	volume_refresh(FALSE);
 	return G_SOURCE_CONTINUE;
+}
+
+/* ---- the volume ---- */
+
+static const char *volume_icon(const struct volume *v)
+{
+	if (v->muted || v->level <= 0)
+		return "audio-volume-muted-symbolic";
+	if (v->level < 0.34)
+		return "audio-volume-low-symbolic";
+	if (v->level < 0.67)
+		return "audio-volume-medium-symbolic";
+	return "audio-volume-high-symbolic";
+}
+
+static void volume_changed(void)
+{
+	const struct volume *v = volume_get();
+	int percent = (int)(v->level * 100 + 0.5);
+	char *tooltip = v->muted ? g_strdup_printf("Volume %d%% (muted)", percent)
+				 : g_strdup_printf("Volume %d%%", percent);
+	char *text = g_strdup_printf("%d%%", percent);
+
+	volume_updating = TRUE;
+	for (guint p = 0; p < panels->len; p++) {
+		struct panel *panel = g_ptr_array_index(panels, p);
+
+		/* No sound device or no sound server: nothing to show. */
+		gtk_widget_set_visible(panel->volume, v->available);
+		gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(panel->volume), volume_icon(v));
+		gtk_widget_set_tooltip_text(panel->volume, tooltip);
+		gtk_label_set_text(GTK_LABEL(panel->volume_output), v->output ? v->output : "Sound");
+		gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(panel->volume_mute), v->muted);
+		gtk_button_set_icon_name(GTK_BUTTON(panel->volume_mute), volume_icon(v));
+		gtk_range_set_value(GTK_RANGE(panel->volume_scale), percent);
+		gtk_label_set_text(GTK_LABEL(panel->volume_percent), text);
+	}
+	volume_updating = FALSE;
+	g_free(tooltip);
+	g_free(text);
+}
+
+static void volume_moved(GtkRange *range, gpointer data)
+{
+	(void)data;
+	if (volume_updating)
+		return;
+	volume_set(gtk_range_get_value(range) / 100);
+	volume_changed();
+}
+
+static void volume_mute_toggled(GtkToggleButton *button, gpointer data)
+{
+	(void)data;
+	if (volume_updating)
+		return;
+	volume_set_muted(gtk_toggle_button_get_active(button));
+	volume_changed();
+}
+
+static gboolean volume_scrolled(GtkEventControllerScroll *scroll, double dx, double dy,
+				gpointer data)
+{
+	(void)scroll;
+	(void)dx;
+	(void)data;
+	if (dy == 0)
+		return FALSE;
+	volume_step(dy < 0 ? 1 : -1);
+	volume_changed();
+	return TRUE;
+}
+
+static void volume_opened(GtkPopover *popover, gpointer data)
+{
+	(void)popover;
+	(void)data;
+	volume_refresh(TRUE);
+}
+
+void panels_volume(const char *what)
+{
+	if (!strcmp(what, "up"))
+		volume_step(1);
+	else if (!strcmp(what, "down"))
+		volume_step(-1);
+	else if (!strcmp(what, "mute"))
+		volume_toggle_mute();
+	else
+		return;
+	volume_changed();
+}
+
+/* The volume menu: the output's name, a mute button and a slider. */
+static GtkWidget *volume_button(struct panel *panel)
+{
+	GtkWidget *button = gtk_menu_button_new(), *popover = gtk_popover_new();
+	GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8), *row;
+	GtkEventController *scroll;
+
+	gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(button), "audio-volume-high-symbolic");
+	gtk_widget_set_visible(button, FALSE);
+	panel->volume = button;
+
+	panel->volume_output = gtk_label_new("Sound");
+	gtk_widget_add_css_class(panel->volume_output, "heading");
+	gtk_widget_set_halign(panel->volume_output, GTK_ALIGN_START);
+	gtk_label_set_ellipsize(GTK_LABEL(panel->volume_output), PANGO_ELLIPSIZE_END);
+	gtk_label_set_max_width_chars(GTK_LABEL(panel->volume_output), 32);
+	gtk_box_append(GTK_BOX(box), panel->volume_output);
+
+	row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+	panel->volume_mute = gtk_toggle_button_new();
+	gtk_button_set_icon_name(GTK_BUTTON(panel->volume_mute), "audio-volume-high-symbolic");
+	gtk_widget_set_tooltip_text(panel->volume_mute, "Mute");
+	gtk_widget_add_css_class(panel->volume_mute, "flat");
+	g_signal_connect(panel->volume_mute, "toggled", G_CALLBACK(volume_mute_toggled), NULL);
+	gtk_box_append(GTK_BOX(row), panel->volume_mute);
+	panel->volume_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 100, 1);
+	gtk_scale_set_draw_value(GTK_SCALE(panel->volume_scale), FALSE);
+	gtk_widget_set_hexpand(panel->volume_scale, TRUE);
+	gtk_widget_set_size_request(panel->volume_scale, 220, -1);
+	g_signal_connect(panel->volume_scale, "value-changed", G_CALLBACK(volume_moved), NULL);
+	gtk_box_append(GTK_BOX(row), panel->volume_scale);
+	panel->volume_percent = gtk_label_new("");
+	gtk_label_set_width_chars(GTK_LABEL(panel->volume_percent), 4);
+	gtk_label_set_xalign(GTK_LABEL(panel->volume_percent), 1);
+	gtk_widget_add_css_class(panel->volume_percent, "numeric");
+	gtk_box_append(GTK_BOX(row), panel->volume_percent);
+	gtk_box_append(GTK_BOX(box), row);
+
+	gtk_popover_set_child(GTK_POPOVER(popover), box);
+	g_signal_connect(popover, "show", G_CALLBACK(volume_opened), NULL);
+	keyboard_while_open(popover);
+	gtk_menu_button_set_popover(GTK_MENU_BUTTON(button), popover);
+
+	scroll = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL |
+						 GTK_EVENT_CONTROLLER_SCROLL_DISCRETE);
+	g_signal_connect(scroll, "scroll", G_CALLBACK(volume_scrolled), NULL);
+	gtk_widget_add_controller(button, scroll);
+	return button;
 }
 
 /* ---- the power menu ---- */
@@ -494,6 +638,7 @@ static void panel_new(GdkMonitor *monitor)
 	panel->network = info_button("network-wired-symbolic", "Network",
 				     &panel->network_info, NULL);
 	gtk_box_append(GTK_BOX(end), panel->network);
+	gtk_box_append(GTK_BOX(end), volume_button(panel));
 	gtk_box_append(GTK_BOX(end), power_menu(panel));
 	gtk_center_box_set_end_widget(GTK_CENTER_BOX(bar), end);
 
@@ -526,6 +671,7 @@ static void monitors_changed(GListModel *monitors, guint pos, guint removed, gui
 	}
 	tasks_changed();
 	refresh_status(NULL);
+	volume_changed();
 	tick(NULL);
 }
 
@@ -536,6 +682,7 @@ void panels_init(GtkApplication *application)
 	app = application;
 	panels = g_ptr_array_new();
 	toplevels_watch(tasks_changed);
+	volume_watch(volume_changed);
 	g_signal_connect(monitors, "items-changed", G_CALLBACK(monitors_changed), NULL);
 	monitors_changed(monitors, 0, 0, 0, NULL);
 	g_timeout_add_seconds(1, tick, NULL);

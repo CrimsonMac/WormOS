@@ -103,6 +103,14 @@ popover .heading {
 	padding: 2px 4px 6px;
 }
 
+popover .numeric {
+	font-feature-settings: "tnum";
+}
+
+popover scale {
+	padding: 0 4px;
+}
+
 popover .power-action {
 	padding: 6px 10px;
 }

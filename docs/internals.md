@@ -524,6 +524,45 @@ in the README.
   console, or with `--create NAME FULL-NAME LAYOUT` and the two passwords
   on standard input (for the graphical setup).
 
+## Sound
+
+- Kernel: the HD Audio controller driver, codec drivers (generic,
+  Realtek, Conexant, Analog Devices, IDT, Cirrus Logic, HDMI), USB audio,
+  virtio-sound and the Ensoniq AudioPCI are modules that udev loads. The
+  controller must be a module: the HD Audio core loads codec drivers only
+  when it is modular itself (`request_codec_module()` is `#ifdef MODULE`). There
+  is no Sound Open Firmware, so laptops whose microphones or speakers need
+  Intel's audio DSP only get HD Audio and HDMI. `/dev/snd` belongs to the
+  group `audio` (the first-boot setup adds the user to it).
+- `alsa-lib` (no topology or Python), `pipewire` and `wireplumber` (with
+  `lua` as a shared library and the session manager's scripting language).
+  PipeWire is built for audio only: ALSA devices, the PulseAudio server
+  (`pipewire-pulse`), the ALSA plugin, and `pw-cat`/`pw-play`/`pw-record`
+  with `libsndfile` (uncompressed formats only, no external codecs). No
+  Bluetooth, JACK, video, systemd or network audio (the RTP, VBAN, AES67,
+  AVB, NetJACK and raw TCP modules are removed). alsa-lib reads
+  `/etc/alsa/conf.d`, where links make PipeWire the default ALSA device.
+- WirePlumber's `wireplumber.conf.d/90-wormos.conf` turns off Bluetooth,
+  video capture, logind and the desktop portal parts.
+- The session script starts `pipewire`, waits for `$XDG_RUNTIME_DIR/pipewire-0`,
+  then starts `wireplumber` and `pipewire-pulse`, with their output in
+  `$XDG_RUNTIME_DIR/sound.log`, and stops them when labwc ends. They run as
+  the user, at normal priority (there is no RealtimeKit). The PulseAudio
+  socket is `$XDG_RUNTIME_DIR/pulse/native`; wormholes share `/run`, so
+  their programs find it. Blackholes see neither, and the login screen has
+  no sound.
+- Volumes and the chosen output are kept by WirePlumber in
+  `~/.local/state/wireplumber`.
+- The shell's volume button (`src/shell/volume.c`) runs `wpctl` on
+  `@DEFAULT_AUDIO_SINK@`: `get-volume` with the five-second status refresh,
+  `inspect` for the output's name when the menu opens, and `set-volume -l 1`
+  or `set-mute` for changes. Changes run one at a time and a waiting level is
+  replaced by a newer one; readings are ignored until all changes are done.
+  The button is hidden while there is no output. The volume keys run
+  `worm-shell --volume up|down|mute` (5% steps), as does scrolling on the
+  button.
+- VMware images have an HD Audio device (`sound.virtualDev = "hdaudio"`).
+
 ## Login
 
 - `wormos-login` (`src/login/`): `wormlogin`, the login manager on tty1,

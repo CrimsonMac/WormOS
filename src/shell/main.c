@@ -2,7 +2,8 @@
  * worm-shell - the WormOS desktop shell: the panel, the application
  * launcher and desktop notifications, in one program started with the
  * desktop. It runs once per session; "worm-shell --launcher" (bound to the
- * Super key) asks the running shell to open or close the launcher.
+ * Super key) asks the running shell to open or close the launcher, and
+ * "worm-shell --volume up|down|mute" (the volume keys) changes the volume.
  */
 
 #include "shell.h"
@@ -32,10 +33,13 @@ static void startup(GApplication *gapp, gpointer data)
 static int command_line(GApplication *gapp, GApplicationCommandLine *cmd, gpointer data)
 {
 	GVariantDict *options = g_application_command_line_get_options_dict(cmd);
+	const char *volume;
 
 	(void)data;
 	if (g_variant_dict_contains(options, "launcher"))
 		launcher_toggle(GTK_APPLICATION(gapp));
+	if (g_variant_dict_lookup(options, "volume", "&s", &volume))
+		panels_volume(volume);
 	if (g_variant_dict_contains(options, "quit"))
 		g_application_quit(gapp);
 	return 0;
@@ -46,6 +50,8 @@ int main(int argc, char **argv)
 	static const GOptionEntry entries[] = {
 		{ "launcher", 0, 0, G_OPTION_ARG_NONE, NULL,
 		  "Open or close the application launcher", NULL },
+		{ "volume", 0, 0, G_OPTION_ARG_STRING, NULL,
+		  "Change the volume of the sound output", "up|down|mute" },
 		{ "quit", 0, 0, G_OPTION_ARG_NONE, NULL, "Stop the running shell", NULL },
 		{ NULL, 0, 0, 0, NULL, NULL, NULL },
 	};

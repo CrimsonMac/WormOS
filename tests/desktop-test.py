@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Boot the WormOS image with a virtual GPU and check the desktop.
 
-The VM gets a virtio GPU, keyboard and tablet and a QEMU monitor socket.
+The VM gets a virtio GPU, keyboard and tablet, an HD Audio device whose
+output QEMU records to a WAV file, and a QEMU monitor socket.
 The test logs in as root on the serial console for checks, and types on
 the graphical console through the monitor (sendkey), as a user would:
 it answers the first-boot setup on tty1, logs in there (which starts the
@@ -129,6 +130,37 @@ BUDGET_CHECKS = [
     ("screenshot with grim", GRIM, r"P\s+N\s+G"),
     ("terminal has a UTF-8 locale and compose table", FOOT, r"^0$"),
 ]
+
+
+SOUND_CHECKS = [
+    ("sound card found", "cat /proc/asound/cards", r"HDA-Intel"),
+    ("codec driver loaded as a module", "grep -c '^snd_hda_codec_generic ' /proc/modules",
+     r"^1$"),
+    ("sound devices for the audio group", "stat -c '%G %a' /dev/snd/pcmC0D0p", r"^audio 660$"),
+    ("user in the audio group", f"id -Gn {USER} | tr ' ' '\\n' | grep -cx audio", r"^1$"),
+    ("sound server running as the user",
+     "for p in pipewire wireplumber pipewire-pulse; do stat -c %U /proc/$(pidof -s $p); done",
+     rf"^{USER}\n{USER}\n{USER}$"),
+    ("PulseAudio socket for programs", "stat -c %F /run/user/1000/pulse/native", r"^socket$"),
+    ("no errors from the sound server", "grep -c -E ' E | C ' /run/user/1000/sound.log",
+     r"^0$"),
+]
+
+# One second of noise through PipeWire, then the volume as the shell sees it.
+PLAY = ("head -c 192000 /dev/urandom | pw-cat --playback --raw --format s16 --rate 48000 "
+        "--channels 2 - && echo played\n")
+VOLUME = "wpctl get-volume @DEFAULT_AUDIO_SINK@"
+
+
+def wav_peak(path):
+    """The loudest 16-bit sample QEMU recorded from the guest's output."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read()[44:]
+    except OSError:
+        return 0
+    data = data[:len(data) // 2 * 2]
+    return max((abs(v) for (v,) in struct.iter_unpack("<h", data)), default=0)
 
 
 # Window sizes a viewer asks for, including odd ones; the desktop follows.
@@ -367,10 +399,13 @@ def main():
     mon_path = os.path.join(tmp, "monitor")
     vnc_path = os.path.join(tmp, "vnc")
     qmp_path = os.path.join(tmp, "qmp")
+    wav_path = os.path.join(tmp, "sound.wav")
     extra = (f"-vga none -device virtio-gpu-pci,addr=0x10 "
              f"-device virtio-keyboard-pci,addr=0x11 -device virtio-tablet-pci,addr=0x12 "
              f"-monitor unix:{mon_path},server,nowait -vnc unix:{vnc_path} "
-             f"-qmp unix:{qmp_path},server,nowait")
+             f"-qmp unix:{qmp_path},server,nowait "
+             f"-audiodev wav,id=snd0,path={wav_path} -device ich9-intel-hda,addr=0x13 "
+             f"-device hda-duplex,audiodev=snd0")
     env = dict(os.environ, QEMU_EXTRA=extra, QEMU_MEM="1024")
     if args.release:
         env["IMAGE"] = os.path.abspath(args.release)
@@ -380,7 +415,7 @@ def main():
     passed = failures = 0
     total = (len(DEVICE_CHECKS) + 1 + len(AFTER_SETUP_CHECKS) + 3 + len(SESSION_CHECKS) +
              len(TYPING_CHECKS) + len(SHORTCUT_CHECKS) + len(BUDGET_CHECKS) +
-             len(RESIZES) + len(WELCOME_CHECKS) + len(GTK_CHECKS) + 21)
+             len(RESIZES) + len(WELCOME_CHECKS) + len(GTK_CHECKS) + len(SOUND_CHECKS) + 27)
 
     def check(name, ok, out=""):
         nonlocal passed, failures
@@ -608,6 +643,39 @@ def main():
             check("chosen scale applied", "1.25" in out, out)
             vnc.resize(1280, 800)
             time.sleep(5)
+
+            # Sound: the guest's output reaches QEMU's recording, and the
+            # volume keys' command changes the volume and the panel's icon.
+            run_checks(con, SOUND_CHECKS)
+            put_file(con, PLAY.encode(), "/tmp/play.sh")
+            before = wav_peak(wav_path)
+            out = session("sh /tmp/play.sh")
+            time.sleep(2)
+            peak = wav_peak(wav_path)
+            check("sound played through PipeWire", "played" in out and peak > 1000,
+                  f"{out}; loudest sample {before} before, {peak} after")
+            out = session(VOLUME)
+            m = re.search(r"Volume: ([0-9.]+)", out)
+            level = float(m.group(1)) if m else -1
+            check("default output has a volume", 0 <= level <= 1.5, out)
+            session("worm-shell --volume down")
+            session("worm-shell --volume down")
+            out = wait_for(con, f"su {USER} -c '/tmp/in-session {VOLUME}'",
+                           rf"Volume: {max(level - 0.1, 0):.2f}", 30)
+            check("volume down from the shell", f"{max(level - 0.1, 0):.2f}" in out,
+                  f"{level:.2f} before; {out}")
+            width, height, pixels = screen("volume")
+            session("worm-shell --volume mute")
+            out = wait_for(con, f"su {USER} -c '/tmp/in-session {VOLUME}'", r"MUTED", 30)
+            check("muted from the shell", "MUTED" in out, out)
+            time.sleep(3)
+            changed = region_diff(pixels, screen("muted")[2], width,
+                                  (width - width // 4, 0, width, 40))
+            check("panel shows the volume", changed > 5, f"{changed} pixels changed")
+            session("worm-shell --volume mute")
+            out = wait_for(con, f"su {USER} -c '/tmp/in-session {VOLUME}'", r"^Volume: [0-9.]+$",
+                           30)
+            check("unmuted from the shell", "MUTED" not in out, out)
 
             # The Snapshots program: take a snapshot with its button.
             # Through a script, so that a crash shows up in the log.

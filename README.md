@@ -83,6 +83,11 @@ idles at well under 100 MB of memory.
 - Super+Enter opens a terminal, Super+Q closes a window, Alt+Tab switches,
   Super+Arrow keys maximize or snap windows, Print saves a screenshot in
   `~/Pictures`.
+- Sound goes through [PipeWire](https://pipewire.org), which also serves
+  programs written for PulseAudio or ALSA (including those installed from
+  Debian or Kali). The speaker button in the panel sets the volume (scroll
+  on it, or use the volume keys); `wpctl status` lists devices and
+  `wpctl set-default ID` picks the output.
 - Ctrl+Alt+F2 switches to a second console (for logging in as root);
   Ctrl+Alt+F1 returns to the desktop.
 - Administration is done as root: `su -` in a terminal, or the menu's root

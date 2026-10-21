@@ -31,6 +31,9 @@
     <keybind key="W-Left"><action name="SnapToEdge" direction="left" /></keybind>
     <keybind key="W-Right"><action name="SnapToEdge" direction="right" /></keybind>
     <keybind key="Print"><action name="Execute" command="/usr/lib/worm/screenshot" /></keybind>
+    <keybind key="XF86AudioRaiseVolume"><action name="Execute" command="worm-shell --volume up" /></keybind>
+    <keybind key="XF86AudioLowerVolume"><action name="Execute" command="worm-shell --volume down" /></keybind>
+    <keybind key="XF86AudioMute"><action name="Execute" command="worm-shell --volume mute" /></keybind>
   </keyboard>
   <mouse>
     <default />

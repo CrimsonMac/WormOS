@@ -31,6 +31,14 @@ struct status {
 	char address[64];       /* first IPv4 address, if any */
 };
 
+/* The default sound output (volume.c). */
+struct volume {
+	gboolean available;     /* a sound server with an output */
+	double level;           /* 0 to 1 */
+	gboolean muted;
+	char *output;           /* its description, once known */
+};
+
 /* wayland.c */
 void wayland_init(void);
 void *wayland_seat(void);   /* struct wl_seat */
@@ -54,12 +62,23 @@ void status_read(struct status *s);
 
 /* panel.c */
 void panels_init(GtkApplication *app);
+void panels_volume(const char *what);        /* up, down or mute */
 
 /* launcher.c */
 void launcher_toggle(GtkApplication *app);
 
 /* notify.c */
 void notify_init(GtkApplication *app);
+
+/* volume.c */
+typedef void (*volume_changed_fn)(void);
+void volume_watch(volume_changed_fn fn);
+void volume_refresh(gboolean details);       /* details: also the output's name */
+const struct volume *volume_get(void);
+void volume_set(double level);
+void volume_step(int direction);             /* up (1) or down (-1) by 5% */
+void volume_set_muted(gboolean muted);
+void volume_toggle_mute(void);
 
 /* power.c */
 void power_logout(void);
