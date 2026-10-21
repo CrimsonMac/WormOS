@@ -1,8 +1,8 @@
 name=worm
 version=0.1.0
-release=5
+release=6
 description="WormOS system features (worm status, panic, fw, unlock, lock)"
-depends=(glibc snap nftables)
+depends=(glibc snap nftables libxcrypt)
 localsrc=src/worm
 
 build() {

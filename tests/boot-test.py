@@ -287,6 +287,37 @@ SAFE_CHECKS = [
     ("stays cut until a normal restart", "worm panic off 2>&1", r"restart normally"),
 ]
 
+# The helper behind the Snapshots program (run last: it adds snapshots).
+# Root counts as an administrator; the development image's root password
+# is empty, so an empty line is the right password.
+H = "/usr/lib/worm/snapshots"
+LAST = f"{H} list | tail -n 1"
+HELPER_CHECKS = [
+    ("snapshot helper is setuid root", f"stat -c '%U %a' {H}", r"^root 4755$"),
+    ("only administrators use it", f"su tester -c '{H} list'; echo rc=$?",
+     r"only administrators(.|\n)*^rc=1$"),
+    ("lists snapshots for programs", f"{LAST} | awk -F '\\t' '{{ print NF }}'", r"^7$"),
+    ("takes a snapshot", f"{H} now system 'Helper test' >/dev/null && {LAST} | cut -f 3,7",
+     r"^system\tHelper test$"),
+    ("sets a comment", f"{H} comment $({LAST} | cut -f 1) Renamed >/dev/null && "
+     f"{LAST} | cut -f 7", r"^Renamed$"),
+    ("pins without a password", f"{H} pin $({LAST} | cut -f 1) >/dev/null && {LAST} | cut -f 5",
+     r"^1$"),
+    ("unpinning needs the password",
+     f"echo wrong | {H} unpin $({LAST} | cut -f 1); echo rc=$?; {LAST} | cut -f 5",
+     r"wrong password(.|\n)*^rc=3\n1$"),
+    ("unpins with the password", f"echo | {H} unpin $({LAST} | cut -f 1) >/dev/null && "
+     f"{LAST} | cut -f 5", r"^0$"),
+    ("refuses control characters", f"{H} now system \"$(printf 'a\\tb')\"; echo rc=$?",
+     r"control characters(.|\n)*^rc=2$"),
+    ("refuses paths with ..", f"echo | {H} restore 1 /etc/../etc/shadow; echo rc=$?",
+     r"without \.\.(.|\n)*^rc=2$"),
+    ("deleting needs the password", f"echo nope | {H} delete $({LAST} | cut -f 1); "
+     f"{LAST} | cut -f 7", r"wrong password(.|\n)*^Renamed$"),
+    ("deletes with the password", f"echo | {H} delete $({LAST} | cut -f 1) && "
+     f"{H} list | grep -c Renamed", r"^Deleted snapshot \d+\n0$"),
+]
+
 # Snapshot, change the system, and look at the change.
 SNAPSHOT_CHECKS = [
     ("snap now", "snap now -c 'test base'", r"^Snapshot 1 created \(system\)$"),
@@ -493,6 +524,7 @@ def main():
     anon_checks = [(n, c.format(repo=repo), p) for n, c, p in ANON_CHECKS]
     total = (len(CHECKS) + len(KERNEL_CHECKS) + len(DNS_CHECKS) + len(FIREWALL_CHECKS) +
              len(STATUS_CHECKS) + len(panic_checks) + len(SAFE_CHECKS) + 2 +
+             len(HELPER_CHECKS) +
              len(anon_checks) + 2 +
              len(FIREWALL_OPEN_CHECKS) + len(FIREWALL_CLOSE_CHECKS) +
              len(FIREWALL_AFTER_CHECKS) + 3 + len(BLACKHOLE_CHECKS) + len(WHC_CHECKS) +
@@ -632,6 +664,7 @@ def main():
             con.send("root\n")
             con.expect("# ", 60)
             run_checks(con, SAFE_CHECKS)
+            run_checks(con, HELPER_CHECKS)
 
             con.send("poweroff\n")
             con.expect("Power down", 120)

@@ -10,29 +10,13 @@
  */
 
 #define _GNU_SOURCE
-#include <grp.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-static int in_wheel(void)
-{
-	struct group *wheel = getgrnam("wheel");
-	gid_t groups[256];
-	int n;
-
-	if (!wheel)
-		return 0;
-	if (getgid() == wheel->gr_gid)
-		return 1;
-	n = getgroups(sizeof(groups) / sizeof(groups[0]), groups);
-	for (int i = 0; i < n; i++)
-		if (groups[i] == wheel->gr_gid)
-			return 1;
-	return 0;
-}
+#include "admin.h"
 
 int main(int argc, char **argv)
 {
@@ -43,7 +27,7 @@ int main(int argc, char **argv)
 		fputs("usage: power off|reboot\n", stderr);
 		return 2;
 	}
-	if (getuid() != 0 && !in_wheel()) {
+	if (!caller_is_admin()) {
 		fputs("power: only administrators (the group wheel) can do this\n", stderr);
 		return 1;
 	}
