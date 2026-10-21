@@ -6,7 +6,7 @@ LDFLAGS += -Wl,-z,relro,-z,now
 PREFIX  ?= /usr
 BINDIR  ?= $(PREFIX)/bin
 
-OBJS = snap.o store.o btrfs.o diff.o restore.o boot.o stage.o menu.o manifest.o sha256.o util.o
+OBJS = snap.o store.o btrfs.o diff.o restore.o boot.o stage.o menu.o status.o manifest.o sha256.o util.o
 
 all: snap
 

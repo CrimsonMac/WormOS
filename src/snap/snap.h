@@ -53,6 +53,7 @@ struct names {
 
 /* Path of the mounted top-level subvolume. */
 extern const char *top;
+extern int top_given;          /* --top: not the running system */
 
 /* util.c */
 void die(const char *fmt, ...) __attribute__((noreturn, format(printf, 1, 2)));
@@ -106,6 +107,10 @@ int restore_path(int id, const char *path);
 
 /* menu.c */
 void menu_update(void);
+
+/* status.c */
+void status_update(void);
+void status_print(void);
 
 /* stage.c */
 int stage_begin(void);

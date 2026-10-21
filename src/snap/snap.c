@@ -34,7 +34,7 @@
 #define VIEWMNT  RUNDIR "/view"
 
 const char *top;
-static int top_given;
+int top_given;
 
 static void usage(FILE *out)
 {
@@ -53,6 +53,7 @@ static void usage(FILE *out)
 "  comment ID TEXT          set a snapshot's comment\n"
 "  verify [ID...]           check snapshots have not been tampered with\n"
 "  auto [on|off]            snapshots before package changes (default on)\n"
+"  status                   a summary (also kept in /run/snap-status)\n"
 "  stage begin|commit|abort|keep|status\n"
 "                           staged system changes, used by wh\n"
 "\n"
@@ -553,6 +554,7 @@ static int cmd_auto(int argc, char **argv)
 		open_store();
 		store_lock();
 		config_set_auto(strcmp(argv[1], "on") == 0);
+		status_update();
 		printf("Automatic snapshots turned %s\n", argv[1]);
 		return 0;
 	}
@@ -603,6 +605,17 @@ static int cmd_stage(int argc, char **argv)
 	die("usage: snap stage begin | commit [--try] [-c COMMENT] | abort | keep | status");
 }
 
+static int cmd_status(int argc, char **argv)
+{
+	(void)argv;
+	if (argc != 1)
+		die("usage: snap status");
+	open_store();
+	status_print();
+	status_update();
+	return 0;
+}
+
 static int cmd_boot(int argc, char **argv)
 {
 	int rewind = 0;
@@ -636,6 +649,7 @@ static const struct command {
 	{ "verify",  cmd_verify },
 	{ "auto",    cmd_auto },
 	{ "stage",   cmd_stage },
+	{ "status",  cmd_status },
 	{ "boot",    cmd_boot },
 	{ NULL, NULL },
 };

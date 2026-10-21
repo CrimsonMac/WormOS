@@ -1,0 +1,3 @@
+# The snapshot summary for the desktop and the prompt (/run/snap-status).
+type = oneshot
+exec = snap status > /dev/null

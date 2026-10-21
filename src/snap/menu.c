@@ -101,4 +101,5 @@ void menu_update(void)
 		warn("cannot update the boot menu: %s", strerror(errno));
 		unlink(tmp);
 	}
+	status_update();
 }

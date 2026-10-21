@@ -1,6 +1,6 @@
 name=snap
 version=0.1.0
-release=2
+release=3
 description="WormOS snapshot tool"
 depends=(glibc)
 localsrc=src/snap
@@ -11,4 +11,5 @@ build() {
 
 package() {
 	make DESTDIR="$pkgdir" install
+	install -Dm644 "$recipedir/files/11-snap-status" "$pkgdir/etc/worm/services/11-snap-status"
 }
