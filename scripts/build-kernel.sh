@@ -55,7 +55,7 @@ cp "$KOBJ/.config" "$PKGDIR/linux/boot/config-$kver"
 ln -sfn "vmlinuz-$kver" "$PKGDIR/linux/boot/vmlinuz"
 kmake INSTALL_MOD_PATH="$PKGDIR/linux/usr" INSTALL_MOD_STRIP=1 modules_install
 rm -f "$PKGDIR/linux/usr/lib/modules/$kver/build"
-pkginfo linux "${LINUX#linux-}" 3 "The Linux kernel and modules"
+pkginfo linux "${LINUX#linux-}" 4 "The Linux kernel and modules"
 
 msg "Kernel $kver ready"
 [ $missing -eq 0 ] || msg "Some config options were not applied (see warnings above)"
