@@ -214,9 +214,9 @@ in the README.
 
 ## Tor Browser
 
-- `tor-browser` (`src/torbrowser/`, GTK 4, `org.wormos.TorBrowser`) is in the
-  image; the browser and its libraries are not (decision: core packages
-  installed on first use). Tor Browser's `libxul.so` needs GTK 3, ATK and
+- `tor-browser` (`src/torbrowser/`, GTK 4, `org.wormos.TorBrowser`) and
+  `tor-browser-runtime` are in the image (the desktop depends on both);
+  the browser is not. Tor Browser's `libxul.so` needs GTK 3, ATK and
   the X11 client libraries (libX11, libX11-xcb, libxcb, libxcb-shm,
   libXext, libXrandr), even on Wayland.
 - `tor-browser-runtime` depends on `gtk3` (3.24, Wayland backend only; no
@@ -233,7 +233,8 @@ in the README.
   them only on an X11 display. A new Tor Browser release that needs more of
   them fails to start until the list grows (compare libxul's undefined
   symbols with the libraries, as when the list was made).
-- First run: without the stand-ins the window offers to install the
+- First run on a system without the runtime (it was planned as an
+  optional package): without the stand-ins the window offers to install the
   runtime through `/usr/lib/worm/install` (`src/worm/install.c`, setuid
   root): root or wheel only, root's password on standard input, and only
   packages that an installed package lists as an empty root-owned file in

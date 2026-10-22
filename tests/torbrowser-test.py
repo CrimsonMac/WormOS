@@ -3,12 +3,10 @@
 
 Needs internet access: the browser comes from torproject.org. The VM gets
 the desktop test's virtual GPU, keyboard and tablet. After the first-boot
-setup the user opens Tor Browser, which asks for the root password to
-install its libraries (tor-browser-runtime, served from out/repo: the test
-points /etc/wh/repo at it with a bind mount). The system restarts; the user
-logs in again, downloads and checks the browser (tor-browser --download)
-and starts it, once normally and once in anonymous mode, where it must use
-the system's Tor. The console output is written to build/torbrowser.log.
+setup the user opens Tor Browser, whose window offers the download (its
+libraries are in the image), then downloads and checks the browser
+(tor-browser --download) and starts it, once normally and once in
+anonymous mode, where it must use the system's Tor. The console output is written to build/torbrowser.log.
 
 Usage: tests/torbrowser-test.py [--timeout SECONDS]
 """
@@ -38,10 +36,10 @@ desktop = load("desktop_test", "desktop-test.py")
 USER, USER_PASSWORD, ROOT_PASSWORD = desktop.USER, desktop.USER_PASSWORD, desktop.ROOT_PASSWORD
 BROWSER = f"/home/{USER}/.local/share/tor-browser"
 
-AFTER_INSTALL_CHECKS = [
-    ("runtime installed", "wh list | grep -c -e '^tor-browser-runtime ' -e '^gtk3 '", r"^2$"),
+RUNTIME_CHECKS = [
+    ("libraries in the image", "wh list | grep -c -e '^tor-browser-runtime ' -e '^gtk3 '",
+     r"^2$"),
     ("X11 stand-ins present", "ls /usr/lib/tor-browser/libx11-compat.so", r"compat\.so$"),
-    ("snapshot before the install", "snap list", r"wh install .*tor-browser-runtime$"),
 ]
 
 DOWNLOAD_CHECKS = [
@@ -73,12 +71,11 @@ def main():
              f"-device virtio-keyboard-pci,addr=0x11 -device virtio-tablet-pci,addr=0x12 "
              f"-monitor unix:{mon_path},server,nowait")
     env = dict(os.environ, QEMU_EXTRA=extra, QEMU_MEM="3072")
-    repo = boot_test.serve_repo()
     proc = subprocess.Popen([os.path.join(ROOT, "scripts", "run-qemu.sh"), "--snapshot"],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, env=env)
     passed = failures = 0
-    total = len(AFTER_INSTALL_CHECKS) + len(DOWNLOAD_CHECKS) + 10
+    total = len(RUNTIME_CHECKS) + len(DOWNLOAD_CHECKS) + 8
 
     def check(name, ok, out=""):
         nonlocal passed, failures
@@ -110,16 +107,10 @@ def main():
     def session(con, cmd, timeout=60):
         return con.run(f"su {USER} -c '/tmp/in-session {cmd}'", timeout)
 
-    def root_login(con, timeout, password=None):
+    def root_login(con, timeout):
         con.expect("login:", timeout)
         con.send("root\n")
-        if password is not None:
-            # Set by the first-boot setup.
-            con.expect("Password:", 60)
-            con.send(password + "\n")
         con.expect("# ", 60)
-        # The repository being tested, for the install helper's wh.
-        con.run(f"echo {repo} > /tmp/repo && mount --bind /tmp/repo /etc/wh/repo")
         desktop.put_file(con, desktop.IN_SESSION.encode(), "/tmp/in-session")
 
     def browser_started(con, label):
@@ -164,35 +155,19 @@ def main():
             check("desktop started", re.search(r"^\d+$", out, re.M) is not None, out)
             time.sleep(10)
 
-            # First run: the launcher asks for the libraries.
+            # The libraries are in the image: the first run offers the download.
+            run_checks(con, RUNTIME_CHECKS)
             con.run(f"su {USER} -c '/tmp/in-session tor-browser > /tmp/tb.log 2>&1 &'")
             out = wait_for(con, "pidof tor-browser", r"^\d+$", 120)
             time.sleep(8)
-            w, h, px = screen("runtime")
-            check("setup window asks for the libraries",
+            w, h, px = screen("setup")
+            check("setup window offers the download",
                   re.search(r"^\d+$", out, re.M) is not None and
                   desktop.solid_block(px, w, h, desktop.ACCENT) is not None,
                   con.run("cat /tmp/tb.log"))
-            mon.type(ROOT_PASSWORD + "\n")
-            # Installing restarts the system (a soft reboot).
-            root_login(con, 1800, ROOT_PASSWORD)
-            check("libraries installed with a restart", True)
-            run_checks(con, AFTER_INSTALL_CHECKS)
+            con.run("kill $(pidof tor-browser)")
 
-            # The login screen can take a while to accept typing under
-            # emulation: try again if the desktop does not come.
-            for _ in range(3):
-                wait_for(con, desktop.GREETER_MODE, r"MODE=login", 300)
-                time.sleep(15)
-                mon.type(USER_PASSWORD + "\n")
-                out = wait_for(con, "pidof worm-shell", r"^\d+$", 150)
-                if re.search(r"^\d+$", out, re.M):
-                    break
-            check("logged in again", re.search(r"^\d+$", out, re.M) is not None,
-                  con.run("cat /run/wormlogin/greeter.log | tail -n 5"))
-            time.sleep(10)
-
-            # Second run: download and check the browser.
+            # Download and check the browser.
             out = session(con, "tor-browser --download", 3600)
             check("downloaded, checked and unpacked", "is ready" in out, out[-500:])
             run_checks(con, DOWNLOAD_CHECKS)
