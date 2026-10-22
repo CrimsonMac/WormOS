@@ -43,6 +43,11 @@ CHECKS = [
     ("runs as root", "htop --version", r"^htop 3\."),
     ("listed", "wh list | tail -2", r"^htop\s+\S+\s+\[debian\]$"),
     ("found by search", "wh search htop", r"^htop .*\[debian\]$"),
+    # Without --from: the existing Debian wormhole has it, so Kali is not
+    # set up (apt-cache's long answer must not count as a failure).
+    ("source found in an existing wormhole", "wh -y install tree 2>&1 | tail -1; wh list",
+     r"^tree\s+\S+\s+\[debian\]$"),
+    ("no second wormhole for it", "ls /var/lib/wormholes | grep -c kali", r"^0$"),
     ("desktop entry exported", "grep -E '^(Exec|X-WormOS-Wormhole)=' "
      "/usr/local/share/applications/htop.desktop", r"^Exec=htop\nX-WormOS-Wormhole=true$"),
     ("icons exported", "ls /usr/local/share/icons/hicolor/scalable/apps/", r"^htop\.svg$"),
@@ -88,7 +93,9 @@ CHECKS = [
      "curl -s -m 60 https://check.torproject.org/api/ip", r'"IsTor":\s*true'),
     ("names resolve through Tor", "nslookup deb.debian.org 2>&1 | tail -2", r"Address"),
     ("anonymous mode off", "worm anon off", r"^Anonymous mode is off"),
-    ("direct again", "curl -s -m 60 https://check.torproject.org/api/ip", r'"IsTor":\s*false'),
+    # The resolver reconnects first, which can take a while.
+    ("direct again", "for i in 1 2 3; do curl -s -m 60 https://check.torproject.org/api/ip "
+     "&& break; done", r'"IsTor":\s*false'),
 ]
 
 

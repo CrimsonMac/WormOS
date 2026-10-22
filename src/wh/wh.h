@@ -62,6 +62,7 @@ int repo_load(struct index *idx);
 int repo_fetch(const char *url, const struct package *p, char *out, size_t len);
 const char *repo_url(const char *override);
 int download(const char *url, const char *dest);
+int download_many(char *const *urls, char *const *dests, int n);
 int file_sha256(const char *path, char hex[65], long long *size);
 
 /* foreign.c */

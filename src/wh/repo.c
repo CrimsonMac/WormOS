@@ -67,6 +67,36 @@ int download(const char *url, const char *dest)
 	return run(argv, NULL, 0) == 0 ? 0 : -1;
 }
 
+/*
+ * Download several files with one curl, a few at a time over shared
+ * connections: much faster than one curl (and one TLS handshake) per
+ * file. Fails if any download fails; callers check every file anyway.
+ */
+int download_many(char *const *urls, char *const *dests, int n)
+{
+	static char *const head[] = { "curl", "-fsSL", "--retry", "2",
+				      "--proto", "-all,https,http,file",
+				      "--parallel", "--parallel-max", "6" };
+	int nhead = sizeof(head) / sizeof(head[0]), a = 0, ret;
+	char **argv;
+
+	if (n == 0)
+		return 0;
+	if (!(argv = calloc(nhead + 3 * (size_t)n + 1, sizeof(*argv))))
+		die("out of memory");
+	for (int i = 0; i < nhead; i++)
+		argv[a++] = head[i];
+	for (int i = 0; i < n; i++) {
+		argv[a++] = "-o";
+		argv[a++] = dests[i];
+		argv[a++] = urls[i];
+	}
+	argv[a] = NULL;
+	ret = run(argv, NULL, 0) == 0 ? 0 : -1;
+	free(argv);
+	return ret;
+}
+
 int file_sha256(const char *path, char hex[65], long long *size)
 {
 	unsigned char buf[65536], sum[SHA256_LEN];

@@ -92,7 +92,8 @@ int mkdirs_at(int dfd, const char *rel, int mode)
 
 /*
  * Run a program and wait for it. With out, its standard output is captured
- * (up to outlen - 1 bytes). Returns the exit status, or -1.
+ * (up to outlen - 1 bytes; the rest is read and dropped). Returns the exit
+ * status, or -1.
  */
 int run(char *const argv[], char *out, size_t outlen)
 {
@@ -114,12 +115,17 @@ int run(char *const argv[], char *out, size_t outlen)
 		_exit(127);
 	}
 	if (out) {
+		char rest[4096];
 		ssize_t r;
 
 		close(pipefd[1]);
-		while ((r = read(pipefd[0], out + n, outlen - 1 - n)) > 0)
+		while (n < outlen - 1 && (r = read(pipefd[0], out + n, outlen - 1 - n)) > 0)
 			n += r;
 		out[n] = '\0';
+		/* Read to the end: closing the pipe early would kill the program
+		 * with SIGPIPE and make it look as if it had failed. */
+		while ((r = read(pipefd[0], rest, sizeof(rest))) > 0 || (r < 0 && errno == EINTR))
+			;
 		close(pipefd[0]);
 	}
 	while (waitpid(pid, &status, 0) < 0)

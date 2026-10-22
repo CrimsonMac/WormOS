@@ -60,6 +60,7 @@ struct source {
 	char suite[64];
 	char apt[MAX_APT][512];
 	int napt;
+	char packages[PATH_MAX];        /* the checked package list, once fetched */
 };
 
 static struct source sources[MAX_SOURCES];
@@ -286,7 +287,7 @@ static int fetch_packages(struct source *s, char *out, size_t len)
 {
 	char dir[PATH_MAX], inrel[PATH_MAX + 32], release[PATH_MAX + 32];
 	char xz[PATH_MAX + 32], url[1024], want[80], hex[65], line[1024];
-	char part[PATH_MAX + 40];
+	char part[PATH_MAX + 40], stamp[PATH_MAX + 32];
 	char member[64];
 	static const char *const exts[] = { ".xz", ".gz", "" };
 	static const char *const tools[] = { "xzcat", "zcat", "cat" };
@@ -294,6 +295,13 @@ static int fetch_packages(struct source *s, char *out, size_t len)
 	long long size, want_size = -1;
 	FILE *f;
 
+	/* Once per run: finding a package and setting up its wormhole both
+	 * need the list. */
+	if (s->packages[0]) {
+		if ((size_t)snprintf(out, len, "%s", s->packages) >= len)
+			die("path too long: %s", s->packages);
+		return 0;
+	}
 	snprintf(dir, sizeof(dir), "%s/%s", SOURCE_CACHE, s->name);
 	if (mkdirs_at(AT_FDCWD, dir, 0755) < 0)
 		die("cannot create %s: %s", dir, strerror(errno));
@@ -353,6 +361,21 @@ static int fetch_packages(struct source *s, char *out, size_t len)
 		die("the %s release does not list main/binary-%s/Packages", s->name, ARCH);
 	snprintf(xz, sizeof(xz), "%s/Packages.download%s", dir, ext);
 
+	/* The list changes a few times a day; the copy from the last run is
+	 * kept when it still matches the signed checksum. "Packages.sha256"
+	 * records which compressed list the plain one came from. */
+	snprintf(stamp, sizeof(stamp), "%s/Packages.sha256", dir);
+	if (file_sha256(xz, hex, &size) == 0 && size == want_size && !strcmp(hex, want) &&
+	    (f = fopen(stamp, "re"))) {
+		char have[80] = "";
+
+		if (!fgets(have, sizeof(have), f))
+			have[0] = '\0';
+		fclose(f);
+		have[strcspn(have, "\n")] = '\0';
+		if (!strcmp(have, want) && access(out, R_OK) == 0)
+			goto done;
+	}
 	snprintf(url, sizeof(url), "%s/dists/%s/%s", s->mirror, s->suite, member);
 	if (download(url, xz) < 0)
 		die("cannot download %s", url);
@@ -363,11 +386,16 @@ static int fetch_packages(struct source *s, char *out, size_t len)
 	{
 		char cmd[3 * PATH_MAX];
 
+		unlink(stamp);
 		snprintf(cmd, sizeof(cmd), "%s '%s' > '%s.tmp' && mv '%s.tmp' '%s'",
 			 tool, xz, out, out, out);
 		if (run((char *[]){ "sh", "-c", cmd, NULL }, NULL, 0) != 0)
 			die("cannot decompress the %s package list", s->name);
+		if (!(f = fopen(stamp, "we")) || fprintf(f, "%s\n", want) < 0 || fclose(f) != 0)
+			die("cannot write %s", stamp);
 	}
+done:
+	snprintf(s->packages, sizeof(s->packages), "%s", out);
 	return 0;
 }
 
@@ -549,6 +577,55 @@ static const char stage2[] =
 	"$dpkg --configure --pending || $dpkg --configure --pending\n"
 	"dpkg --configure -a\n";
 
+/* Copy a file, replacing to. */
+static int copy_file(const char *from, const char *to, mode_t mode)
+{
+	char buf[65536];
+	int in = open(from, O_RDONLY | O_CLOEXEC), out = -1, ret = -1;
+	ssize_t r;
+
+	if (in < 0)
+		return -1;
+	if ((out = open(to, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, mode)) < 0)
+		goto out;
+	while ((r = read(in, buf, sizeof(buf))) > 0)
+		if (write(out, buf, r) != r)
+			goto out;
+	ret = r < 0 ? -1 : 0;
+out:
+	if (out >= 0 && close(out) < 0)
+		ret = -1;
+	close(in);
+	return ret;
+}
+
+/*
+ * apt would download the package list that wh has just checked once more:
+ * give it the same files under the names apt uses (the mirror URL without
+ * its scheme, slashes as underscores). apt then finds them current. If the
+ * names do not match, apt simply downloads the list as before.
+ */
+static void seed_apt_lists(const struct source *s, const char *dir)
+{
+	char prefix[600], *p, from[PATH_MAX + 32], to[2 * PATH_MAX];
+	static const char *const files[][2] = {
+		{ "InRelease", "InRelease" },
+		{ "Packages", "main_binary-" ARCH "_Packages" },
+	};
+	const char *host = strstr(s->mirror, "://");
+
+	snprintf(prefix, sizeof(prefix), "%s_dists_%s_", host ? host + 3 : s->mirror, s->suite);
+	for (p = prefix; *p; p++)
+		if (*p == '/')
+			*p = '_';
+	for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
+		snprintf(from, sizeof(from), "%s/%s/%s", SOURCE_CACHE, s->name, files[i][0]);
+		snprintf(to, sizeof(to), "%s/var/lib/apt/lists/%s%s", dir, prefix, files[i][1]);
+		if (copy_file(from, to, 0644) < 0)
+			warn("cannot copy %s for apt", from);
+	}
+}
+
 /* Set the wormhole up from the source's signed repository. */
 int wormhole_setup(const char *name)
 {
@@ -585,30 +662,52 @@ int wormhole_setup(const char *name)
 	snprintf(debs, sizeof(debs), "%s/%s/debs", SOURCE_CACHE, name);
 	if (mkdirs_at(AT_FDCWD, debs, 0755) < 0)
 		die("cannot create %s: %s", debs, strerror(errno));
-	for (int i = 0; i < d.n; i++) {
-		struct deb *p = &d.v[i];
-		char path[PATH_MAX + 512], url[1024], hex[65], *base = strrchr(p->filename, '/');
-		long long size;
+	/* Everything not cached yet in one parallel download, then each file
+	 * is checked against the signed list. */
+	{
+		char **urls = calloc(count + 1, sizeof(*urls));
+		char **paths = calloc(count + 1, sizeof(*paths));
+		struct deb **wanted = calloc(count + 1, sizeof(*wanted));
 
-		if (!p->selected)
-			continue;
-		base = base ? base + 1 : p->filename;
-		if (strstr(p->filename, "..") || !*base)
-			die("bad file name in the %s package list", name);
-		snprintf(path, sizeof(path), "%s/%s", debs, base);
-		if (file_sha256(path, hex, &size) == 0 && !strcmp(hex, p->sha256))
-			continue;
-		snprintf(url, sizeof(url), "%s/%s", s->mirror, p->filename);
-		if (verbose)
-			info("  %s %s", p->name, p->version);
-		if (download(url, path) < 0)
-			die("cannot download %s", url);
-		if (file_sha256(path, hex, &size) < 0 || strcmp(hex, p->sha256)) {
-			unlink(path);
-			die("%s does not match the signed package list", base);
+		if (!urls || !paths || !wanted)
+			die("out of memory");
+		for (int i = 0; i < d.n; i++) {
+			struct deb *p = &d.v[i];
+			char path[PATH_MAX + 512], url[1024], hex[65];
+			char *base = strrchr(p->filename, '/');
+			long long size;
+
+			if (!p->selected)
+				continue;
+			base = base ? base + 1 : p->filename;
+			if (strstr(p->filename, "..") || !*base)
+				die("bad file name in the %s package list", name);
+			snprintf(path, sizeof(path), "%s/%s", debs, base);
+			if (file_sha256(path, hex, &size) == 0 && !strcmp(hex, p->sha256))
+				continue;
+			snprintf(url, sizeof(url), "%s/%s", s->mirror, p->filename);
+			if (verbose)
+				info("  %s %s", p->name, p->version);
+			urls[n] = dupstr(url);
+			paths[n] = dupstr(path);
+			wanted[n++] = p;
 		}
-		if (++n % 20 == 0)
-			info("  %d/%d", n, count);
+		if (download_many(urls, paths, n) < 0)
+			warn("some downloads failed");
+		for (int i = 0; i < n; i++) {
+			char hex[65];
+			long long size;
+
+			if (file_sha256(paths[i], hex, &size) < 0 || strcmp(hex, wanted[i]->sha256)) {
+				unlink(paths[i]);
+				die("%s is missing or does not match the signed package list", urls[i]);
+			}
+			free(urls[i]);
+			free(paths[i]);
+		}
+		free(urls);
+		free(paths);
+		free(wanted);
 	}
 
 	/* Build it in a new subvolume, renamed into place once complete. */
@@ -675,23 +774,20 @@ int wormhole_setup(const char *name)
 		   "path-exclude=/usr/share/man/*\n"
 		   "path-exclude=/usr/share/info/*\n"
 		   "path-exclude=/usr/share/locale/*\n"
-		   "path-include=/usr/share/locale/locale.alias\n", 0644);
+		   "path-include=/usr/share/locale/locale.alias\n"
+		   "# A container that is rebuilt rather than repaired: dpkg need not\n"
+		   "# sync every file it writes.\n"
+		   "force-unsafe-io\n", 0644);
 	write_text(dir, "etc/apt/apt.conf.d/90wormhole",
 		   "APT::Install-Recommends \"false\";\n"
-		   "APT::Install-Suggests \"false\";\n", 0644);
+		   "APT::Install-Suggests \"false\";\n"
+		   "Acquire::Languages \"none\";\n", 0644);
 	{
 		char kr[PATH_MAX + 64];
-		int in = open(s->keyring, O_RDONLY | O_CLOEXEC), out;
 
 		snprintf(kr, sizeof(kr), "%s/etc/apt/keyrings/wormhole.pgp", dir);
-		out = open(kr, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
-		if (in < 0 || out < 0)
+		if (copy_file(s->keyring, kr, 0644) < 0)
 			die("cannot copy the %s keyring", name);
-		for (ssize_t r; (r = read(in, text, sizeof(text))) > 0; )
-			if (write(out, text, r) != r)
-				die("cannot copy the %s keyring", name);
-		close(in);
-		close(out);
 	}
 	{
 		size_t len = 0;
@@ -717,6 +813,7 @@ int wormhole_setup(const char *name)
 		     "in %s for inspection", dir);
 		exit(1);
 	}
+	seed_apt_lists(s, dir);
 	if (run((char *[]){ "whc", "--root", "--dir", dir, "--", "apt-get", "-q", "update", NULL },
 		NULL, 0) != 0)
 		die("apt-get update failed in the new wormhole");

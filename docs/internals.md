@@ -137,12 +137,27 @@ in the README.
   1. Check InRelease with `gpgv --output X.part` and rename after success
      (GnuPG 2.5's gpgv never renames its own `.part` output).
   2. Fetch Packages (xz, then gz, then plain; Kali has no xz) and check it.
+     The list is fetched once per run (finding a package and setting up its
+     wormhole share it) and the copy from the last run is kept while it
+     matches the signed checksum (`Packages.sha256` records which one the
+     plain list came from).
   3. Select `Priority: required`, `Essential: yes` and apt, with dependencies.
-  4. Check each `.deb`, unpack it with `tar_unpack` after creating the
-     merged-/usr links.
+  4. Download the missing `.deb`s with one curl (`--parallel`, six at a
+     time over shared connections), check each, and unpack it with
+     `tar_unpack` after creating the merged-/usr links.
   5. Run the dpkg second stage inside via `whc --root --dir --bind`.
-- apt inside is pinned to our keyring copy (`signed-by`), recommends are off,
-  docs and locales are excluded and `policy-rc.d` exits 101.
+  6. Copy the checked InRelease and Packages into apt's lists under apt's
+     names (mirror without scheme, `/` as `_`), so `apt-get update` does
+     not download them a third time, then run it.
+- apt inside is pinned to our keyring copy (`signed-by`), recommends and
+  translations (`Acquire::Languages "none"`) are off, docs and locales are
+  excluded, dpkg runs with `force-unsafe-io` (no fsync per file; a broken
+  wormhole is set up again rather than repaired) and `policy-rc.d` exits
+  101.
+- wh's `run()` reads a program's output to the end even when it keeps only
+  the beginning: closing the pipe early killed `apt-cache show` with
+  SIGPIPE, so a package in an existing Debian wormhole looked missing and
+  wh set up the Kali wormhole for it.
 - Besides commands, wh exports a package's desktop entries (to
   `/usr/local/share/applications`, unless the system has an entry of that
   name) and icons (`usr/share/icons` and `usr/share/pixmaps`, to the same
