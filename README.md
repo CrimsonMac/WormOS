@@ -2,7 +2,7 @@
 
 A lightweight, security-focused Linux operating system built around instant, tamper-resistant snapshots.
 
-> **Status:** 1.1: a read-only system with snapshots, packages, a
+> **Status:** 1.2: a read-only system with snapshots, packages, a
 > firewall, sandboxes, Tor and Tor Browser, and a light Wayland desktop
 > with its own panel, login screen, snapshot timeline and sound, running
 > in a virtual machine (QEMU or VMware).
@@ -39,14 +39,14 @@ A lightweight, security-focused Linux operating system built around instant, tam
 Release images run in a virtual machine with UEFI firmware. Download them
 from the release page and check them against `SHA256SUMS`.
 
-- **QEMU / virt-manager:** `wormos-1.1-x86_64.qcow2`. In virt-manager,
+- **QEMU / virt-manager:** `wormos-1.2-x86_64.qcow2`. In virt-manager,
   import an existing disk image, choose a generic recent Linux, and set the
   firmware to UEFI (Customize configuration before install, Overview,
   Firmware) with Secure Boot off. From the command line:
   ```
   qemu-system-x86_64 -machine q35 -accel kvm -cpu host -m 2048 -smp 2 \
       -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
-      -drive file=wormos-1.1-x86_64.qcow2,if=virtio \
+      -drive file=wormos-1.2-x86_64.qcow2,if=virtio \
       -nic user,model=virtio-net-pci -device virtio-vga \
       -device virtio-keyboard-pci -device virtio-tablet-pci
   ```
@@ -59,14 +59,14 @@ from the release page and check them against `SHA256SUMS`.
   & "C:\Program Files\qemu\qemu-system-x86_64.exe" -machine q35 `
       -accel whpx,kernel-irqchip=off -m 2048 -smp 2 `
       -drive "if=pflash,format=raw,readonly=on,file=C:\Program Files\qemu\share\edk2-x86_64-code.fd" `
-      -drive file=wormos-1.1-x86_64.qcow2,if=virtio `
+      -drive file=wormos-1.2-x86_64.qcow2,if=virtio `
       -nic user,model=virtio-net-pci -device virtio-vga -display sdl `
       -device virtio-keyboard-pci -device virtio-tablet-pci
   ```
   If QEMU says WHPX is not available, use `-accel tcg` instead: it works
   without the Windows feature, but much more slowly. Ctrl+Alt+G releases
   the mouse.
-- **VMware Workstation / Player:** unzip `wormos-1.1-vmware.zip` and open
+- **VMware Workstation / Player:** unzip `wormos-1.2-vmware.zip` and open
   `WormOS.vmx` (UEFI, NVMe disk, 2 GB of memory, 3D acceleration off).
 
 On the first start, WormOS asks for a user name, a password for it and a
@@ -170,6 +170,11 @@ The package index is signed with Ed25519 and checked on every use; packages
 must match the SHA-256 the index lists, and an index older than the one
 already downloaded is refused. Packages are unpacked by wh itself, which
 never writes outside the system it installs into.
+
+The repository is published at
+[CrimsonMac/wormos-packages](https://github.com/CrimsonMac/wormos-packages/releases/tag/core),
+together with a source archive for every package built from upstream
+code (its recipe, patches and upstream archives).
 
 ### Software from Debian and Kali
 
@@ -372,7 +377,7 @@ the QEMU monitor like a user would. It answers the first-boot setup, logs
 in (which starts the desktop), types into the terminal, opens another with
 Super+Enter, checks a screendump of the real screen, and compares memory
 use and system size with their budgets. `tests/desktop-test.py --release
-out/release/wormos-1.1-x86_64.qcow2` runs the same checks on a release
+out/release/wormos-1.2-x86_64.qcow2` runs the same checks on a release
 image, where root can only log in once the first-boot setup is done.
 
 `make test` boots a throwaway copy of the image, checks the running system
@@ -401,10 +406,13 @@ into the system. The root filesystem is assembled by installing the base
 packages from that repository with `wh --root`.
 
 The development image has an empty root password (the tests log in with
-it). `make release VERSION=1.1` builds the release images instead
+it). `make release VERSION=1.2` builds the release images instead
 (`scripts/release.sh`): root stays locked until the first-boot setup, the
 disk is 20 GiB, and the output is a qcow2 image and a VMware bundle in
-`out/release`.
+`out/release`. `make publish-repo` writes the source archives
+(`scripts/source-archives.sh`, into `out/sources`) and uploads them with
+the repository to the package release (`scripts/publish-repo.sh`, needs
+the GitHub CLI).
 
 The root filesystem is read-only; change it with `worm unlock` and
 `worm lock`. (A plain `mount -o remount,ro /` would make the whole btrfs

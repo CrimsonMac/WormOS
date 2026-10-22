@@ -678,6 +678,17 @@ in the README.
   qcow2, and a monolithic sparse VMDK zipped with `WormOS.vmx` (from
   `scripts/wormos.vmx.in`: UEFI, NVMe, vmxnet3, 3D acceleration off).
   `SHA256SUMS` lists both.
+- Package repository: `/etc/wh/repo` (set in `recipes/wh/recipe`) is the
+  release `core` of the public repository `CrimsonMac/wormos-packages`;
+  this repository itself stays private. `scripts/source-archives.sh`
+  writes `out/sources/NAME-VER-REL.src.tar` for every package built from
+  upstream sources (recipe directory and upstream archives; glibc and
+  gcc-libs take theirs from the toolchain, linux and linux-headers the
+  kernel archive and `kernel/wormos.config`; linux-firmware only its
+  recipe), plus `wormos-build-tools.tar` (wbuild, wpack, wrepo, env.sh, the
+  toolchain and kernel scripts). Packages from local code get none.
+  `scripts/publish-repo.sh` uploads packages and sources, then the index
+  and its signature, and removes assets that are no longer current.
 - `mkimage.sh` copies only the data extents of the partition images into
   the disk image (`scripts/sparse-copy.py`, SEEK_DATA/SEEK_HOLE), so a
   20 GiB disk takes seconds.

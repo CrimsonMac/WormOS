@@ -64,10 +64,17 @@ test-torbrowser:
 release: repo
 	scripts/release.sh $(VERSION)
 
+# The public package repository: source archives, then the upload (gh).
+sources: repo
+	scripts/source-archives.sh
+
+publish-repo: sources
+	scripts/publish-repo.sh
+
 clean:
 	rm -rf build/work build/pkgs build/pkginfo build/fsroot build/kernel build/image build/host out
 
 distclean:
 	rm -rf build out
 
-.PHONY: all toolchain kernel packages repo rootfs image run run-gui test test-wormholes test-torbrowser release clean distclean
+.PHONY: all toolchain kernel packages repo rootfs image run run-gui test test-wormholes test-torbrowser release sources publish-repo clean distclean
