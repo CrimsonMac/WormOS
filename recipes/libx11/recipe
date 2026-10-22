@@ -1,0 +1,25 @@
+name=libx11
+version=1.8.14
+description="X11 client library"
+depends=(glibc libxcb xcompose)
+# Signed by Alan Coopersmith (3AB285232C46AE43D8E192F4DAB0F78EA6E7E2D2).
+source=(https://www.x.org/releases/individual/lib/libX11-$version.tar.xz)
+sha256=(bbc78c46217174655c2b32b138ad119f3ac15f50808b4d0b3a2677a4b1afc950)
+
+build() {
+	# makekeys runs during the build, so it is compiled for this machine.
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--sysconfdir=/etc --localstatedir=/var --disable-static \
+		--disable-specs --without-xmlto --without-fop --without-xsltproc \
+		--disable-xf86bigfont CC_FOR_BUILD=gcc
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/doc"
+	# The Compose tables are the xcompose package; no other locale data
+	# (input methods) is needed without an X server.
+	rm -rf "$pkgdir/usr/share/X11/locale" "$pkgdir/usr/lib/X11"
+}

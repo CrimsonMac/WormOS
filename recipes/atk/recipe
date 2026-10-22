@@ -1,0 +1,19 @@
+name=atk
+version=2.62.1
+description="ATK accessibility interfaces (the library only, from at-spi2-core)"
+depends=(glibc glib)
+# GNOME publishes no signatures; matches the release's sha256sum file.
+source=(https://download.gnome.org/sources/at-spi2-core/${version%.*}/at-spi2-core-$version.tar.xz)
+sha256=(cca6b6a86e4389d89b370288761ce2385ddeceb10c4412da78689bc30c88af2d)
+
+build() {
+	# Only ATK, which GTK 3 needs: no accessibility bus or bridge (there is
+	# no screen reader yet, see GTK_A11Y=none for GTK 4).
+	meson_build -Datk_only=true -Dintrospection=disabled -Ddocs=false \
+		-Dx11=disabled -Duse_systemd=false
+}
+
+package() {
+	meson_package
+	rm -rf "$pkgdir/usr/share/locale"
+}

@@ -1,0 +1,23 @@
+name=libxcb
+version=1.17.0
+description="X11 protocol C binding (XCB)"
+depends=(glibc libxau)
+# Signed by Matt Turner (16238A7D92448B02B7B10344B6B1CEAE5103DB07).
+source=(https://www.x.org/releases/individual/xcb/libxcb-$version.tar.xz)
+sha256=(599ebf9996710fea71622e6e184f3a8ad5b43d0e5fa8c4e407123c88a59a6d55)
+
+build() {
+	# The generator runs on this machine, from xcb-proto in the sysroot.
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--sysconfdir=/etc --localstatedir=/var --disable-static \
+		--without-doxygen --disable-devel-docs PYTHON=python3 \
+		XCBPROTO_XCBINCLUDEDIR="$SYSROOT/usr/share/xcb" \
+		XCBPROTO_XCBPYTHONDIR="$SYSROOT/usr/lib/python3/site-packages"
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/doc"
+}

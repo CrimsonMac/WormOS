@@ -1,0 +1,20 @@
+name=libxrender
+version=0.9.13
+description="X Rendering Extension client library"
+depends=(glibc libx11)
+# Signed by Alan Coopersmith (3AB285232C46AE43D8E192F4DAB0F78EA6E7E2D2).
+source=(https://www.x.org/releases/individual/lib/libXrender-$version.tar.xz)
+sha256=(3fe88c609df6782e1e7af2e4de36b2563d70cd70ff7dcb1cda561ad64912bb64)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--sysconfdir=/etc --localstatedir=/var --disable-static \
+		--disable-specs --without-xmlto --without-fop --without-xsltproc
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/doc"
+}

@@ -1,0 +1,20 @@
+name=libxrandr
+version=1.5.5
+description="X Resize, Rotate and Reflect extension client library"
+depends=(glibc libx11 libxext libxrender)
+# Signed by Alan Coopersmith (3AB285232C46AE43D8E192F4DAB0F78EA6E7E2D2).
+source=(https://www.x.org/releases/individual/lib/libXrandr-$version.tar.xz)
+sha256=(72b922c2e765434e9e9f0960148070bd4504b288263e2868a4ccce1b7cf2767a)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--sysconfdir=/etc --localstatedir=/var --disable-static \
+		--disable-specs --without-xmlto --without-fop --without-xsltproc
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/doc"
+}

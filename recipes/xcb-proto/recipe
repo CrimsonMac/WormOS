@@ -1,0 +1,17 @@
+name=xcb-proto
+version=1.17.0
+description="XCB protocol descriptions and generator (for building libxcb)"
+# Signed by Matt Turner (16238A7D92448B02B7B10344B6B1CEAE5103DB07).
+source=(https://www.x.org/releases/individual/proto/xcb-proto-$version.tar.xz)
+sha256=(2c1bacd2110f4799f74de6ebb714b94cf6f80fb112316b1219480fd22562148c)
+sysroot_files=(usr/share/pkgconfig usr/share/xcb usr/lib/python3)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		PYTHON=python3 am_cv_python_pythondir=/usr/lib/python3/site-packages
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}

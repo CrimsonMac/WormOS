@@ -1,0 +1,19 @@
+name=libxau
+version=1.0.12
+description="X11 authorization protocol library"
+depends=(glibc)
+# Signed by Alan Coopersmith (2F7DBCAD5B30E668BBD516C1CFDF148828C642A7).
+source=(https://www.x.org/releases/individual/lib/libXau-$version.tar.xz)
+sha256=(74d0e4dfa3d39ad8939e99bda37f5967aba528211076828464d2777d477fc0fb)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--sysconfdir=/etc --localstatedir=/var --disable-static
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man"
+}

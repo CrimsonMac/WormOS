@@ -1,0 +1,27 @@
+name=gtk3
+version=3.24.52
+description="GTK 3 widget toolkit, Wayland backend only (for Tor Browser)"
+depends=(glibc glib atk pango cairo harfbuzz fribidi fontconfig freetype gdk-pixbuf
+	libepoxy libxkbcommon wayland shared-mime-info hicolor-icon-theme adwaita-icon-theme)
+# GNOME publishes no signatures; matches the release's sha256sum file.
+source=(https://download.gnome.org/sources/gtk/${version%.*}/gtk-$version.tar.xz)
+sha256=(80931fa472a77b9a164f6740e3c0b444fac6770054632d35a7ff9d679e5e7b9f)
+
+build() {
+	# No X11 backend (and so no cairo-xlib or accessibility bridge), printing,
+	# colour management or desktop search.
+	meson_build -Dx11_backend=false -Dwayland_backend=true -Dbroadway_backend=false \
+		-Dprint_backends=file -Dcolord=no -Dcloudproviders=false -Dtracker3=false \
+		-Dintrospection=false -Dgtk_doc=false -Dman=false -Ddemos=false \
+		-Dexamples=false -Dtests=false -Dinstalled_tests=false -Dxinerama=no
+}
+
+package() {
+	meson_package
+	rm -rf "$pkgdir/usr/share/locale" "$pkgdir/usr/share/gettext" \
+		"$pkgdir/usr/share/themes" "$pkgdir/usr/share/applications" \
+		"$pkgdir/usr/share/icons"
+	# Tools for developers of GTK programs, and the demo launcher.
+	rm -f "$pkgdir"/usr/bin/{gtk-builder-tool,gtk-encode-symbolic-svg,gtk-launch,gtk-query-settings}
+	install -Dm644 "$recipedir/files/settings.ini" "$pkgdir/etc/gtk-3.0/settings.ini"
+}
