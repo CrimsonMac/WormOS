@@ -2,6 +2,11 @@
 
 set -euo pipefail
 
+# Run from make, variables such as VERSION=1.2 on its command line reach
+# every makefile below through MAKEFLAGS and the environment, overriding
+# their own (the kernel's VERSION, zstd's). Builds pass their own -j.
+unset MAKEFLAGS MFLAGS MAKELEVEL MAKEOVERRIDES VERSION
+
 WORMOS_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 TARGET=x86_64-wormos-linux-gnu
