@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Tor Browser
+GenericName=Private web browser
+Comment=Browse the web through the Tor network
+Exec=tor-browser %u
+Icon=org.wormos.TorBrowser
+Categories=Network;WebBrowser;
+Keywords=tor;onion;browser;web;anonymous;privacy;
+MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
+StartupWMClass=Tor Browser
+StartupNotify=true

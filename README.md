@@ -235,6 +235,24 @@ up and stay in place while Tor connects, so nothing leaks in between.
 The setting is kept across restarts and is part of system snapshots.
 Programs can also use Tor's SOCKS port directly (127.0.0.1:9050).
 
+## Tor Browser
+
+Tor Browser is in the launcher and the menu, but not in the image: the
+first time it is opened, it sets itself up.
+
+1. It installs the system libraries it needs (`tor-browser-runtime`: GTK 3
+   and the X11 client libraries, about 10 MB) after asking for the root
+   password. The system restarts, as after any package change; open Tor
+   Browser again afterwards.
+2. It downloads the current release from torproject.org (about 140 MB),
+   checks its signature against the Tor Browser Developers' key that comes
+   with WormOS, and unpacks it into `~/.local/share/tor-browser`.
+
+From then on it starts right away and keeps itself up to date. In
+anonymous mode it uses the system's Tor instead of its own. From a
+terminal: `tor-browser --download` sets up or refreshes the browser
+without a window.
+
 Anonymous mode hides where traffic comes from, not who you are: logging
 in to an account still identifies you. For browsing, Tor Browser (planned)
 protects against much more than routing alone.

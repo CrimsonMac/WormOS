@@ -1,0 +1,22 @@
+name=tor-browser
+version=0.1.0
+description="Tor Browser launcher: sets it up on the first run, then starts it"
+depends=(glibc gtk4 worm curl gnupg busybox hicolor-icon-theme)
+localsrc=src/torbrowser
+
+build() {
+	make CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	# The Tor Browser Developers' signing key (primary key
+	# EF6E286DDA85EA2A4BA7DE684E2C6E8793298290, from torproject.org's web key
+	# directory), as a keyring for gpgv.
+	install -d "$pkgdir/usr/share/wormos/tor-browser"
+	gpg --dearmor < "$recipedir/files/tor-browser-developers.asc" \
+		> "$pkgdir/usr/share/wormos/tor-browser/tor-browser-developers.gpg"
+	chmod 644 "$pkgdir/usr/share/wormos/tor-browser/tor-browser-developers.gpg"
+	# The first run may install the runtime (see /usr/lib/worm/install).
+	install -Dm644 /dev/null "$pkgdir/usr/share/worm/installable/tor-browser-runtime"
+}

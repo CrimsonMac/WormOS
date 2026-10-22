@@ -15,6 +15,8 @@ PACKAGES := base-files busybox worminit wormrd snap \
 	libjpeg-turbo libtiff shared-mime-info gdk-pixbuf libepoxy graphene gtk4 \
 	gtk4-layer-shell dconf hicolor-icon-theme adwaita-icon-theme wormos-gtk-theme worm-shell wormos-snapshots \
 	alsa-lib libsndfile pipewire lua wireplumber \
+	xorgproto xcb-proto libxau xtrans libxcb libx11 libxext libxrender libxrandr \
+	atk gtk3 tor-browser-runtime tor-browser \
 	wormos-login \
 	wormos-desktop
 
@@ -53,6 +55,11 @@ test:
 test-wormholes:
 	tests/wormhole-test.py $(if $(DNS),--dns $(DNS))
 
+# Needs internet access: installs Tor Browser's libraries, downloads the
+# browser from torproject.org and starts it.
+test-torbrowser:
+	tests/torbrowser-test.py
+
 # Release images in out/release (VERSION must match os-release).
 release: repo
 	scripts/release.sh $(VERSION)
@@ -63,4 +70,4 @@ clean:
 distclean:
 	rm -rf build out
 
-.PHONY: all toolchain kernel packages repo rootfs image run run-gui test test-wormholes release clean distclean
+.PHONY: all toolchain kernel packages repo rootfs image run run-gui test test-wormholes test-torbrowser release clean distclean

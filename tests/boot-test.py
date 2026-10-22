@@ -292,6 +292,7 @@ SAFE_CHECKS = [
 # is empty, so an empty line is the right password.
 H = "/usr/lib/worm/snapshots"
 LAST = f"{H} list | tail -n 1"
+I = "/usr/lib/worm/install"
 HELPER_CHECKS = [
     ("snapshot helper is setuid root", f"stat -c '%U %a' {H}", r"^root 4755$"),
     ("only administrators use it", f"su tester -c '{H} list'; echo rc=$?",
@@ -316,6 +317,23 @@ HELPER_CHECKS = [
      f"{LAST} | cut -f 7", r"wrong password(.|\n)*^Renamed$"),
     ("deletes with the password", f"echo | {H} delete $({LAST} | cut -f 1) && "
      f"{H} list | grep -c Renamed", r"^Deleted snapshot \d+\n0$"),
+    ("install helper is setuid root", f"stat -c '%U %a' {I}", r"^root 4755$"),
+    ("install helper only for administrators",
+     f"su tester -c 'echo | {I} tor-browser-runtime'; echo rc=$?",
+     r"only administrators(.|\n)*^rc=1$"),
+    ("install helper refuses unlisted packages", f"echo | {I} tcpdump; echo rc=$?",
+     r"cannot be installed from the desktop(.|\n)*^rc=2$"),
+    ("install helper refuses odd names", f"echo | {I} ../tcpdump; echo rc=$?",
+     r"not a package name(.|\n)*^rc=2$"),
+    ("install helper needs the password", f"echo wrong | {I} tor-browser-runtime; echo rc=$?",
+     r"wrong password(.|\n)*^rc=3$"),
+    ("Tor Browser key shipped",
+     "gpg --homedir /tmp --with-colons --show-keys "
+     "/usr/share/wormos/tor-browser/tor-browser-developers.gpg 2>/dev/null | grep -m1 ^fpr",
+     r"EF6E286DDA85EA2A4BA7DE684E2C6E8793298290"),
+    ("Tor Browser launcher refuses a bad signature",
+     "tor-browser --check /etc/os-release /etc/hostname; echo rc=$?",
+     r"does not match(.|\n)*^rc=1$"),
 ]
 
 # Snapshot, change the system, and look at the change.

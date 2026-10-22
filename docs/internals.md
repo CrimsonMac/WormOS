@@ -212,6 +212,60 @@ in the README.
   user nothing is accepted or excepted, so the machine fails closed. A cut
   network (panic, safe mode) replaces the whole table and wins.
 
+## Tor Browser
+
+- `tor-browser` (`src/torbrowser/`, GTK 4, `org.wormos.TorBrowser`) is in the
+  image; the browser and its libraries are not (decision: core packages
+  installed on first use). Tor Browser's `libxul.so` needs GTK 3, ATK and
+  the X11 client libraries (libX11, libX11-xcb, libxcb, libxcb-shm,
+  libXext, libXrandr), even on Wayland.
+- `tor-browser-runtime` depends on `gtk3` (3.24, Wayland backend only; no
+  X11 backend, so no cairo-xlib or accessibility bridge; Adwaita built in,
+  dark, set in `/etc/gtk-3.0/settings.ini`), `atk` (at-spi2-core built with
+  `atk_only`) and the X.org libraries (`libx11`, `libxcb`, `libxau`,
+  `libxext`, `libxrender`, `libxrandr`; `xorgproto`, `xcb-proto` and
+  `xtrans` only for building). libx11 leaves the Compose tables to
+  `xcompose`. Package names are lowercase (wpack's rule).
+- libxul is linked with immediate binding against fifteen `gdk_x11_*`
+  functions and `cairo_xlib_surface_create`, which a Wayland-only GTK 3
+  lacks. `tor-browser-runtime` ships `/usr/lib/tor-browser/libx11-compat.so`,
+  stand-ins that return zero, and the launcher preloads it. Firefox calls
+  them only on an X11 display. A new Tor Browser release that needs more of
+  them fails to start until the list grows (compare libxul's undefined
+  symbols with the libraries, as when the list was made).
+- First run: without the stand-ins the window offers to install the
+  runtime through `/usr/lib/worm/install` (`src/worm/install.c`, setuid
+  root): root or wheel only, root's password on standard input, and only
+  packages that an installed package lists as an empty root-owned file in
+  `/usr/share/worm/installable/` (tor-browser lists the runtime). It runs
+  `wh update`, then `wh --yes --from core install NAME`, which restarts the
+  system. Exit status 3 means a wrong password.
+- Download (`--download` does the same without a window): the version
+  from `aus1.torproject.org/.../downloads.json`; the archive and signature
+  URLs are built from it under `dist.torproject.org`, never taken from the
+  list. A version older than `MIN_VERSION` in the source or than
+  `~/.local/share/tor-browser/version` is refused. curl is limited to
+  HTTPS. `gpgv --status-fd 1` must exit 0 and print a `VALIDSIG` line whose
+  last field (the primary key) is `EF6E286DDA85EA2A4BA7DE684E2C6E8793298290`,
+  with the keyring `/usr/share/wormos/tor-browser/tor-browser-developers.gpg`
+  (the armoured key is in the recipe, from torproject.org's web key
+  directory). busybox tar unpacks into `unpack/`, which replaces
+  `tor-browser/`. `--check FILE SIG` runs only the signature check.
+- Start: as Tor Browser's own `start-tor-browser` (a bash script, so not
+  used): working directory and `HOME` are the bundle's `Browser` folder
+  (`BB_ORIGINAL_HOME` keeps the real one), `Browser/.local/share` is a link
+  to `/dev/null`, `GSETTINGS_BACKEND=memory`, output to `/dev/null`; then the
+  bundle's `firefox` (a POSIX shell script) with `MOZ_ENABLE_WAYLAND=1`,
+  `GDK_BACKEND=wayland`, `LD_PRELOAD` of the stand-ins and no `DISPLAY`.
+- With `/etc/worm/anon`, the firewall lets only the `tor` user out, so the
+  bundled tor could not connect: the launcher sets `TOR_PROVIDER=none`,
+  `TOR_SKIP_LAUNCH=1` and `TOR_SOCKS_HOST`/`TOR_SOCKS_PORT` (127.0.0.1:9050),
+  as Tails and Whonix do. There is no control port, so the circuit display
+  is unavailable then. Otherwise the browser starts its own tor.
+- The browser updates itself (signed MAR files) inside the user's folder.
+  It runs like any program of the user, with Firefox's own sandbox
+  (unprivileged user namespaces and seccomp); it is not in a blackhole.
+
 ## Panic and safe mode
 
 - `worm panic` (`src/worm/panic.c`): `fw_cut()` writes the marker

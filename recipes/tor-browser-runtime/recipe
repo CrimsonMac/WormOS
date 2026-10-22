@@ -1,0 +1,15 @@
+name=tor-browser-runtime
+version=1.0
+description="System libraries for Tor Browser (installed by its first run)"
+depends=(glibc gtk3 atk libx11 libxcb libxext libxrender libxrandr alsa-lib dbus
+	fontconfig freetype)
+localsrc=recipes/tor-browser-runtime/files
+
+build() {
+	$CC $CFLAGS $LDFLAGS -shared -fPIC -Wl,-soname,libx11-compat.so \
+		-o libx11-compat.so x11-compat.c
+}
+
+package() {
+	install -Dm755 libx11-compat.so "$pkgdir/usr/lib/tor-browser/libx11-compat.so"
+}

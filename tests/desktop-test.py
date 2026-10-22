@@ -246,9 +246,11 @@ class Monitor:
                 time.sleep(0.2)
         self.read()
 
+    timeout = 60    # seconds to wait for an answer (screendumps can be slow)
+
     def read(self):
         data = b""
-        self.sock.settimeout(10)
+        self.sock.settimeout(self.timeout)
         while not data.endswith(b"(qemu) "):
             data += self.sock.recv(4096)
         return data.decode(errors="replace")
