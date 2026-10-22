@@ -534,8 +534,9 @@ in the README.
   service and by the first-boot setup) and membership of `video`, sets the
   Wayland environment and `LIBSEAT_BACKEND=seatd`, and runs labwc with its
   output in `$XDG_RUNTIME_DIR/desktop.log`.
-- Renderer: OpenGL ES when a card is driven by i915, xe or vmwgfx;
-  otherwise wlroots' pixman renderer (`WLR_RENDERER=pixman`), which beats
+- Renderer: OpenGL ES when a card is driven by i915 or xe; otherwise
+  (including vmwgfx: with VMware's 3D acceleration, Mesa svga crashed the
+  GTK greeter in a loop) wlroots' pixman renderer (`WLR_RENDERER=pixman`), which beats
   OpenGL emulated on the CPU. wlroots does not fall back to pixman by itself
   when a render node exists, so if labwc fails within 15 seconds with
   OpenGL ES, the session starts it again with pixman (the first log is kept
@@ -675,8 +676,8 @@ in the README.
   until the first-boot setup), a 20 GiB image (`IMAGE` and `DISK_MB` are
   parameters of `mkimage.sh`), and converts it with qemu-img: a compressed
   qcow2, and a monolithic sparse VMDK zipped with `WormOS.vmx` (from
-  `scripts/wormos.vmx.in`: UEFI, NVMe, vmxnet3, 3D on). `SHA256SUMS` lists
-  both.
+  `scripts/wormos.vmx.in`: UEFI, NVMe, vmxnet3, 3D acceleration off).
+  `SHA256SUMS` lists both.
 - `mkimage.sh` copies only the data extents of the partition images into
   the disk image (`scripts/sparse-copy.py`, SEEK_DATA/SEEK_HOLE), so a
   20 GiB disk takes seconds.

@@ -10,14 +10,15 @@ export LIBSEAT_BACKEND=seatd
 export MOZ_ENABLE_WAYLAND=1 QT_QPA_PLATFORM=wayland GDK_BACKEND=wayland
 export SDL_VIDEODRIVER=wayland ELECTRON_OZONE_PLATFORM_HINT=wayland
 
-# GPUs with a hardware OpenGL driver (Intel, VMware with 3D acceleration)
-# render with OpenGL ES; everything else uses the software renderer, which
-# is faster than OpenGL emulated on the CPU.
+# Intel GPUs render with OpenGL ES; everything else uses the software
+# renderer, which is faster than OpenGL emulated on the CPU. VMware with 3D
+# acceleration (Mesa svga) crashed the GTK login screen in a loop, so VMware
+# draws in software too, as it does with 3D acceleration off.
 if [ -z "${WLR_RENDERER:-}" ]; then
 	renderer=pixman
 	for driver in /sys/class/drm/card*/device/driver; do
 		case $(basename "$(readlink "$driver")") in
-		i915|xe|vmwgfx) renderer= ;;
+		i915|xe) renderer= ;;
 		esac
 	done
 	[ -n "$renderer" ] && export WLR_RENDERER=$renderer

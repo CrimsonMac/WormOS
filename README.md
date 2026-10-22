@@ -67,7 +67,7 @@ from the release page and check them against `SHA256SUMS`.
   without the Windows feature, but much more slowly. Ctrl+Alt+G releases
   the mouse.
 - **VMware Workstation / Player:** unzip `wormos-1.1-vmware.zip` and open
-  `WormOS.vmx` (UEFI, NVMe disk, 2 GB of memory, 3D acceleration on).
+  `WormOS.vmx` (UEFI, NVMe disk, 2 GB of memory, 3D acceleration off).
 
 On the first start, WormOS asks for a user name, a password for it and a
 password for root, on the first console. Then log in with that user: the
