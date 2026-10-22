@@ -661,7 +661,8 @@ in the README.
   (authpriv, `logread`); the greeter's output is in `/run/wormlogin/greeter.log` and
   labwc's in `/run/wormlogin/greeter/labwc.log`.
 - Fallback: without a graphics device or the greeter user, or after the
-  login screen fails three times within ten seconds of starting, wormlogin
+  login screen ends three times in a row without a login (labwc exits
+  with status 0 when the greeter crashes, so the status is not used), wormlogin
   creates `/run/wormlogin/console` and runs the console login instead,
   until the next restart. tty2 always has a console login.
 - `su` is a separate, minimal busybox build holding only `su`, installed

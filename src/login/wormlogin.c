@@ -21,8 +21,8 @@
  * answered by "ok" or "fail" and a message.
  *
  * If the login screen cannot run (no graphics device, no greeter user, or
- * it fails three times in a row right after starting), the console login
- * takes over until the next restart (/usr/lib/worm/console tty1).
+ * it ends three times in a row without a login), the console login takes
+ * over until the next restart (/usr/lib/worm/console tty1).
  */
 
 #define _GNU_SOURCE
@@ -59,7 +59,6 @@
 #define CONSOLE        "/usr/lib/worm/console"
 #define FIRST_BOOT     "/usr/lib/worm/first-boot"
 #define MAX_FAILURES   3
-#define QUICK_EXIT     10       /* seconds: a login screen that dies this fast failed */
 
 static char session_user[64];   /* set by a successful login or setup */
 
@@ -434,7 +433,6 @@ int main(void)
 		console("cannot prepare the greeter's folder");
 
 	for (;;) {
-		time_t started = time(NULL);
 		int status = run_greeter(greeter, !users_exist());
 
 		if (session_user[0]) {
@@ -442,14 +440,13 @@ int main(void)
 			run_session(session_user);
 			continue;
 		}
-		if (status != 0)
-			say("the login screen ended with status %d", status);
-		if (status != 0 && time(NULL) - started < QUICK_EXIT) {
-			if (++failures >= MAX_FAILURES)
-				console("the login screen keeps failing");
-			sleep(2);
-		} else {
-			failures = 0;
-		}
+		/*
+		 * The greeter only ends by itself after a login, and labwc exits
+		 * with status 0 when the greeter crashes: any other end failed.
+		 */
+		say("the login screen ended without a login (status %d)", status);
+		if (++failures >= MAX_FAILURES)
+			console("the login screen keeps failing");
+		sleep(2);
 	}
 }
