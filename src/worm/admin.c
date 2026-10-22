@@ -1,4 +1,4 @@
-/* Checks shared by the setuid helpers (power, snapshots). */
+/* Checks shared by the setuid helpers (power, snapshots, install). */
 
 #define _GNU_SOURCE
 #include <grp.h>

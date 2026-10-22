@@ -1,4 +1,4 @@
-/* Checks shared by the setuid helpers (power, snapshots). */
+/* Checks shared by the setuid helpers (power, snapshots, install). */
 
 #ifndef ADMIN_H
 #define ADMIN_H
