@@ -26,6 +26,28 @@ in the README.
   package's `usr/include` and `usr/lib` into the sysroot, so `PACKAGES` in the
   Makefile is in build order. Recipe fields include `release`, `depends`,
   `caps`, `groups`, `users` and `sysroot_files`.
+- Build cache (`build/cache`): wbuild skips a package whose key is
+  unchanged. `NAME.key` hashes the build scripts and toolchain
+  (`build_env_hash` in `env.sh`: wbuild, env.sh, build-toolchain.sh,
+  toolchain/sources), the recipe directory, the `localsrc` tree, files of
+  this repository the recipe names (`$WORMOS_ROOT/...`), and the output hash
+  (`NAME.out`, `tree_hash` of `build/pkgs/NAME`: names, modes, link targets,
+  contents) of every package it builds against: its `depends` plus
+  `NAME.deps`, found after each build from the pkg-config modules it asked
+  for (a `pkg-config` wrapper logs them to `NAME.pclog`) and the libraries
+  its files link against (readelf NEEDED), mapped to packages through
+  `build/pkginfo/*.files`. glibc, gcc-libs and linux-headers count through
+  the toolchain hash. A dependency that lies outside both (a header-only
+  package found without pkg-config) must be listed in `depends`. Detected
+  packages that come later in the same run are ignored: the sysroot still
+  holds them from earlier runs (optional features such as pixman's gtk
+  demos or Mesa's lua probe find them), but a build from scratch cannot
+  use them. Declared `depends` must come earlier in `PACKAGES`.
+  Builds are reproducible enough for this: wrappers make `ar` and `ranlib`
+  deterministic (`D`), so a rebuilt dependency with the same files does
+  not rebuild what uses it. The kernel has its own key (version,
+  build-kernel.sh, kernel/wormos.config, toolchain). `WBUILD_FORCE=1`
+  rebuilds anyway; `make clean` drops the cache.
 - Autotools recipes must pass `--build="$(gcc -dumpmachine)"`; otherwise
   configure runs our cross binaries' host tools against the target libc.
 - Nothing shipped names the build machine. wbuild compiles through small

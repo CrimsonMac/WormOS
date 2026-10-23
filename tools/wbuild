@@ -34,6 +34,9 @@
 # unpacked. After packaging, the package's headers and libraries are added
 # to the sysroot so later recipes can build against them; build packages in
 # dependency order.
+#
+# A package is built again only when something it was built from changed
+# (see "Build cache" below); WBUILD_FORCE=1 builds it anyway.
 
 . "$(dirname "$0")/../scripts/env.sh"
 
@@ -55,6 +58,34 @@ for tool in gcc g++ c++ cpp; do
 	chmod 755 "$wrapdir/$TARGET-$tool.new.$$"
 	mv "$wrapdir/$TARGET-$tool.new.$$" "$wrapdir/$TARGET-$tool"
 done
+# Static libraries without time stamps (ar's D modifier), so that building
+# a package again gives the same files (see "Build cache").
+cat > "$wrapdir/$TARGET-ar.new.$$" <<EOF
+#!/bin/sh
+case \$1 in
+*[DU]*|--*) ;;
+-[a-zA-Z]*|[a-zA-Z]*) key=\$1; shift; set -- "\${key}D" "\$@" ;;
+esac
+exec "$TOOLS/bin/$TARGET-ar" "\$@"
+EOF
+cat > "$wrapdir/$TARGET-ranlib.new.$$" <<EOF
+#!/bin/sh
+exec "$TOOLS/bin/$TARGET-ranlib" -D "\$@"
+EOF
+chmod 755 "$wrapdir/$TARGET-ar.new.$$" "$wrapdir/$TARGET-ranlib.new.$$"
+mv "$wrapdir/$TARGET-ar.new.$$" "$wrapdir/$TARGET-ar"
+mv "$wrapdir/$TARGET-ranlib.new.$$" "$wrapdir/$TARGET-ranlib"
+# pkg-config notes the modules a build asks for in $WBUILD_PCLOG: the
+# packages it builds against (see "Build cache").
+real_pkg_config=$(command -v pkg-config) || die "pkg-config is missing"
+[ "$real_pkg_config" != "$wrapdir/pkg-config" ] || real_pkg_config=/usr/bin/pkg-config
+cat > "$wrapdir/pkg-config.new.$$" <<EOF
+#!/bin/sh
+[ -n "\${WBUILD_PCLOG:-}" ] && printf '%s\\n' "\$*" >> "\$WBUILD_PCLOG"
+exec "$real_pkg_config" "\$@"
+EOF
+chmod 755 "$wrapdir/pkg-config.new.$$"
+mv "$wrapdir/pkg-config.new.$$" "$wrapdir/pkg-config"
 export PATH=$wrapdir:$PATH
 
 export CC="$TARGET-gcc" CXX="$TARGET-g++" AR="$TARGET-ar" AS="$TARGET-as"
@@ -129,6 +160,94 @@ meson_package() {
 	DESTDIR="$pkgdir" meson install -C build --no-rebuild
 }
 
+# ---- Build cache ----
+#
+# $CACHE/NAME.key hashes what NAME was built from: the build scripts and
+# toolchain, its recipe directory, its local source tree, other files of
+# this repository its recipe names, and the output (NAME.out) of every
+# package it builds against. Those are its declared depends plus the ones
+# its last build used: modules it asked pkg-config for and libraries its
+# files link against (NAME.deps). Toolchain packages count through the
+# build scripts. A package whose key has not changed is not built again.
+
+TOOLCHAIN_PACKAGES=" glibc gcc-libs linux-headers "
+ENV_HASH=$(build_env_hash)
+mkdir -p "$CACHE"
+
+# cache_key NAME DEP...: print the key; fails when a DEP has no output hash.
+cache_key() {
+	local name=$1 dep path
+	shift
+	{
+		echo "wbuild cache 1"
+		echo "env $ENV_HASH"
+		echo "recipe $(tree_hash "$recipedir")"
+		[ -z "$localsrc" ] || echo "localsrc $(tree_hash "$WORMOS_ROOT/$localsrc")"
+		for path in $(grep -o '\$WORMOS_ROOT/[A-Za-z0-9_./-]*' "$recipedir/recipe" | sort -u); do
+			path=${path#\$WORMOS_ROOT/}
+			echo "file $path $(tree_hash "$WORMOS_ROOT" "$path")"
+		done
+		for dep in $(printf '%s\n' "$@" | sort -u); do
+			[ "$dep" != "$name" ] || continue
+			case $TOOLCHAIN_PACKAGES in *" $dep "*) continue ;; esac
+			[ -f "$CACHE/$dep.out" ] || exit 1
+			echo "dep $dep $(cat "$CACHE/$dep.out")"
+		done
+	} | sha256sum | cut -c1-64
+	[ "${PIPESTATUS[0]}" -eq 0 ]
+}
+
+# detect_deps NAME: the packages NAME's last build used, one per line.
+detect_deps() {
+	local name=$1
+	{
+		# Which package provides each pkg-config module and library.
+		awk 'FNR == 1 { p = FILENAME; sub(/.*\//, "", p); sub(/\.files$/, "", p) }
+		     /^usr\/(lib|share)\/pkgconfig\/[^\/]+\.pc$/ {
+			n = $0; sub(/.*\//, "", n); sub(/\.pc$/, "", n); print "pc", n, p }
+		     /^usr\/lib\/[^\/]+\.so[.0-9]*$/ {
+			n = $0; sub(/.*\//, "", n); print "so", n, p }' "$BUILD"/pkginfo/*.files
+		echo "--"
+		# What the build asked pkg-config for and what its files link against.
+		tr ' ' '\n' < "$CACHE/$name.pclog" | grep -E '^[A-Za-z_][A-Za-z0-9_.+-]*$' |
+			sed 's/^/pc /' || true
+		find "$pkgdir" -type f -print0 | xargs -0 -r readelf -d 2>/dev/null |
+			sed -n 's/.*Shared library: \[\(.*\)\]$/so \1/p' || true
+	} | awk '$0 == "--" { used = 1; next }
+		 !used { provider[$1 " " $2] = $3; next }
+		 ($1 " " $2) in provider { print provider[$1 " " $2] }' |
+		{ grep -vx -- "$name" || true; } | sort -u
+}
+
+# drop_later: copy package names from stdin, except those still to be
+# built in this run ($WBUILD_LATER).
+drop_later() {
+	local dep
+	while read -r dep; do
+		case ${WBUILD_LATER:-} in *" $dep "*) continue ;; esac
+		echo "$dep"
+	done
+}
+
+# Make a package's headers and libraries available to later builds.
+to_sysroot() {
+	local d
+	for d in usr/include usr/lib usr/share/pkgconfig; do
+		if [ -d "$pkgdir/$d" ]; then
+			mkdir -p "$SYSROOT/$d"
+			cp -a "$pkgdir/$d/." "$SYSROOT/$d/"
+		fi
+	done
+	for d in "${sysroot_files[@]}"; do
+		if [ -d "$pkgdir/$d" ]; then
+			mkdir -p "$SYSROOT/$d"
+			cp -a "$pkgdir/$d/." "$SYSROOT/$d/"
+		else
+			install -D "$pkgdir/$d" "$SYSROOT/$d"
+		fi
+	done
+}
+
 build_one() (
 	local recipedir=$WORMOS_ROOT/recipes/$1
 	[ -f "$recipedir/recipe" ] || die "no recipe for $1"
@@ -141,6 +260,20 @@ build_one() (
 	srcdir=$WORK/$name
 	pkgdir=$PKGDIR/$name
 	export recipedir srcdir pkgdir
+
+	local key
+	local -a used=()
+	[ ! -f "$CACHE/$name.deps" ] || mapfile -t used < <(drop_later < "$CACHE/$name.deps")
+	if [ "${WBUILD_FORCE:-}" != 1 ] && [ -d "$pkgdir" ] &&
+	   [ -f "$BUILD/pkginfo/$name.info" ] && [ -f "$BUILD/pkginfo/$name.files" ] &&
+	   [ -f "$CACHE/$name.out" ] && [ -f "$CACHE/$name.key" ] &&
+	   key=$(cache_key "$name" "${depends[@]}" "${used[@]}") &&
+	   [ "$key" = "$(cat "$CACHE/$name.key")" ]; then
+		to_sysroot
+		msg "Up to date: $name $version"
+		return 0
+	fi
+	rm -f "$CACHE/$name.key" "$CACHE/$name.out"
 
 	msg "Building $name $version"
 	local i
@@ -166,10 +299,13 @@ build_one() (
 
 	rm -rf "$pkgdir"
 	mkdir -p "$pkgdir"
+	: > "$CACHE/$name.pclog"
+	export WBUILD_PCLOG=$CACHE/$name.pclog
 	cd "$srcdir"
 	if declare -F build >/dev/null; then build; fi
 	cd "$srcdir"
 	package
+	unset WBUILD_PCLOG
 
 	# pkg-config files and *-config scripts record the sysroot paths the
 	# package was built against; on the target they are plain /usr paths.
@@ -184,26 +320,23 @@ build_one() (
 		for u in "${users[@]}"; do echo "user = $u"; done
 	} >> "$BUILD/pkginfo/$name.info"
 
-	# Make headers and libraries available to later builds.
-	local d
-	for d in usr/include usr/lib usr/share/pkgconfig; do
-		if [ -d "$pkgdir/$d" ]; then
-			mkdir -p "$SYSROOT/$d"
-			cp -a "$pkgdir/$d/." "$SYSROOT/$d/"
-		fi
-	done
-	for d in "${sysroot_files[@]}"; do
-		if [ -d "$pkgdir/$d" ]; then
-			mkdir -p "$SYSROOT/$d"
-			cp -a "$pkgdir/$d/." "$SYSROOT/$d/"
-		else
-			install -D "$pkgdir/$d" "$SYSROOT/$d"
-		fi
-	done
+	to_sysroot
+
+	# Record what it was built from and what it produced.
+	detect_deps "$name" | drop_later > "$CACHE/$name.deps"
+	mapfile -t used < "$CACHE/$name.deps"
+	tree_hash "$pkgdir" > "$CACHE/$name.out"
+	if key=$(cache_key "$name" "${depends[@]}" "${used[@]}"); then
+		echo "$key" > "$CACHE/$name.key"
+	fi
 
 	msg "Packaged $name $version"
 )
 
-for pkg in "$@"; do
-	build_one "$pkg"
+# Packages still to come in this run: a build may find them in the sysroot
+# from an earlier run (optional features it probes for), but a build from
+# scratch could not have used them, so they are not counted as inputs.
+pkgs=("$@")
+for i in "${!pkgs[@]}"; do
+	WBUILD_LATER=" ${pkgs[*]:i+1} " build_one "${pkgs[$i]}"
 done

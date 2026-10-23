@@ -396,8 +396,10 @@ Building the disk image uses `sudo` for one step (applying file ownership
 before `mkfs.btrfs`); everything else runs as a normal user.
 
 The first build compiles the toolchain and takes a while. Later builds reuse
-it. Individual steps can be run with `make toolchain`, `make kernel`,
-`make packages`, `make repo`, `make rootfs` and `make image`.
+it, and rebuild only the packages whose recipe, sources or dependencies
+changed (`WBUILD_FORCE=1` rebuilds everything). Individual steps can be run
+with `make toolchain`, `make kernel`, `make packages`, `make repo`,
+`make rootfs` and `make image`.
 
 `make repo` packs every package into `out/repo` and signs the index. The
 first run creates a signing key in `~/.config/wormos/core.key` (keep it

@@ -8,6 +8,22 @@ KOBJ=$BUILD/kernel
 
 [ -x "$TOOLS/bin/$TARGET-gcc" ] || die "toolchain missing, run scripts/build-toolchain.sh first"
 
+# Built again only when the sources, the configuration or the build scripts
+# changed (WBUILD_FORCE=1 builds anyway).
+key=$({
+	echo "kernel cache 1 $LINUX"
+	echo "env $(build_env_hash)"
+	cat "$WORMOS_ROOT/scripts/build-kernel.sh" "$WORMOS_ROOT/kernel/wormos.config"
+} | sha256sum | cut -c1-64)
+if [ "${WBUILD_FORCE:-}" != 1 ] && [ -d "$PKGDIR/linux" ] &&
+   [ -f "$BUILD/pkginfo/linux.info" ] && [ -f "$CACHE/linux.key" ] &&
+   [ "$key" = "$(cat "$CACHE/linux.key")" ]; then
+	msg "Up to date: $LINUX"
+	exit 0
+fi
+mkdir -p "$CACHE"
+rm -f "$CACHE/linux.key"
+
 if [ ! -f "$WORK/linux/Makefile" ]; then
 	unpack "$SOURCES/$LINUX.tar.xz" "$WORK/linux"
 fi
@@ -56,6 +72,8 @@ ln -sfn "vmlinuz-$kver" "$PKGDIR/linux/boot/vmlinuz"
 kmake INSTALL_MOD_PATH="$PKGDIR/linux/usr" INSTALL_MOD_STRIP=1 modules_install
 rm -f "$PKGDIR/linux/usr/lib/modules/$kver/build"
 pkginfo linux "${LINUX#linux-}" 5 "The Linux kernel and modules"
+tree_hash "$PKGDIR/linux" > "$CACHE/linux.out"
+echo "$key" > "$CACHE/linux.key"
 
 msg "Kernel $kver ready"
 [ $missing -eq 0 ] || msg "Some config options were not applied (see warnings above)"

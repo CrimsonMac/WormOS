@@ -4,21 +4,21 @@
 PACKAGES := base-files busybox worminit wormrd snap \
 	zlib zstd openssl ca-certificates curl monocypher \
 	libgpg-error npth libassuan libksba libgcrypt gnupg wormhole-keyrings \
-	libmnl libnftnl nftables wh worm bh expat unbound libevent tor \
+	libmnl libnftnl nftables libxcrypt wh worm bh expat unbound libevent tor \
 	libpcap tcpdump dbus \
 	kmod eudev seatd linux-firmware \
 	libffi wayland wayland-protocols libdrm pixman xkeyboard-config \
 	libxkbcommon libevdev mtdev libinput hwdata libdisplay-info mesa \
 	libpng freetype fribidi fontconfig pcre2 glib harfbuzz libxml2 cairo pango \
 	font-inter font-hack wlroots labwc tllist fcft foot grim swaybg wlr-randr xcompose \
-	libtirpc libxcrypt open-vm-tools \
+	libtirpc open-vm-tools \
 	libjpeg-turbo libtiff shared-mime-info gdk-pixbuf libepoxy graphene gtk4 \
-	gtk4-layer-shell dconf hicolor-icon-theme adwaita-icon-theme wormos-gtk-theme worm-shell wormos-snapshots \
-	alsa-lib libsndfile pipewire lua wireplumber \
+	gtk4-layer-shell dconf hicolor-icon-theme adwaita-icon-theme wormos-gtk-theme \
+	alsa-lib libsndfile pipewire lua wireplumber worm-shell wormos-snapshots \
 	xorgproto xcb-proto libxau xtrans libxcb libx11 libxext libxrender libxrandr \
 	atk gtk3 tor-browser-runtime tor-browser \
-	wormos-login \
-	wormos-desktop
+	wormos-desktop \
+	wormos-login
 
 all: image
 
@@ -72,7 +72,7 @@ publish-repo: sources
 	scripts/publish-repo.sh
 
 clean:
-	rm -rf build/work build/pkgs build/pkginfo build/fsroot build/kernel build/image build/host out
+	rm -rf build/work build/pkgs build/pkginfo build/cache build/fsroot build/kernel build/image build/host out
 
 distclean:
 	rm -rf build out

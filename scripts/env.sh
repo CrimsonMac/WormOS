@@ -85,6 +85,32 @@ pkginfo() {
 		> "$BUILD/pkginfo/$name.files"
 }
 
+# tree_hash DIR [PATH...]: one SHA-256 over the names, types, modes, link
+# targets and contents of PATHs (default: everything) under DIR. Times
+# and owners do not count.
+tree_hash() {
+	local dir=$1
+	shift
+	[ $# -gt 0 ] || set -- .
+	(
+		cd "$dir"
+		find "$@" -printf '%y %m %p %l\n' | sort
+		find "$@" -type f -print0 | sort -z | xargs -0 -r sha256sum
+	) | sha256sum | cut -c1-64
+}
+
+# Build cache (wbuild, build-kernel.sh): $CACHE/NAME.key records what a
+# package was built from, $CACHE/NAME.out a hash of what it produced.
+# WBUILD_FORCE=1 rebuilds anyway.
+CACHE=$BUILD/cache
+
+# The scripts and toolchain every build runs under.
+build_env_hash() {
+	cat "$WORMOS_ROOT/tools/wbuild" "$WORMOS_ROOT/scripts/env.sh" \
+		"$WORMOS_ROOT/scripts/build-toolchain.sh" "$WORMOS_ROOT/toolchain/sources" |
+		sha256sum | cut -c1-64
+}
+
 # stamp NAME: mark a build step done; done_step NAME: test whether it is.
 stamp()     { mkdir -p "$BUILD/stamps"; touch "$BUILD/stamps/$1"; }
 done_step() { [ -f "$BUILD/stamps/$1" ]; }
