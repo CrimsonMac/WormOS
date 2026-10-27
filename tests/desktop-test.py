@@ -506,7 +506,7 @@ def main():
     total = (len(DEVICE_CHECKS) + 1 + len(AFTER_SETUP_CHECKS) + 3 + len(SESSION_CHECKS) +
              len(TYPING_CHECKS) + len(SHORTCUT_CHECKS) + len(BUDGET_CHECKS) +
              len(RESIZES) + len(WELCOME_CHECKS) + len(GTK_CHECKS) + len(SOUND_CHECKS) +
-             len(SHELL_CHECKS) + len(CLIPBOARD_CHECKS) + 33)
+             len(SHELL_CHECKS) + len(CLIPBOARD_CHECKS) + 34)
 
     def check(name, ok, out=""):
         nonlocal passed, failures
@@ -854,11 +854,22 @@ def main():
             time.sleep(8)
             out = con.run("pidof wormos-greeter; pidof worm-shell || echo no-desktop")
             check("wrong password refused", out.endswith("no-desktop") and out[0].isdigit(), out)
+            # A layout of the user's own (as the first-boot setup writes it)
+            # must not hide the session's cursor and keyboard defaults.
+            con.run(f"mkdir -p ~{USER}/.config/labwc")
+            con.run(f"echo XKB_DEFAULT_LAYOUT=us > ~{USER}/.config/labwc/environment")
+            con.run(f"chown -R {USER}: ~{USER}/.config")
             mon.type(USER_PASSWORD + "\n")
             out = wait_for(con, "pidof worm-shell", r"^\d+$", 120)
             check("logging in starts the desktop", re.search(r"^\d+$", out, re.M) is not None,
                   con.run("cat /run/wormlogin/greeter.log"))
             time.sleep(10)
+            put_file(con, b"tr '\\0' '\\n' < /proc/$(pidof worm-shell)/environ | grep ^X\n",
+                     "/tmp/shell-env")
+            out = con.run("sh /tmp/shell-env")
+            check("own layout keeps the cursor and keyboard defaults",
+                  "XCURSOR_THEME=Adwaita" in out and
+                  "XKB_DEFAULT_OPTIONS=wormos:caps_unlock_on_press" in out, out)
 
             run_checks(con, BUDGET_CHECKS)
             used = con.run("free -m | awk '/^Mem:/ { print $3 }'")
