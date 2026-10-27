@@ -36,6 +36,7 @@
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <linux/btrfs.h>
 #include <linux/openat2.h>
@@ -397,6 +398,30 @@ static int fetch_packages(struct source *s, char *out, size_t len)
 done:
 	snprintf(s->packages, sizeof(s->packages), "%s", out);
 	return 0;
+}
+
+/*
+ * Fetch a package list for a search or an update without ending the
+ * command when that fails (offline, or a cut network): fetch_packages
+ * runs in a child, where its die() only ends the child.
+ */
+static int try_fetch(struct source *s, char *path, size_t len)
+{
+	int status;
+	pid_t pid;
+
+	fflush(NULL);
+	pid = fork();
+	if (pid < 0)
+		return -1;
+	if (pid == 0) {
+		fetch_packages(s, path, len);
+		_exit(0);
+	}
+	while (waitpid(pid, &status, 0) < 0)
+		if (errno != EINTR)
+			return -1;
+	return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : -1;
 }
 
 /* Is a package (or a package providing it) in the list? */
@@ -1168,8 +1193,18 @@ int foreign_refresh(int upgrade)
 		DIR *d;
 		struct dirent *e;
 
-		if (!wormhole_exists(name))
+		if (!wormhole_exists(name)) {
+			char path[PATH_MAX];
+
+			/* Keep a package list that searches use up to date. */
+			snprintf(path, sizeof(path), "%s/%s/Packages", SOURCE_CACHE, name);
+			if (!upgrade && access(path, F_OK) == 0) {
+				info("Updating the %s package list", name);
+				if (try_fetch(&sources[i], path, sizeof(path)) < 0)
+					warn("the %s package list was not updated", name);
+			}
 			continue;
+		}
 		info("%s the %s wormhole", upgrade ? "Upgrading" : "Updating", name);
 		if (in_wormhole(name, (char *[]){ "apt-get", "-q", "update", NULL }, NULL, 0) != 0)
 			warn("apt-get update failed in the %s wormhole", name);
@@ -1215,17 +1250,72 @@ void foreign_list(void)
 }
 
 /* Search the wormholes that are set up. */
-int foreign_search(const char *term)
+/* Search a source's checked package list by name (like apt-cache's --names-only). */
+static int search_list(const char *path, const char *term, const char *source)
+{
+	char *line = NULL, name[256] = "", desc[512] = "";
+	size_t cap = 0;
+	int found = 0;
+	FILE *f = fopen(path, "re");
+
+	if (!f)
+		return 0;
+	for (;;) {
+		ssize_t n = getline(&line, &cap, f);
+
+		if (n > 0 && line[n - 1] == '\n')
+			line[--n] = '\0';
+		if (n <= 0) {            /* end of a stanza */
+			/* Kali's lists leave descriptions to translation files. */
+			if (name[0] && strcasestr(name, term)) {
+				printf("%s [%s]\n    %s\n", name, source, desc[0] ? desc : "(no description)");
+				found++;
+			}
+			name[0] = desc[0] = '\0';
+			if (n < 0)
+				break;
+			continue;
+		}
+		if (!strncmp(line, "Package: ", 9))
+			snprintf(name, sizeof(name), "%s", line + 9);
+		else if (!strncmp(line, "Description: ", 13))
+			snprintf(desc, sizeof(desc), "%s", line + 13);
+	}
+	free(line);
+	fclose(f);
+	return found;
+}
+
+/*
+ * Packages in Debian and Kali. A source with a wormhole is searched with
+ * its own apt; one without uses the checked package list that installs
+ * download, which root fetches here when it is missing.
+ */
+int foreign_search(const char *term, const char *only)
 {
 	static char out[1 << 20];
+	char missing[256] = "";
 	int found = 0;
 
 	load_sources();
 	for (int i = 0; i < nsources; i++) {
-		char *line, *save;
+		char *line, *save, path[PATH_MAX];
 
-		if (!wormhole_exists(sources[i].name))
+		if (only && strcmp(only, sources[i].name))
 			continue;
+		if (!wormhole_exists(sources[i].name)) {
+			snprintf(path, sizeof(path), "%s/%s/Packages", SOURCE_CACHE, sources[i].name);
+			if (access(path, R_OK) < 0 && geteuid() == 0) {
+				info("Downloading the %s package list...", sources[i].name);
+				try_fetch(&sources[i], path, sizeof(path));
+			}
+			if (access(path, R_OK) == 0)
+				found += search_list(path, term, sources[i].name);
+			else
+				snprintf(missing + strlen(missing), sizeof(missing) - strlen(missing),
+					 "%s%s", missing[0] ? " and " : "", sources[i].name);
+			continue;
+		}
 		if (in_wormhole(sources[i].name, (char *[]){ "apt-cache", "search", "--names-only",
 							      (char *)(*term ? term : "."), NULL },
 				out, sizeof(out)) != 0)
@@ -1240,6 +1330,9 @@ int foreign_search(const char *term)
 			found++;
 		}
 	}
+	if (missing[0])
+		warn("%s not searched: their package lists are not downloaded yet "
+		     "('wh search' as root downloads them)", missing);
 	return found;
 }
 

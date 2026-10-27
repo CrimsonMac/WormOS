@@ -73,7 +73,7 @@ int foreign_install(const char *source, const char *pkg);
 int foreign_remove(const char *pkg);
 int foreign_refresh(int upgrade);
 void foreign_list(void);
-int foreign_search(const char *term);
+int foreign_search(const char *term, const char *only);
 int wormhole_exists(const char *name);
 
 /* db.c */

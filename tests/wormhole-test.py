@@ -35,6 +35,9 @@ CHECKS = [
     ("encrypted DNS resolves",
      "i=0; until nslookup deb.debian.org >/dev/null 2>&1 || [ $i -ge 30 ]; do sleep 2; i=$((i+1)); done; "
      "nslookup deb.debian.org 2>&1 | tail -3", r"Address:?\s+[0-9a-f.:]+"),
+    # Before any wormhole: search reads the package list (root fetches it).
+    ("search without a wormhole", "wh search htop 2>&1 | grep -A1 '^htop '",
+     r"^htop \[debian\]\n    interactive processes viewer"),
     ("debian install", "wh -y install --from debian htop 2>&1 | tail -3",
      r"htop -> /usr/bin/htop \(debian\)"),
     ("debian wormhole ready", "cat /var/lib/wormholes/debian/etc/os-release",

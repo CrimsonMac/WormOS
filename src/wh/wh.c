@@ -64,7 +64,7 @@ static void usage(FILE *out)
 "usage: wh COMMAND [ARGS]\n"
 "\n"
 "  update                   download the latest package index\n"
-"  search [TERM]            find packages\n"
+"  search [TERM]            find packages (--from: in one source)\n"
 "  info PACKAGE             show a package\n"
 "  list                     list installed packages\n"
 "  install [--try] [--from SOURCE] PKG...\n"
@@ -638,9 +638,11 @@ static int cmd_search(int argc, char **argv)
 	int found = 0;
 
 	if (argc > 2)
-		die("usage: wh search [TERM]");
+		die("usage: wh search [--from SOURCE] [TERM]");
+	if (opt_from && strcmp(opt_from, "core") && !foreign_source_known(opt_from))
+		die("unknown source '%s' (see /etc/wh/sources)", opt_from);
 	repo_load(&idx);
-	for (int i = 0; i < idx.count; i++) {
+	for (int i = 0; i < idx.count && (!opt_from || !strcmp(opt_from, "core")); i++) {
 		struct package *p = &idx.pkgs[i], cur;
 		char mark[96] = "";
 
@@ -652,8 +654,8 @@ static int cmd_search(int argc, char **argv)
 		printf("%s %s%s\n    %s\n", p->name, p->version, mark, p->description);
 		found++;
 	}
-	if (!direct)
-		found += foreign_search(term);
+	if (!direct && !(opt_from && !strcmp(opt_from, "core")))
+		found += foreign_search(term, opt_from);
 	if (!found)
 		printf("No packages match '%s'.\n", term);
 	return found ? 0 : 1;

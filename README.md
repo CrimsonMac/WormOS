@@ -229,6 +229,11 @@ wh install --from kali hashid # pick the source
 wh remove htop
 ```
 
+`wh search` looks in Debian and Kali too (`--from` picks one source, such
+as `--from core`). Before their wormholes exist, it reads their signed
+package lists, which root's first search downloads and `wh update` keeps
+current.
+
 A wormhole is set up the first time it is needed, from the distribution's
 own signed archive (checked with `gpgv` against its archive keyring, which
 WormOS ships), and from then on it is managed by its own apt. These

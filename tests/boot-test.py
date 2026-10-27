@@ -400,7 +400,8 @@ MENU_CHECKS = [
 WORM_CHECKS = [
     ("installed packages recorded", "wh list", r"^wh\s+0\.1\.0-\d+"),
     ("wh update", "wh --repo {repo} update", r"^Package index updated: \d+ packages$"),
-    ("wh search", "wh search tcp", r"^tcpdump 4\.99\.7-1$"),
+    # Only the core repository: Debian's and Kali's lists need the internet.
+    ("wh search", "wh search --from core tcp", r"^tcpdump 4\.99\.7-1$"),
     ("worm unlock", "worm unlock", r"^The system is unlocked"),
     ("wh refuses while unlocked", "wh --repo {repo} -y install tcpdump 2>&1",
      r"the system is unlocked"),
