@@ -1,0 +1,21 @@
+name=zsh-syntax-highlighting
+version=0.8.0
+description="Highlights zsh commands as you type them"
+depends=()
+# Upstream publishes no signature: checksum of the tagged release archive.
+source=(zsh-syntax-highlighting-$version.tar.gz::https://github.com/zsh-users/zsh-syntax-highlighting/archive/refs/tags/$version.tar.gz)
+sha256=(5981c19ebaab027e356fe1ee5284f7a021b89d4405cc53dc84b476c3aee9cc32)
+
+package() {
+	local dir=$pkgdir/usr/share/zsh/plugins/zsh-syntax-highlighting
+	install -Dm644 -t "$dir" zsh-syntax-highlighting.zsh .version
+	echo "$version" > "$dir/.revision-hash"
+	local d f
+	for d in highlighters highlighters/*/; do
+		d=${d%/}
+		for f in "$d"/*.zsh; do
+			[ -e "$f" ] && install -Dm644 "$f" "$dir/$f"
+		done
+	done
+	install -Dm644 COPYING.md "$pkgdir/usr/share/licenses/zsh-syntax-highlighting/COPYING.md"
+}

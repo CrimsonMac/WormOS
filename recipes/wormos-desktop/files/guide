@@ -23,3 +23,10 @@
     bh open                a disposable sandbox for untrusted programs
     wh install htop        software from Debian, in a wormhole
 
+  The terminal
+    Grey text after the cursor is an earlier command: Right or End takes it.
+    Up and Down go through earlier commands starting with what is typed;
+    Ctrl+R searches them. Tab completes, also snapshot numbers and packages.
+    Ctrl+Backspace deletes a word.  ls | clip copy  copies to the clipboard,
+    clip paste  prints it (shared with the host in QEMU and virt-manager).
+

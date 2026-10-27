@@ -6,6 +6,8 @@
 # By default the VM runs on the serial console in this terminal
 # (press Ctrl-A X to quit QEMU). --gui opens a graphical window instead.
 # --snapshot discards all disk writes when QEMU exits.
+# Both modes have a SPICE agent channel (QEMU's qemu-vdagent): the guest's
+# clipboard agent shares the clipboard with QEMU's window and VNC clients.
 # QEMU_HOSTFWD forwards host ports to the VM, e.g. tcp:127.0.0.1:2222-:22
 # (several separated by spaces). QEMU_EXTRA adds options (split on spaces).
 # IMAGE boots another image (raw, or qcow2 such as a release image).
@@ -51,4 +53,7 @@ exec qemu-system-x86_64 \
 	-netdev "$netdev" \
 	-device virtio-net-pci,netdev=net0 \
 	-device virtio-rng-pci \
+	-device virtio-serial-pci,id=vserial0 \
+	-chardev qemu-vdagent,id=vdagent0,name=vdagent,clipboard=on,mouse=off \
+	-device virtserialport,bus=vserial0.0,chardev=vdagent0,name=com.redhat.spice.0 \
 	"${display[@]}" "${extra[@]}" ${QEMU_EXTRA:-}

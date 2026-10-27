@@ -1,0 +1,41 @@
+#compdef snap
+
+# Snapshot IDs and comments; the list needs root, others get none.
+_snap_ids() {
+	local -a ids
+	local id t scope type pinned suspect comment
+	snap list --raw 2>/dev/null | while IFS=$'\t' read -r id t scope type pinned suspect comment; do
+		ids+=("$id:${scope}${comment:+, $comment}")
+	done
+	_describe -t snapshots snapshot ids
+}
+
+local -a scope=('(--home --all)--system[the system (default)]'
+	'(--system --all)--home[home folders]' '(--system --home)--all[system and home]')
+
+if (( CURRENT == 2 )); then
+	local -a cmds=(
+		'now:take a snapshot' 'list:list snapshots' 'rewind:go back to a snapshot and restart'
+		'diff:show what changed since a snapshot' 'restore:bring back a file or folder'
+		'browse:open a read-only shell inside a snapshot' 'delete:delete snapshots'
+		'prune:delete all but the newest snapshots' 'pin:protect a snapshot from prune'
+		'unpin:let prune delete a snapshot again' 'comment:set a snapshot comment'
+		'verify:check snapshots have not been tampered with'
+		'auto:snapshots before package changes' 'status:a summary')
+	_describe -t commands 'snap command' cmds
+	return
+fi
+
+case $words[2] in
+now) _arguments '-c[comment]:comment' '--suspect[never used by safe mode]' $scope ;;
+list) _arguments '--raw[tab-separated, for programs]' ;;
+rewind) _arguments '-y[do not ask]' $scope '1:snapshot:_snap_ids' ;;
+diff) _arguments $scope '1:snapshot:_snap_ids' '2:snapshot:_snap_ids' ;;
+restore) _arguments '1:snapshot:_snap_ids' '2:path:_files' ;;
+browse) _arguments $scope '1:snapshot:_snap_ids' ;;
+delete|verify) _arguments '*:snapshot:_snap_ids' ;;
+pin|unpin) _arguments '1:snapshot:_snap_ids' ;;
+comment) _arguments '1:snapshot:_snap_ids' '2:comment' ;;
+prune) _arguments '--keep[snapshots to keep]:number' ;;
+auto) _arguments '1:setting:(on off)' ;;
+esac

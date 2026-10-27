@@ -1,10 +1,10 @@
 name=wormos-desktop
 version=1.0
-release=14
+release=16
 description="The WormOS desktop session: labwc, foot and the WormOS look"
 depends=(labwc foot swaybg grim wlr-randr xcompose seatd dbus font-inter font-hack base-files
 	gtk4 gtk4-layer-shell wormos-gtk-theme adwaita-icon-theme dconf worm-shell wormos-snapshots
-	pipewire wireplumber tor-browser tor-browser-runtime)
+	pipewire wireplumber tor-browser tor-browser-runtime clip zsh)
 
 build() {
 	python3 "$recipedir/files/wallpaper.py" wormos.png 2560 1440
@@ -21,6 +21,8 @@ package() {
 		"$f/labwc/autostart" "$f/labwc/environment"
 	install -Dm644 "$f/theme/themerc" "$pkgdir/usr/share/themes/WormOS/labwc/themerc"
 	install -Dm644 "$f/foot.ini" "$pkgdir/etc/xdg/foot/foot.ini"
+	install -Dm644 "$f/xkb/rules/evdev" "$pkgdir/etc/xkb/rules/evdev"
+	install -Dm644 "$f/xkb/symbols/wormos" "$pkgdir/etc/xkb/symbols/wormos"
 	install -Dm644 "$f/gtk-settings.ini" "$pkgdir/etc/gtk-4.0/settings.ini"
 	install -Dm644 "$f/root-terminal.desktop" \
 		"$pkgdir/usr/share/applications/org.wormos.RootTerminal.desktop"

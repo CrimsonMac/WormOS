@@ -4,8 +4,11 @@ dbus-update-activation-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP > /dev/nu
 swaybg -i /usr/share/backgrounds/wormos.png -m fill > /dev/null 2>&1 &
 # The panel, the application launcher and notifications.
 worm-shell > "$XDG_RUNTIME_DIR/shell.log" 2>&1 &
+# The clipboard shared with the VM's host (QEMU, virt-manager); it exits
+# at once without the SPICE agent's port.
+clip agent > "$XDG_RUNTIME_DIR/clip.log" 2>&1 &
 # A welcome terminal the first time a user starts the desktop.
 if [ ! -e "$HOME/.config/wormos/welcomed" ]; then
 	mkdir -p "$HOME/.config/wormos" && touch "$HOME/.config/wormos/welcomed"
-	foot --title "Welcome to WormOS" sh -c 'welcome --full; WORMOS_GREETED=1 exec sh -l' > /dev/null 2>&1 &
+	foot --title "Welcome to WormOS" sh -c 'welcome --full; WORMOS_GREETED=1 exec "${SHELL:-/bin/sh}" -l' > /dev/null 2>&1 &
 fi

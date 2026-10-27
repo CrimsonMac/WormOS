@@ -1,0 +1,202 @@
+# WormOS settings for interactive zsh. They run before ~/.zshrc, so put
+# your own changes there. TERM=dumb or ZSH_PLAIN=1 leaves out the colours,
+# suggestions and highlighting.
+
+# History: large, written as you go and shared between open terminals.
+HISTFILE=${HISTFILE:-$HOME/.zsh_history}
+HISTSIZE=50000
+SAVEHIST=50000
+setopt extended_history hist_expire_dups_first hist_ignore_dups hist_ignore_space \
+	hist_reduce_blanks hist_verify share_history
+
+setopt auto_cd interactive_comments magic_equal_subst no_beep no_nomatch notify \
+	numeric_glob_sort prompt_subst
+# Word motion and deletion stop at slashes, so Ctrl+Backspace removes one
+# part of a path.
+WORDCHARS=${WORDCHARS//\/}
+
+# ---- keys (emacs style) ----
+
+bindkey -e
+autoload -Uz up-line-or-beginning-search down-line-or-beginning-search
+zle -N up-line-or-beginning-search
+zle -N down-line-or-beginning-search
+
+typeset -A _wormos_keys=(
+	'^H'       backward-kill-word		# Ctrl+Backspace (most terminals)
+	'^W'       backward-kill-word		# Ctrl+Backspace (foot), Ctrl+W
+	'^[^?'     backward-kill-word		# Alt+Backspace
+	'^[[3;5~'  kill-word			# Ctrl+Delete
+	'^[d'      kill-word			# Alt+D
+	'^[[3~'    delete-char			# Delete
+	'^[[1;5C'  forward-word			# Ctrl+Right
+	'^[[1;5D'  backward-word		# Ctrl+Left
+	'^[[1;3C'  forward-word			# Alt+Right
+	'^[[1;3D'  backward-word		# Alt+Left
+	'^[[H'     beginning-of-line		# Home
+	'^[OH'     beginning-of-line
+	'^[[1~'    beginning-of-line
+	'^[[F'     end-of-line			# End
+	'^[OF'     end-of-line
+	'^[[4~'    end-of-line
+	'^[[A'     up-line-or-beginning-search	# Up: earlier lines starting
+	'^[OA'     up-line-or-beginning-search	#     with what is typed
+	'^[[B'     down-line-or-beginning-search
+	'^[OB'     down-line-or-beginning-search
+	'^[[5~'    beginning-of-buffer-or-history	# Page Up
+	'^[[6~'    end-of-buffer-or-history	# Page Down
+	'^[[Z'     reverse-menu-complete	# Shift+Tab
+	'^U'       backward-kill-line
+	'^R'       history-incremental-search-backward
+	' '        magic-space			# expands !! and friends on space
+)
+for _k in ${(k)_wormos_keys}; do
+	bindkey "$_k" "$_wormos_keys[$_k]"
+done
+unset _k _wormos_keys
+
+# ---- completion ----
+
+zmodload zsh/complist
+autoload -Uz compinit
+zstyle ':completion:*' menu select
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=*'
+zstyle ':completion:*' group-name ''
+zstyle ':completion:*' squeeze-slashes true
+zstyle ':completion:*' use-cache true
+zstyle ':completion:*' cache-path "${XDG_CACHE_HOME:-$HOME/.cache}/zsh"
+zstyle ':completion:*:descriptions' format '%F{magenta}%B%d%b%f'
+zstyle ':completion:*:warnings' format '%F{red}no matches%f'
+zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#)*=0=35'
+bindkey -M menuselect '^[[Z' reverse-menu-complete
+
+# The full check of the completion files (compaudit) runs once a day;
+# otherwise the saved index is loaded as it is, which is much faster.
+() {
+	setopt local_options extended_glob
+	local dump=${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zcompdump
+	[[ -d ${dump:h} ]] || mkdir -p ${dump:h}
+	if [[ -n $dump(#qN.mh-24) ]]; then
+		compinit -C -d $dump
+	else
+		compinit -d $dump
+		touch $dump
+	fi
+}
+
+# ---- commands ----
+
+export LS_COLORS=${LS_COLORS:-'di=1;35:ln=36:so=33:pi=33:ex=1;32:bd=1;33:cd=1;33:su=1;31:sg=1;31:tw=1;34:ow=1;34'}
+zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}
+alias ls='ls --color=auto'
+alias ll='ls -lh'
+alias la='ls -A'
+alias l='ls -CF'
+alias grep='grep --color=auto'
+alias diff='diff --color=auto'
+
+# A missing command may come from a wormhole.
+command_not_found_handler() {
+	print -ru2 -- "zsh: command not found: $1"
+	if [[ -x /usr/bin/wh && $1 != */* ]]; then
+		print -ru2 -- "To look for it in the package sources: wh search $1"
+	fi
+	return 127
+}
+
+# ---- prompt ----
+#
+#   [bh:test] [snap 14] tester@wormos:~/src$
+#
+# [snap N] is the newest snapshot (from /run/snap-status), followed by a
+# pending rewind or package change that takes effect at the next restart.
+# Root's prompt ends in # and says [unlocked] while / is writable.
+
+_wormos_prompt_state() {
+	local line last= pending=
+	_wormos_state=
+	if [[ -n $BLACKHOLE ]]; then
+		_wormos_state+="%F{yellow}[bh:${BLACKHOLE//\%/%%}]%f "
+	fi
+	if [[ -r /run/snap-status ]]; then
+		for line in "${(@f)$(</run/snap-status)}"; do
+			case $line in
+			('last = '*) last=${line#last = } ;;
+			('pending = '?*) pending=${line#pending = } ;;
+			esac
+		done
+		if [[ -n $last ]]; then
+			_wormos_state+="%F{8}[snap $last"
+			[[ -n $pending ]] && _wormos_state+=" %F{yellow}$pending pending%F{8}"
+			_wormos_state+="]%f "
+		elif [[ -n $pending ]]; then
+			_wormos_state+="%F{yellow}[$pending pending]%f "
+		fi
+	fi
+	if (( EUID == 0 )) && [[ -w / ]]; then
+		_wormos_state+="%F{red}[unlocked]%f "
+	fi
+}
+
+# The window title: the directory at the prompt, the command while it
+# runs. (V) shows control characters as text, so names cannot inject
+# escape sequences.
+_wormos_title_prompt() {
+	print -rn -- $'\e]2;'"${(V)USERNAME}@${(V)HOST}: ${(V)${PWD/#$HOME/\~}}"$'\a'
+}
+_wormos_title_command() {
+	print -rn -- $'\e]2;'"${(V)1[1,80]}"$'\a'
+}
+
+autoload -Uz add-zsh-hook
+add-zsh-hook precmd _wormos_prompt_state
+case $TERM in
+(xterm*|foot*|alacritty|kitty|*-kitty|ghostty|*-ghostty|tmux*|screen*|vte*|wezterm|st-*|konsole*|gnome*)
+	add-zsh-hook precmd _wormos_title_prompt
+	add-zsh-hook preexec _wormos_title_command
+	;;
+esac
+
+if [[ $TERM == dumb ]]; then
+	PROMPT='%(!..%n@)%m:%~%(!.#.$) '
+else
+	PROMPT='${_wormos_state}%B%F{%(!.red.magenta)}%(!..%n@)%m%f%b:%B%F{blue}%~%f%b%(!.#.$) '
+	# The status of a failed command, on the right.
+	RPROMPT='%(?..%F{red}%? ✘%f)'
+fi
+
+# ---- suggestions and highlighting ----
+
+if [[ $TERM != dumb && -z $ZSH_PLAIN ]]; then
+	# As you type, the rest of a matching earlier command (or the first
+	# completion) appears in grey: Right or End takes it, Ctrl+Right
+	# takes a word.
+	if [[ -r /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh ]]; then
+		if [[ $COLORTERM == (truecolor|24bit) ]]; then
+			ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=#8a80a0'
+		else
+			ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=8'
+		fi
+		ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+		ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=200
+		source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh
+	fi
+	# Commands in colour as you type: green when they exist, red when not.
+	# It must be loaded last.
+	if [[ -r /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]]; then
+		ZSH_HIGHLIGHT_HIGHLIGHTERS=(main brackets)
+		source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+		ZSH_HIGHLIGHT_STYLES[unknown-token]='fg=red,bold'
+		ZSH_HIGHLIGHT_STYLES[reserved-word]='fg=cyan'
+		ZSH_HIGHLIGHT_STYLES[builtin]='fg=green,bold'
+		ZSH_HIGHLIGHT_STYLES[command]='fg=green,bold'
+		ZSH_HIGHLIGHT_STYLES[alias]='fg=green,bold'
+		ZSH_HIGHLIGHT_STYLES[function]='fg=green,bold'
+		ZSH_HIGHLIGHT_STYLES[precommand]='fg=green,underline'
+		ZSH_HIGHLIGHT_STYLES[path]='underline'
+		ZSH_HIGHLIGHT_STYLES[globbing]='fg=magenta'
+		ZSH_HIGHLIGHT_STYLES[single-quoted-argument]='fg=yellow'
+		ZSH_HIGHLIGHT_STYLES[double-quoted-argument]='fg=yellow'
+		ZSH_HIGHLIGHT_STYLES[comment]='fg=8'
+	fi
+fi

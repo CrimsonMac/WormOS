@@ -1,0 +1,3 @@
+# Login shells: the settings shared with sh (PATH, locale, and the welcome
+# in new desktop terminals) come from /etc/profile.
+emulate sh -c '. /etc/profile'

@@ -1,0 +1,13 @@
+name=zsh-autosuggestions
+version=0.7.1
+description="Suggestions from the history as you type in zsh"
+depends=()
+# Upstream publishes no signature: checksum of the tagged release archive.
+source=(zsh-autosuggestions-$version.tar.gz::https://github.com/zsh-users/zsh-autosuggestions/archive/refs/tags/v$version.tar.gz)
+sha256=(0df7affff21cd87ed298e6a3970ed08a1dd66a6efa676454ee5b091ad503badf)
+
+package() {
+	install -Dm644 zsh-autosuggestions.zsh \
+		"$pkgdir/usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh"
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/zsh-autosuggestions/LICENSE"
+}

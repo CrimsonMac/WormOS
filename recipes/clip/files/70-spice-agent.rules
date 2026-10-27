@@ -1,0 +1,3 @@
+# The SPICE agent's port (QEMU, virt-manager): the desktop's clipboard
+# agent runs as the logged-in user, who is in the video group.
+SUBSYSTEM=="virtio-ports", ATTR{name}=="com.redhat.spice.0", GROUP="video", MODE="0660"

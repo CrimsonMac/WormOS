@@ -1,0 +1,11 @@
+// Caps Lock turns off when the key goes down, as it turns on, rather than
+// when it comes back up: typing on quickly after it no longer gives
+// "THe". Needs libxkbcommon 1.8 or newer.
+partial modifier_keys
+xkb_symbols "caps_unlock_on_press" {
+	key <CAPS> {
+		type = "ONE_LEVEL",
+		symbols[Group1] = [ Caps_Lock ],
+		actions[Group1] = [ LockMods(modifiers = Lock, unlockOnPress) ]
+	};
+};

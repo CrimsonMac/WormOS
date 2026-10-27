@@ -21,7 +21,9 @@ valid_name() {
 create_account() {
 	worm unlock > /dev/null || return 1
 	ok=1
-	adduser -D -s /bin/sh -g "${2:-$1}" "$1" || ok=
+	shell=/bin/sh
+	[ -x /usr/bin/zsh ] && shell=/usr/bin/zsh
+	adduser -D -s "$shell" -g "${2:-$1}" "$1" || ok=
 	if [ -n "$ok" ]; then
 		for group in wheel video input audio render kvm; do
 			addgroup "$1" "$group" || ok=

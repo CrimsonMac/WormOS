@@ -1,0 +1,44 @@
+#compdef wh wormhole
+
+# Packages in the core index, and installed ones (core and wormholes).
+_wh_available() {
+	local -a pkgs
+	[[ -r /var/lib/wh/index ]] && pkgs=(${${(M)${(f)"$(</var/lib/wh/index)"}:#\[*\]}//[\[\]]/})
+	_wanted packages expl package compadd -a pkgs
+}
+_wh_installed() {
+	local -a pkgs=(/usr/lib/wh/db/*(N:t) /var/lib/wh/foreign/*(N:t))
+	_wanted packages expl 'installed package' compadd -a pkgs
+}
+_wh_sources() {
+	local -a srcs=(core)
+	[[ -r /etc/wh/sources ]] && srcs+=(${${(M)${(f)"$(</etc/wh/sources)"}:#\[*\]}//[\[\]]/})
+	_wanted sources expl source compadd -a srcs
+}
+
+local -a opts=(
+	'--try[a trial: the restart after the next one goes back unless kept]'
+	'--later[apply the change at the next restart]'
+	'(-y --yes)'{-y,--yes}'[do not ask]'
+	'--from[the source to install from]:source:_wh_sources'
+	'--help[show the commands]')
+
+local -a cmds=(
+	'update:download the latest package index' 'search:find packages'
+	'info:show a package' 'list:list installed packages' 'install:install packages'
+	'reinstall:install packages again' 'remove:remove packages'
+	'upgrade:upgrade installed packages' 'history:list package changes'
+	'undo:undo the last package change' 'keep:keep a change made with --try')
+
+local curcontext=$curcontext state line
+_arguments -C $opts '1:command:->cmd' '*::argument:->args'
+case $state in
+cmd) _describe -t commands 'wh command' cmds ;;
+args)
+	case $words[1] in
+	install) _wh_available ;;
+	info) _wh_available ;;
+	reinstall|remove) _wh_installed ;;
+	esac
+	;;
+esac

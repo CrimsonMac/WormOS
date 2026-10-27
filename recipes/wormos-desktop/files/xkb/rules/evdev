@@ -1,0 +1,6 @@
+// WormOS additions to the standard rules (libxkbcommon reads /etc/xkb
+// before the system's files). The option is set in labwc's environment.
+! include %S/evdev
+
+! option = symbols
+  wormos:caps_unlock_on_press = +wormos(caps_unlock_on_press)

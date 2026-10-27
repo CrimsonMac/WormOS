@@ -48,8 +48,14 @@ from the release page and check them against `SHA256SUMS`.
       -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
       -drive file=wormos-1.2-x86_64.qcow2,if=virtio \
       -nic user,model=virtio-net-pci -device virtio-vga \
-      -device virtio-keyboard-pci -device virtio-tablet-pci
+      -device virtio-keyboard-pci -device virtio-tablet-pci \
+      -device virtio-serial-pci \
+      -chardev qemu-vdagent,id=vdagent,name=vdagent,clipboard=on,mouse=off \
+      -device virtserialport,chardev=vdagent,name=com.redhat.spice.0
   ```
+  The last three lines share the clipboard with QEMU's window (when QEMU
+  is built with clipboard support) and with VNC viewers. virt-manager's
+  SPICE display shares it without them.
 - **QEMU on Windows:** install QEMU from https://qemu.weilnetz.de/w64/
   (it includes the UEFI firmware). For speed, turn on the Windows feature
   "Windows Hypervisor Platform" (Settings, Optional features, More Windows
@@ -68,6 +74,7 @@ from the release page and check them against `SHA256SUMS`.
   the mouse.
 - **VMware Workstation / Player:** unzip `wormos-1.2-vmware.zip` and open
   `WormOS.vmx` (UEFI, NVMe disk, 2 GB of memory, 3D acceleration off).
+  The clipboard is not shared with VMware yet.
 
 On the first start, WormOS asks for a user name, a password for it and a
 password for root, on the first console. Then log in with that user: the
@@ -93,12 +100,44 @@ idles at well under 100 MB of memory.
   Ctrl+Alt+F1 returns to the desktop.
 - Administration is done as root: `su -` in a terminal, or the menu's root
   terminal.
+- Copy and paste between WormOS and the machine it runs on works with
+  virt-manager (SPICE) and QEMU (see above). In a terminal, `clip copy`
+  copies its arguments or standard input and `clip paste` prints the
+  clipboard (`ls | clip copy`).
 - Settings: `/etc/xdg/labwc` (copy files to `~/.config/labwc` to change
   them; `environment` sets the keyboard layout) and `/etc/xdg/foot/foot.ini`.
 - Screen resolution: `wlr-randr` lists outputs and their modes, and
   `wlr-randr --output NAME --custom-mode 1920x1080` changes one. To keep a
   setting, add the command to `~/.config/labwc/autostart`. (Without guest
   tools, VMware does not resize the screen with its window.)
+
+### The terminal
+
+Terminals run [zsh](https://www.zsh.org) with a configuration in
+`/etc/zsh/zshrc` (your own goes in `~/.zshrc`):
+
+- As you type, the rest of an earlier command appears in grey
+  ([zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions)):
+  Right or End takes it, Ctrl+Right takes one word. Commands are coloured
+  as you type: green when they exist, red when they do not.
+- History: 50,000 commands in `~/.zsh_history`, shared between open
+  terminals as you go. Up and Down go through earlier commands that start
+  with what is typed; Ctrl+R searches. Commands starting with a space are
+  not kept.
+- Tab completes with a menu (arrows or Tab to move), ignoring case, also
+  for `snap`, `wh`, `bh`, `worm` and `clip` (snapshot numbers, packages,
+  blackholes).
+- Ctrl+Backspace and Ctrl+Delete delete a word, Ctrl+Left and Ctrl+Right
+  move by one. Words stop at `/`, so Ctrl+Backspace removes one part of a
+  path.
+- The prompt shows the newest snapshot and anything waiting for a
+  restart, `[snap 14] tester@wormos:~$`; root's ends in `#` and says
+  `[unlocked]` while the system is writable. Inside a blackhole it starts
+  with `[bh:NAME]`. A failed command's status appears on the right.
+- A missing command suggests `wh search`.
+
+Root's own login on the consoles uses the plain `sh`; the menu's root
+terminal opens zsh.
 
 Graphics: Intel GPUs (with the i915/xe firmware) and VMware's virtual GPU
 use OpenGL ES through Mesa; other virtual GPUs (virtio, QXL, bochs) use a

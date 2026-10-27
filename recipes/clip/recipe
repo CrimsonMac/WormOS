@@ -1,0 +1,16 @@
+name=clip
+version=0.1.0
+description="The clipboard from the command line, shared with the VM's host"
+depends=(glibc wayland)
+localsrc=src/clipboard
+
+build() {
+	make CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
+		WAYLAND_SCANNER="$NATIVE/bin/wayland-scanner"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -Dm644 "$recipedir/files/70-spice-agent.rules" \
+		"$pkgdir/usr/lib/udev/rules.d/70-spice-agent.rules"
+}

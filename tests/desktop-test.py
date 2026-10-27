@@ -32,6 +32,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import zlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOG = os.path.join(ROOT, "build", "desktop.log")
@@ -106,6 +107,33 @@ SESSION_CHECKS = [
 
 TYPING_CHECKS = [
     ("typed into the terminal", "cat /tmp/typed", rf"^{USER} typed$"),
+]
+
+# zsh as the user sees it: the WormOS settings from /etc/zsh/zshrc.
+ZSH_CHECK = r"""zsh -ic 'bindkey "^W"; bindkey "^H"
+print snap=$_comps[snap] wh=$_comps[wh] bh=$_comps[bh] worm=$_comps[worm] clip=$_comps[clip]
+whence -w _zsh_autosuggest_start _zsh_highlight
+_wormos_prompt_state; print -r -- "state=$_wormos_state"; print history=$SAVEHIST'
+"""
+SHELL_CHECKS = [
+    ("users get zsh", f"grep ^{USER}: /etc/passwd", r":/usr/bin/zsh$"),
+    ("foot sends ^W for Ctrl+Backspace",
+     "grep -A4 '^\\[text-bindings\\]' /etc/xdg/foot/foot.ini", r"^\\x17 = Control\+BackSpace$"),
+    ("zsh: Ctrl+Backspace deletes a word", f"su {USER} -c 'sh /tmp/zsh-check' 2>&1",
+     r'"\^W" backward-kill-word\s+"\^H" backward-kill-word'),
+    ("zsh completes snap, wh, bh, worm and clip", f"su {USER} -c 'sh /tmp/zsh-check' 2>&1",
+     r"snap=_snap wh=_wh bh=_bh worm=_worm clip=_clip"),
+    ("zsh suggestions and highlighting loaded", f"su {USER} -c 'sh /tmp/zsh-check' 2>&1",
+     r"_zsh_autosuggest_start: function\s+_zsh_highlight: function"),
+    ("prompt shows the newest snapshot", f"su {USER} -c 'sh /tmp/zsh-check' 2>&1",
+     r"^state=.*\[snap \d+\]"),
+    ("large shared history", f"su {USER} -c 'sh /tmp/zsh-check' 2>&1", r"^history=50000$"),
+]
+
+CLIPBOARD_CHECKS = [
+    ("clipboard agent running", "pidof clip", r"^\d+$"),
+    ("agent port for the video group",
+     "stat -L -c '%G %a' /dev/virtio-ports/com.redhat.spice.0", r"^video 660$"),
 ]
 
 SHORTCUT_CHECKS = [
@@ -305,10 +333,18 @@ class Qmp:
                 {"type": "btn", "data": {"down": down, "button": button}}])
             time.sleep(0.2)
 
+    def key(self, qcode, down):
+        """Press or release one key (sendkey always does both)."""
+        self.execute("input-send-event", events=[
+            {"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": qcode}}}])
+        time.sleep(0.3)
+
 
 class Vnc:
     """A minimal VNC client for QEMU's server: it only asks for a new size,
     as a viewer does when its window is resized (ExtendedDesktopSize)."""
+
+    ENCODINGS = (0, -308)                          # raw, ExtendedDesktopSize
 
     def __init__(self, path):
         self.sock = socket.socket(socket.AF_UNIX)
@@ -325,8 +361,8 @@ class Vnc:
         self.sock.sendall(b"\x01")                 # ClientInit: shared
         header = self.recv(24)                     # ServerInit
         self.recv(struct.unpack(">I", header[20:24])[0])
-        # SetEncodings: raw and the ExtendedDesktopSize pseudo-encoding.
-        self.sock.sendall(struct.pack(">BxHii", 2, 2, 0, -308))
+        self.sock.sendall(struct.pack(">BxH", 2, len(self.ENCODINGS)) +
+                          b"".join(struct.pack(">i", e) for e in self.ENCODINGS))
 
     def recv(self, n):
         data = b""
@@ -341,6 +377,58 @@ class Vnc:
         """SetDesktopSize with one screen."""
         self.sock.sendall(struct.pack(">BxHHBx", 251, width, height, 1) +
                           struct.pack(">IHHHHI", 0, 0, 0, width, height, 0))
+
+
+class VncClipboard(Vnc):
+    """A VNC client using the clipboard, as viewers do: plain ClientCutText
+    to copy, and the extended clipboard (notify, request, provide) to paste
+    what the guest copied. QEMU passes both on through its vdagent."""
+
+    ENCODINGS = (0, -1063131698)                   # raw, extended clipboard
+    TEXT, CAPS, REQUEST, NOTIFY, PROVIDE = 1, 1 << 24, 1 << 25, 1 << 27, 1 << 28
+
+    def __init__(self, path):
+        super().__init__(path)
+        flags = self.CAPS | self.TEXT | self.REQUEST | self.NOTIFY | self.PROVIDE
+        self.sock.sendall(struct.pack(">BxxxiII", 6, -8, flags, 1 << 20))
+
+    def copy(self, text):
+        data = text.encode("latin-1")
+        self.sock.sendall(struct.pack(">BxxxI", 6, len(data)) + data)
+
+    def message(self):
+        """The next clipboard message: (flags, payload), or None for text."""
+        while True:
+            kind = self.recv(1)[0]
+            if kind == 2:                          # Bell
+                continue
+            if kind != 3:
+                raise RuntimeError(f"unexpected VNC message {kind}")
+            length = struct.unpack(">xxxi", self.recv(7))[0]
+            if length >= 0:
+                self.recv(length)
+                return None
+            data = self.recv(-length)
+            return struct.unpack(">I", data[:4])[0], data[4:]
+
+    def paste(self, timeout):
+        """Waits for the guest's copy, asks for it and returns the text."""
+        deadline = time.time() + timeout
+        self.sock.settimeout(timeout)
+        try:
+            while time.time() < deadline:
+                msg = self.message()
+                if msg and msg[0] & self.NOTIFY and msg[0] & self.TEXT:
+                    self.sock.sendall(struct.pack(">BxxxiI", 6, -4, self.REQUEST | self.TEXT))
+                elif msg and msg[0] & self.PROVIDE and msg[0] & self.TEXT:
+                    data = zlib.decompress(msg[1])
+                    size = struct.unpack(">I", data[:4])[0]
+                    return data[4:4 + size].rstrip(b"\0").decode(errors="replace")
+        except (socket.timeout, OSError):
+            pass
+        finally:
+            self.sock.settimeout(10)
+        return None
 
 
 def near(pixels, width, x, y, rgb, tolerance):
@@ -417,7 +505,8 @@ def main():
     passed = failures = 0
     total = (len(DEVICE_CHECKS) + 1 + len(AFTER_SETUP_CHECKS) + 3 + len(SESSION_CHECKS) +
              len(TYPING_CHECKS) + len(SHORTCUT_CHECKS) + len(BUDGET_CHECKS) +
-             len(RESIZES) + len(WELCOME_CHECKS) + len(GTK_CHECKS) + len(SOUND_CHECKS) + 27)
+             len(RESIZES) + len(WELCOME_CHECKS) + len(GTK_CHECKS) + len(SOUND_CHECKS) +
+             len(SHELL_CHECKS) + len(CLIPBOARD_CHECKS) + 33)
 
     def check(name, ok, out=""):
         nonlocal passed, failures
@@ -528,6 +617,30 @@ def main():
             wait_for(con, "cat /tmp/typed", r"typed", 60)
             run_checks(con, TYPING_CHECKS)
 
+            # The terminal's shell: Ctrl+Backspace deletes the last word,
+            # and an earlier command comes back as a suggestion (End takes
+            # it). zsh writes the history as it goes.
+            mon.type("echo $(id -un) one two")
+            mon.key("ctrl-backspace")
+            mon.type("> /tmp/word\n")
+            out = wait_for(con, "cat /tmp/word", r"\S", 60)
+            check("Ctrl+Backspace deletes the last word", out == f"{USER} one", out)
+            mon.type(": recall; echo $(id -un) recalled > /tmp/recalled\n")
+            wait_for(con, "cat /tmp/recalled", r"recalled", 60)
+            con.run("rm -f /tmp/recalled")
+            mon.type(": recall")
+            time.sleep(3)
+            mon.key("end")
+            time.sleep(1)
+            mon.key("ret")
+            out = wait_for(con, "cat /tmp/recalled", rf"^{USER} recalled$", 60)
+            check("suggestion from the history taken with End", out == f"{USER} recalled", out)
+            # Short commands: a long one wraps on the console.
+            out = con.run(f"grep -c recall ~{USER}/.zsh_h*")
+            check("history saved as you go", out.isdigit() and int(out) >= 1, out)
+            put_file(con, ZSH_CHECK.encode(), "/tmp/zsh-check")
+            run_checks(con, SHELL_CHECKS)
+
             mon.key("meta_l-ret")
             wait_for(con, "pidof foot | wc -w", r"^2$", 60)
             run_checks(con, SHORTCUT_CHECKS)
@@ -551,6 +664,19 @@ def main():
             # right one opens the menu. New windows open in the middle; the
             # strip along the right edge shows only the wallpaper.
             qmp = Qmp(qmp_path)
+
+            # Caps Lock turns off as the key goes down: a letter typed
+            # while it is still held comes out in lower case.
+            mon.type("echo x")
+            qmp.key("caps_lock", True)
+            qmp.key("caps_lock", False)
+            mon.key("a")
+            qmp.key("caps_lock", True)
+            mon.key("b")
+            qmp.key("caps_lock", False)
+            mon.type(" > /tmp/caps\n")
+            out = wait_for(con, "cat /tmp/caps", r"\S", 60)
+            check("Caps Lock turns off on press", out == "xAb", out)
             px, py = width - 60, height - 80
             box = (width - width // 8, 0, width, height)
             before = screen("before-click")[2]
@@ -589,6 +715,19 @@ def main():
 
             def session(cmd):
                 return con.run(f"su {USER} -c '/tmp/in-session {cmd}'")
+
+            # The clipboard, shared with the viewer through QEMU's vdagent.
+            run_checks(con, CLIPBOARD_CHECKS)
+            clipboard = VncClipboard(vnc_path)
+            clipboard.copy("copied on the host 42")
+            put_file(con, b"/tmp/in-session clip paste; echo\n", "/tmp/paste")
+            out = wait_for(con, f"su {USER} -c 'sh /tmp/paste'", r"^copied on the host 42$", 60)
+            check("text copied on the host pastes in the guest",
+                  out == "copied on the host 42", out + con.run("cat /run/user/1000/clip.log"))
+            session("clip copy copied in the guest 7")
+            text = clipboard.paste(60)
+            check("text copied in the guest reaches the host", text == "copied in the guest 7",
+                  repr(text) + con.run("cat /run/user/1000/clip.log"))
 
             con.run(f"su {USER} -c '/tmp/in-session /tmp/gtk-check > /tmp/gtk.out 2>&1 &'")
             out = wait_for(con, "cat /tmp/gtk.out", r"^shown$", 120)

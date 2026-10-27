@@ -1,0 +1,47 @@
+name=ncurses
+version=6.6
+description="Terminal handling library and a small terminal database"
+depends=(glibc)
+# Signed by Thomas E. Dickey (19882D92DDA4C400C22C0D56CC2AF4472167BE03).
+source=(https://ftp.gnu.org/gnu/ncurses/ncurses-$version.tar.gz)
+sha256=(355b4cbbed880b0381a04c46617b7656e362585d52e9cf84a67e2009b749ff11)
+
+# The terminal descriptions shipped: the consoles, the common terminal
+# emulators (also those used to reach the machine over ssh) and
+# multiplexers. Others go in ~/.terminfo.
+TERMINALS="ansi dumb linux vt100 vt102 vt220 xterm xterm-color xterm-256color xterm-direct
+	foot foot-direct screen screen-256color tmux tmux-256color alacritty kitty ghostty
+	st-256color putty putty-256color vte-256color gnome-256color konsole konsole-256color
+	wezterm"
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--with-build-cc=gcc --with-shared --without-normal --without-debug \
+		--without-ada --without-cxx-binding --without-manpages --without-tests \
+		--without-progs --enable-widec --enable-pc-files \
+		--with-pkg-config-libdir=/usr/lib/pkgconfig --disable-db-install \
+		--with-default-terminfo-dir=/usr/share/terminfo --disable-stripping
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install.libs
+	# Programs asking for the narrow library get the wide one.
+	local lib
+	for lib in ncurses form panel menu; do
+		echo "INPUT(-l${lib}w)" > "$pkgdir/usr/lib/lib$lib.so"
+		ln -s ${lib}w.pc "$pkgdir/usr/lib/pkgconfig/$lib.pc"
+	done
+	echo "INPUT(-lncursesw)" > "$pkgdir/usr/lib/libtinfo.so"
+	ln -s ncursesw.pc "$pkgdir/usr/lib/pkgconfig/tinfo.pc"
+	rm -rf "$pkgdir/usr/bin"	# only ncursesw6-config, for building
+
+	# The terminal database, compiled with this machine's tic.
+	install -d "$pkgdir/usr/share/terminfo"
+	tic -x -o "$pkgdir/usr/share/terminfo" -e "$(echo $TERMINALS | tr ' ' ,)" \
+		misc/terminfo.src
+	# The names kitty and Ghostty set for TERM.
+	ln -s ../k/kitty "$pkgdir/usr/share/terminfo/x/xterm-kitty"
+	ln -s ../g/ghostty "$pkgdir/usr/share/terminfo/x/xterm-ghostty"
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/ncurses/COPYING"
+}

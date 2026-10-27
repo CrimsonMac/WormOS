@@ -21,3 +21,10 @@ The boot menu can rewind to any recent snapshot before anything starts.
 The system is read-only: worm unlock opens it, worm lock snapshots it.
 Ctrl+Alt+F2 has a second console, for logging in as root.
 wlr-randr lists your screens and their modes.
+Grey text after the cursor is an earlier command: Right or End takes it.
+Up and Down go through earlier commands starting with what you typed.
+Ctrl+R searches everything you typed before; Ctrl+Backspace deletes a word.
+Tab after snap rewind, wh remove or bh close completes the name or number.
+ls | clip copy puts a command's output on the clipboard; clip paste prints it.
+Start a command with a space to keep it out of the history.
+The prompt's [snap N] is your newest snapshot.

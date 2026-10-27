@@ -617,6 +617,69 @@ in the README.
   console, or with `--create NAME FULL-NAME LAYOUT` and the two passwords
   on standard input (for the graphical setup).
 
+## Shell
+
+- `zsh` 5.9.2 (`--disable-dynamic`: every module is linked in, so nothing
+  is loaded at start) with `ncurses` 6.6 (wide characters; one library,
+  with `libncurses.so`, `libtinfo.so` and the narrow `.pc` names pointing
+  at it for builds). The terminal database holds about 30 entries: the
+  consoles and common terminal emulators and multiplexers, compiled with
+  the build machine's `tic`; `xterm-kitty` and `xterm-ghostty` link to
+  ncurses' own kitty and ghostty entries.
+- zsh reads `/etc/zsh`: `zprofile` runs `/etc/profile` in sh emulation
+  (PATH, locale, the desktop on a console login, the welcome), `zshrc`
+  is the interactive setup. Completions for other systems and X11 and the
+  new-user wizard are not installed.
+- `zshrc`: history (`share_history`, 50,000 lines), emacs keys plus the
+  usual escape sequences, completion (`compinit` checks the files with
+  `compaudit` only when its dump in `~/.cache/zsh` is older than a day),
+  the prompt (`_wormos_prompt_state` in `precmd` reads `/run/snap-status`
+  without starting a process, `$BLACKHOLE` and, for root, whether `/` is
+  writable), window titles (with control characters shown as text), and
+  last the plugins zsh-autosuggestions (history, then completion) and
+  zsh-syntax-highlighting, which are left out with `TERM=dumb` or
+  `ZSH_PLAIN`. It starts in about 25 ms on the build machine.
+- Completions for our commands are in `/usr/share/zsh/site-functions`
+  (`recipes/zsh/files/completions`). Snapshot IDs come from
+  `snap list --raw` (root only), core packages from `/var/lib/wh/index`,
+  installed ones from `/usr/lib/wh/db` and `/var/lib/wh/foreign`.
+- foot sends `^H` for Ctrl+Backspace, which most programs take as
+  Backspace; `foot.ini` binds it to `^W` (`[text-bindings]`), which
+  deletes a word in zsh, busybox sh, readline, Python and vim. zsh binds
+  both.
+- The first-boot setup gives the new user `/usr/bin/zsh` (listed in
+  `/etc/shells`). Root keeps busybox `sh`: the tests drive root's shell on
+  the serial console. The root terminal runs `su - -s /usr/bin/zsh`.
+  wormlogin starts the session with `argv[0]` `-sh`, so zsh runs it in sh
+  emulation (it only runs the session script).
+
+## Clipboard
+
+- `clip` (`src/clipboard/`) uses ext-data-control-v1, which labwc offers
+  to every client and which needs no window or focus. `clip copy` sets the
+  selection and stays in the background (`setsid`, output to `/dev/null`)
+  until another program copies; `clip paste` prints the text. Text only,
+  at most 16 MiB.
+- `clip agent` (started by labwc's `autostart`) shares the clipboard with
+  the host over the SPICE agent port `/dev/virtio-ports/com.redhat.spice.0`
+  (group `video`, mode 0660, from `70-spice-agent.rules`). It speaks the
+  vdagent protocol (spice-protocol's `vd_agent.h`): chunks of at most
+  2048 bytes carrying messages, capabilities `CLIPBOARD_BY_DEMAND`,
+  `CLIPBOARD_SELECTION` and `GUEST_LINEEND_LF`. Each side announces a copy
+  (grab) and sends the text when asked (request), so nothing crosses until
+  someone pastes. The host's text is cached until its next grab. Sources
+  the agent creates offer `application/x-wormos-clip` as well, so it never
+  announces the host's own text back. Only the clipboard is shared, not
+  the primary selection. Without the port it exits at once; when the host
+  side is closed (`POLLHUP`) it reopens the port every two seconds.
+- The same port reaches a SPICE client through the SPICE server
+  (virt-manager adds the channel with SPICE graphics) and QEMU's own UIs
+  through `-chardev qemu-vdagent,clipboard=on`, which `run-qemu.sh`
+  always adds. QEMU's VNC server passes plain ClientCutText to the guest
+  and the guest's copies to clients using the extended clipboard.
+- VMware's copy and paste needs its user-session tools (vmusr with the
+  dndcp plugin, X11 and gtkmm), which are not built.
+
 ## Sound
 
 - Kernel: the HD Audio controller driver, codec drivers (generic,
@@ -738,5 +801,9 @@ in the README.
   `--release IMAGE` it checks a release image: it types the first-boot
   setup blind, then logs in as root on the serial console with the
   password it set.
+- It also types into the terminal to check zsh
+  (Ctrl+Backspace, a suggestion from the history taken with End) and
+  copies text both ways through a second VNC client using the extended
+  clipboard.
 - Faster loop for snap: build natively (`make -C src/snap CC=gcc`) and use
   `--top` on a loopback btrfs image mounted with sudo.

@@ -1,0 +1,44 @@
+name=zsh
+version=5.9.2
+description="The Z shell, with the WormOS configuration and completions for its commands"
+depends=(glibc ncurses zsh-autosuggestions zsh-syntax-highlighting)
+# Signed by dana (7CA7ECAAF06216B90F894146ACF8146CAE8CBBC4).
+source=(https://www.zsh.org/pub/zsh-$version.tar.xz)
+sha256=(36fa734374b44783582cec09bcd67822e2f992c779ec1624ab5596df078d2f81)
+
+build() {
+	# Answers for the checks that run test programs, which a cross build
+	# cannot; they hold for glibc on x86_64.
+	export zsh_cv_long_is_64_bit=yes zsh_cv_off_t_is_64_bit=yes \
+		zsh_cv_ino_t_is_64_bit=yes zsh_cv_printf_has_lld=yes \
+		zsh_cv_func_realpath_accepts_null=yes zsh_cv_func_tgetent_accepts_null=yes \
+		zsh_cv_func_tgetent_zero_success=yes zsh_cv_rlim_t_is_longer=no \
+		zsh_cv_rlim_t_is_quad_t=no zsh_cv_rlim_t_is_unsigned=yes \
+		zsh_cv_getcwd_malloc=yes zsh_cv_sys_fifo=yes zsh_cv_sys_lseek_seekable=yes \
+		zsh_cv_sys_link=yes zsh_cv_c_broken_wcwidth=no zsh_cv_c_broken_isprint=no \
+		zsh_cv_sys_elf=yes zsh_cv_func_dlsym_needs_underscore=no
+	# Every module is linked in: no dlopen at start, and fewer files.
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--enable-etcdir=/etc/zsh --enable-fndir=/usr/share/zsh/functions \
+		--enable-site-fndir=/usr/share/zsh/site-functions \
+		--enable-scriptdir=/usr/share/zsh/scripts --enable-function-subdirs \
+		--with-term-lib=ncursesw --with-tcsetpgrp --enable-multibyte \
+		--disable-pcre --disable-gdbm --disable-dynamic
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install.bin install.modules install.fns
+	rm -f "$pkgdir/usr/bin/zsh-$version"
+	# Completions for other systems and X11, and the new-user wizard (the
+	# global configuration takes its place).
+	local fn=$pkgdir/usr/share/zsh/functions
+	rm -rf "$fn"/Completion/{AIX,BSD,Cygwin,Darwin,Debian,Mandriva,openSUSE,Redhat,Solaris,X}
+	rm -rf "$fn/Newuser"
+	rm -rf "$pkgdir/usr/share/zsh/scripts"
+
+	local f=$recipedir/files
+	install -Dm644 -t "$pkgdir/etc/zsh" "$f/zprofile" "$f/zshrc"
+	install -Dm644 -t "$pkgdir/usr/share/zsh/site-functions" "$f"/completions/_*
+	install -Dm644 LICENCE "$pkgdir/usr/share/licenses/zsh/LICENCE"
+}
