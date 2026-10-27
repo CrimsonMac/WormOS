@@ -9,6 +9,7 @@
  */
 
 #include <gtk/gtk.h>
+#include <grp.h>
 #include <pwd.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -386,7 +387,8 @@ static gboolean valid_user_name(const char *s)
 		if (!((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= '0' && s[i] <= '9') ||
 		      s[i] == '-' || s[i] == '_'))
 			return FALSE;
-	return !getpwnam(s);
+	/* first-boot refuses group names too (video, wheel...). */
+	return !getpwnam(s) && !getgrnam(s);
 }
 
 static const char *password_problem(GtkWidget *a, GtkWidget *b)
@@ -411,7 +413,7 @@ static void account_next(GtkWidget *widget, gpointer data)
 	(void)widget;
 	(void)data;
 	if (!valid_user_name(name))
-		problem = getpwnam(name) ? "That user name is taken."
+		problem = getpwnam(name) || getgrnam(name) ? "That user name is taken."
 			: "The user name: lowercase letters, digits, - and _, starting with a letter.";
 	else if (strpbrk(full, ":,"))
 		problem = "The name cannot contain : or ,";
