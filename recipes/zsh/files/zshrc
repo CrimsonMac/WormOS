@@ -14,6 +14,9 @@ setopt auto_cd interactive_comments magic_equal_subst no_beep no_nomatch notify 
 # Word motion and deletion stop at slashes, so Ctrl+Backspace removes one
 # part of a path.
 WORDCHARS=${WORDCHARS//\/}
+# Output without a final newline is not followed by a highlighted %.
+PROMPT_EOL_MARK=
+TIMEFMT=$'\nreal\t%E\nuser\t%U\nsys\t%S\ncpu\t%P'
 
 # ---- keys (emacs style) ----
 
@@ -63,6 +66,8 @@ zstyle ':completion:*' menu select
 zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=*'
 zstyle ':completion:*' group-name ''
 zstyle ':completion:*' squeeze-slashes true
+# Commands that wh exports while the shell runs are found at once.
+zstyle ':completion:*' rehash true
 zstyle ':completion:*' use-cache true
 zstyle ':completion:*' cache-path "${XDG_CACHE_HOME:-$HOME/.cache}/zsh"
 zstyle ':completion:*:descriptions' format '%F{magenta}%B%d%b%f'
@@ -94,6 +99,7 @@ alias la='ls -A'
 alias l='ls -CF'
 alias grep='grep --color=auto'
 alias diff='diff --color=auto'
+alias history='history 0'
 
 # A missing command may come from a wormhole.
 command_not_found_handler() {

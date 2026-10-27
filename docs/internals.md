@@ -176,6 +176,14 @@ in the README.
   excluded, dpkg runs with `force-unsafe-io` (no fsync per file; a broken
   wormhole is set up again rather than repaired) and `policy-rc.d` exits
   101.
+- `wh search` asks apt in an existing wormhole (`apt-cache search
+  --names-only`). For a source without one it reads the checked
+  `Packages` list in `/var/cache/wh/sources/NAME` (name matches only, like
+  apt); root's search downloads a missing list first and `wh update`
+  refreshes lists that exist. Those downloads run in a child process
+  (`try_fetch`), so a failure (offline, a cut network) only skips the
+  source. A user's search names the sources it could not search. `--from`
+  restricts the search to one source, `core` included.
 - wh's `run()` reads a program's output to the end even when it keeps only
   the beginning: closing the pipe early killed `apt-cache show` with
   SIGPIPE, so a package in an existing Debian wormhole looked missing and
@@ -649,7 +657,7 @@ in the README.
   both.
 - The first-boot setup gives the new user `/usr/bin/zsh` (listed in
   `/etc/shells`). Root keeps busybox `sh`: the tests drive root's shell on
-  the serial console. The root terminal runs `su - -s /usr/bin/zsh`.
+  the serial console. The root terminal runs `su -s /usr/bin/zsh -`.
   wormlogin starts the session with `argv[0]` `-sh`, so zsh runs it in sh
   emulation (it only runs the session script).
 
