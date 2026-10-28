@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build the release images of WormOS VERSION into out/release:
 #
-#   wormos-VERSION-x86_64.qcow2       QEMU, virt-manager (UEFI firmware)
+#   wormos-VERSION-x86_64.qcow2       QEMU, virt-manager (UEFI or BIOS firmware)
 #   wormos-VERSION-vmware.zip         VMware Workstation / Player (.vmx, .vmdk)
 #   SHA256SUMS
 #

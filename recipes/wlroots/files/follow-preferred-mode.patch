@@ -1,7 +1,54 @@
 diff -ruN a/backend/drm/drm.c b/backend/drm/drm.c
 --- a/backend/drm/drm.c
 +++ b/backend/drm/drm.c
-@@ -1772,6 +1772,74 @@
+@@ -1064,6 +1064,36 @@
+ 	return ok;
+ }
+ 
++/*
++ * A virtual machine's viewer that has not been sized yet asks for a tiny
++ * screen (QEMU's window starts at 640x480): start with the mode closest to
++ * 1280x800 instead (at least 1024x768). The viewer's window then grows to
++ * it, and its size is followed from there.
++ */
++static void prefer_usable_mode(struct wl_list *modes) {
++	struct wlr_output_mode *mode, *preferred = NULL, *usable = NULL;
++	long best = 0;
++	wl_list_for_each(mode, modes, link) {
++		if (mode->preferred) {
++			preferred = mode;
++		}
++		if (mode->width < 1024 || mode->height < 768) {
++			continue;
++		}
++		long distance = labs((long)mode->width * mode->height - 1280L * 800);
++		if (usable == NULL || distance < best) {
++			usable = mode;
++			best = distance;
++		}
++	}
++	if (preferred == NULL || usable == NULL ||
++			preferred->width >= 1024 || preferred->height >= 768) {
++		return;
++	}
++	preferred->preferred = false;
++	usable->preferred = true;
++}
++
+ static struct wlr_drm_mode *drm_mode_create(const drmModeModeInfo *modeinfo) {
+ 	struct wlr_drm_mode *mode = calloc(1, sizeof(*mode));
+ 	if (!mode) {
+@@ -1674,6 +1704,9 @@
+ 
+ 		wl_list_insert(modes.prev, &mode->wlr_mode.link);
+ 	}
++	if (drm_conn->connector_type == DRM_MODE_CONNECTOR_VIRTUAL) {
++		prefer_usable_mode(&modes);
++	}
+ 
+ 	if (current_modeinfo != NULL) {
+ 		int32_t refresh = calculate_refresh_rate(current_modeinfo);
+@@ -1772,6 +1805,74 @@
  
  static void disconnect_drm_connector(struct wlr_drm_connector *conn);
  
@@ -76,7 +123,7 @@ diff -ruN a/backend/drm/drm.c b/backend/drm/drm.c
  void scan_drm_connectors(struct wlr_drm_backend *drm,
  		struct wlr_device_hotplug_event *event) {
  	if (event != NULL && event->connector_id != 0) {
-@@ -1863,11 +1931,16 @@
+@@ -1863,11 +1964,16 @@
  				wlr_drm_conn_log(wlr_conn, WLR_ERROR, "Failed to connect DRM connector");
  				continue;
  			}

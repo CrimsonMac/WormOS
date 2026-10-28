@@ -1,7 +1,7 @@
 name=worm
 version=0.1.0
-release=7
-description="WormOS system features (worm status, panic, fw, unlock, lock)"
+release=8
+description="WormOS system features (worm status, panic, fw, unlock, lock, the power button)"
 depends=(glibc snap nftables libxcrypt)
 # Builds src/worm, which also uses sources from src/common.
 localsrc=src
@@ -12,4 +12,5 @@ build() {
 
 package() {
 	make -C worm DESTDIR="$pkgdir" install
+	install -Dm644 "$recipedir/files/03-powerkey" "$pkgdir/etc/worm/services/03-powerkey"
 }

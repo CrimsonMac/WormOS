@@ -1,5 +1,6 @@
 name=open-vm-tools
 version=13.1.0
+release=2
 description="VMware guest tools: the screen follows the window size, time sync, clean shutdown"
 depends=(glibc glib libtirpc libxcrypt libdrm eudev)
 # Upstream publishes no signature: checksum pinned from the release download

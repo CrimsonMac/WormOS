@@ -6,7 +6,7 @@ LDFLAGS += -Wl,-z,relro,-z,now
 PREFIX  ?= /usr
 BINDIR  ?= $(PREFIX)/bin
 
-all: worm power snapshots install-helper
+all: worm power snapshots install-helper powerkey
 
 OBJS = worm.o fw.o panic.o status.o anon.o
 
@@ -22,16 +22,21 @@ power: power.c admin.c admin.h
 snapshots: snapshots.c admin.c admin.h ../common/password.c
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ snapshots.c admin.c ../common/password.c -lcrypt
 
+# The power button service.
+powerkey: powerkey.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ powerkey.c
+
 install-helper: install.c admin.c admin.h ../common/password.c
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ install.c admin.c ../common/password.c -lcrypt
 
-install: worm power snapshots install-helper
+install: worm power snapshots install-helper powerkey
 	install -Dm755 worm $(DESTDIR)$(BINDIR)/worm
 	install -Dm4755 power $(DESTDIR)$(PREFIX)/lib/worm/power
 	install -Dm4755 snapshots $(DESTDIR)$(PREFIX)/lib/worm/snapshots
 	install -Dm4755 install-helper $(DESTDIR)$(PREFIX)/lib/worm/install
+	install -Dm755 powerkey $(DESTDIR)$(PREFIX)/lib/worm/powerkey
 
 clean:
-	rm -f worm power snapshots install-helper $(OBJS)
+	rm -f worm power snapshots install-helper powerkey $(OBJS)
 
 .PHONY: all install clean

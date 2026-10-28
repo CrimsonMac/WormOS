@@ -16,15 +16,15 @@ export SDL_VIDEODRIVER=wayland ELECTRON_OZONE_PLATFORM_HINT=wayland
 export XCURSOR_THEME=${XCURSOR_THEME:-Adwaita} XCURSOR_SIZE=${XCURSOR_SIZE:-24}
 export XKB_DEFAULT_OPTIONS=${XKB_DEFAULT_OPTIONS-wormos:caps_unlock_on_press}
 
-# Intel GPUs render with OpenGL ES; everything else uses the software
-# renderer, which is faster than OpenGL emulated on the CPU. VMware with 3D
-# acceleration (Mesa svga) crashed the GTK login screen in a loop, so VMware
-# draws in software too, as it does with 3D acceleration off.
+# Intel GPUs and VMware's (vmwgfx, Mesa svga, with 3D acceleration on)
+# render with OpenGL ES; everything else uses the software renderer, which
+# is faster than OpenGL emulated on the CPU. With VMware's 3D acceleration
+# off, OpenGL ES fails at the start and run_labwc falls back to software.
 if [ -z "${WLR_RENDERER:-}" ]; then
 	renderer=pixman
 	for driver in /sys/class/drm/card*/device/driver; do
 		case $(basename "$(readlink "$driver")") in
-		i915|xe) renderer= ;;
+		i915|xe|vmwgfx) renderer= ;;
 		esac
 	done
 	[ -n "$renderer" ] && export WLR_RENDERER=$renderer

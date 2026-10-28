@@ -1,11 +1,12 @@
 #!/bin/bash
-# Boot the WormOS disk image in QEMU with UEFI firmware.
+# Boot the WormOS disk image in QEMU with UEFI (or BIOS) firmware.
 #
-# Usage: scripts/run-qemu.sh [--gui] [--snapshot]
+# Usage: scripts/run-qemu.sh [--gui] [--snapshot] [--bios]
 #
 # By default the VM runs on the serial console in this terminal
 # (press Ctrl-A X to quit QEMU). --gui opens a graphical window instead.
-# --snapshot discards all disk writes when QEMU exits.
+# --snapshot discards all disk writes when QEMU exits. --bios boots with
+# QEMU's default BIOS firmware (SeaBIOS) instead of UEFI.
 # Both modes have a SPICE agent channel (QEMU's qemu-vdagent): the guest's
 # clipboard agent shares the clipboard with QEMU's window and VNC clients.
 # QEMU_HOSTFWD forwards host ports to the VM, e.g. tcp:127.0.0.1:2222-:22
@@ -25,10 +26,13 @@ OVMF_VARS=$OUT/OVMF_VARS.fd
 
 display=(-nographic)
 extra=()
+firmware=(-drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE"
+	-drive if=pflash,format=raw,file="$OVMF_VARS")
 for arg in "$@"; do
 	case $arg in
 	--gui)      display=(-display gtk -serial mon:stdio) ;;
 	--snapshot) extra+=(-snapshot) ;;
+	--bios)     firmware=() ;;
 	*)          die "unknown option: $arg" ;;
 	esac
 done
@@ -46,8 +50,7 @@ exec qemu-system-x86_64 \
 	"${accel[@]}" \
 	-smp "${QEMU_CPUS:-4}" \
 	-m "${QEMU_MEM:-1024}" \
-	-drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
-	-drive if=pflash,format=raw,file="$OVMF_VARS" \
+	"${firmware[@]}" \
 	-drive file="$IMAGE",format=$format,if=none,id=disk0 \
 	-device virtio-blk-pci,drive=disk0,bootindex=0 \
 	-netdev "$netdev" \

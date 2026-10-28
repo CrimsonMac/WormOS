@@ -12,7 +12,11 @@ in the README.
 - `scripts/build-kernel.sh` builds Linux 6.18.57 LTS: x86_64_defconfig with
   `kernel/wormos.config` merged on top, out of tree in `build/kernel`, staged
   as the package `build/pkgs/linux`. The build warns about any option in the
-  fragment that did not survive dependency resolution.
+  fragment that did not survive dependency resolution. `kernel/patches/`
+  are applied to a freshly unpacked tree: `acpi-fixed-buttons.patch` gives
+  the fixed-feature power and sleep buttons (QEMU's, VMware's, most PCs')
+  a platform device, since 6.18.57's button driver is a platform driver
+  and was never bound to them, so no "Power Button" input device existed.
 - Kernel security: nftables only (built in, no iptables or xtables), lockdown
   forced to integrity mode, LSMs `lockdown,yama,integrity,landlock` (AppArmor
   is built but only enabled with `lsm=`), and modules must be signed with the
@@ -80,6 +84,14 @@ in the README.
 - `scripts/mkimage.sh` writes `out/wormos.img` without loop devices: GPT with
   an ESP (GRUB) and a btrfs partition holding `@`, `@var`, `@home`,
   `@snapshots` and `@wormholes`.
+  - The image boots with UEFI and with BIOS firmware (SeaBIOS, VMware set
+    to BIOS, VirtualBox's default). Partition 3 is a BIOS boot partition
+    in the gap between the GPT's partition entries and the ESP (sectors
+    40-2047, so partitions 1 and 2 keep their places); it holds GRUB's
+    i386-pc `core.img`, and GRUB's boot sector is in the protective MBR
+    (`scripts/bios-boot.py` does what grub-bios-setup does, on the image
+    file). That GRUB finds the ESP by its FAT volume ID and reads the same
+    `grub.cfg`.
   - It needs sudo for one step. mkfs.btrfs walks the tree with nftw, whose
     stat calls fakeroot cannot intercept. So mkimage dumps the owners fakeroot
     recorded (`find -printf` under fakeroot), copies the tree with sudo,
@@ -225,7 +237,8 @@ in the README.
   later).
 - `/usr/lib/worm/dhcp-event` replaces busybox's udhcpc script. It records
   the announced DNS servers in `/run/worm/dhcp-dns` and, when unbound is
-  installed, keeps `/run/resolv.conf` at 127.0.0.1 and ::1.
+  installed, keeps `/run/resolv.conf` at 127.0.0.1 and ::1. Renewals use
+  `ip addr replace` (the address is already there).
 - unbound (`recipes/unbound/files/unbound.conf`) listens on loopback only,
   runs as the `unbound` user, forwards everything over TLS to Quad9 and
   validates DNSSEC with `/var/lib/unbound/root.key` (RFC 5011 updates),
@@ -404,6 +417,12 @@ in the README.
 - The service `05-firewall` runs `worm fw load` before the network. A bad
   port list loads the firewall with no open ports and exits 1.
 - nftables is built with mini-gmp and without the CLI, JSON or xtables.
+- `powerkey` (`/usr/lib/worm/powerkey`, service `03-powerkey`) watches
+  every input device with a power key (the ACPI power button, keyboards)
+  and new ones through inotify on `/dev/input`, and powers off cleanly
+  (SIGUSR2 to worminit) when it is pressed. That is what QEMU's
+  `system_powerdown`, virt-manager's and VMware's "Shut Down" (without
+  the tools) and a PC's power button send. The devices are not grabbed.
 
 ## Devices and modules
 
@@ -564,10 +583,16 @@ in the README.
   service and by the first-boot setup) and membership of `video`, sets the
   Wayland environment and `LIBSEAT_BACKEND=seatd`, and runs labwc with its
   output in `$XDG_RUNTIME_DIR/desktop.log`.
-- Renderer: OpenGL ES when a card is driven by i915 or xe; otherwise
-  (including vmwgfx: with VMware's 3D acceleration, Mesa svga crashed the
-  GTK greeter in a loop) wlroots' pixman renderer (`WLR_RENDERER=pixman`), which beats
-  OpenGL emulated on the CPU. wlroots does not fall back to pixman by itself
+- Renderer: OpenGL ES when a card is driven by i915, xe or vmwgfx (Mesa
+  svga, VMware with 3D acceleration); otherwise wlroots' pixman renderer
+  (`WLR_RENDERER=pixman`), which beats OpenGL emulated on the CPU. With
+  VMware's 3D acceleration off, EGL fails at once and the session falls
+  back to pixman (below). wlroots checked every client's DMA-BUF by
+  importing it and closing the GEM handle again; vmwgfx imports DMA-BUFs
+  as its own surface objects, which GEM_CLOSE rejects, so every OpenGL
+  client (GTK, the greeter) was refused and disconnected.
+  `recipes/wlroots/files/vmwgfx-dmabuf-check.patch` skips that check on
+  vmwgfx; the renderer still imports the buffer for real. wlroots does not fall back to pixman by itself
   when a render node exists, so if labwc fails within 15 seconds with
   OpenGL ES, the session starts it again with pixman (the first log is kept
   as `desktop.log.gles`). The session starts in the user's home folder.
@@ -589,7 +614,8 @@ in the README.
   running programs and copying files; shared folders; guestStore, gdp and
   componentMgr; appInfo, which lists running programs; vmbackup) are
   removed. The service `48-vmtools` starts it only when `vmware-checkvm`
-  finds VMware. open-vm-tools needs libtirpc and libxcrypt (glibc no longer
+  finds VMware, after loading `vmw_vsock_vmci_transport` (udev loads only
+  VMCI itself; without it the tools fall back to the backdoor channel). open-vm-tools needs libtirpc and libxcrypt (glibc no longer
   ships Sun RPC or crypt); libxcrypt is built with the strong hashes only.
 - `xcompose` ships libX11's UTF-8 Compose table (`/usr/share/X11/locale`,
   mapped to every UTF-8 locale) so dead keys and the Compose key work.
@@ -685,8 +711,17 @@ in the README.
   through `-chardev qemu-vdagent,clipboard=on`, which `run-qemu.sh`
   always adds. QEMU's VNC server passes plain ClientCutText to the guest
   and the guest's copies to clients using the extended clipboard.
-- VMware's copy and paste needs its user-session tools (vmusr with the
-  dndcp plugin, X11 and gtkmm), which are not built.
+- In VMware, which has no SPICE port, `clip agent` uses VMware's backdoor
+  (`vmware.c`) with the text copy and paste of its first tools (version
+  1); the current protocol lives in open-vm-tools' X11/gtkmm plugin,
+  which is not built. The backdoor is an I/O port only VMware answers, so
+  it is used only when CPUID names VMware as the hypervisor; ordinary
+  users may use it. Copies made in the guest go to the host at once
+  (`SETSELLENGTH`/`SETNEXTPIECE`; VMware turns `\n` into `\r\n`). The
+  host's text comes when the pointer enters the VM's window: the agent
+  polls `GETPTRLOCATION` on every tick (-100,-100 means outside) and then
+  reads `GETSELLENGTH`/`GETNEXTPIECE`. UTF-8 text up to 65436 bytes; the
+  last text exchanged is not sent back.
 
 ## Sound
 
@@ -769,7 +804,9 @@ in the README.
   until the first-boot setup), a 20 GiB image (`IMAGE` and `DISK_MB` are
   parameters of `mkimage.sh`), and converts it with qemu-img: a compressed
   qcow2, and a monolithic sparse VMDK zipped with `WormOS.vmx` (from
-  `scripts/wormos.vmx.in`: UEFI, NVMe, vmxnet3, 3D acceleration off).
+  `scripts/wormos.vmx.in`: UEFI, NVMe, vmxnet3, 3D acceleration on, the
+  hardware clock in UTC (`rtc.diffFromUTC = 0`; VMware otherwise keeps
+  it in the host's local time) and the tools' periodic time sync on).
   `SHA256SUMS` lists both.
 - Package repository: `/etc/wh/repo` (set in `recipes/wh/recipe`) is the
   release `core` of the public repository `CrimsonMac/wormos-packages`;
@@ -777,7 +814,7 @@ in the README.
   writes `out/sources/NAME-VER-REL.src.tar` for every package built from
   upstream sources (recipe directory and upstream archives; glibc and
   gcc-libs take theirs from the toolchain, linux and linux-headers the
-  kernel archive and `kernel/wormos.config`; linux-firmware only its
+  kernel archive, `kernel/wormos.config` and `kernel/patches`; linux-firmware only its
   recipe), plus `wormos-build-tools.tar` (wbuild, wpack, wrepo, env.sh, the
   toolchain and kernel scripts). Packages from local code get none.
   `scripts/publish-repo.sh` uploads packages and sources, then the index
@@ -786,15 +823,19 @@ in the README.
   the disk image (`scripts/sparse-copy.py`, SEEK_DATA/SEEK_HOLE), so a
   20 GiB disk takes seconds.
 - GRUB is installed at the removable path `\EFI\BOOT\BOOTX64.EFI`, so the
-  images boot with fresh firmware settings. `run-qemu.sh` gives the disk
+  images boot with fresh firmware settings (and in the BIOS boot partition
+  for BIOS firmware). `run-qemu.sh` gives the disk
   `bootindex=0` so that added devices never shift the boot order.
 
 ## Tests
 
 - `make test` (`tests/boot-test.py`) boots a throwaway copy of the image
   (`run-qemu.sh --snapshot`), logs in over serial, runs the checks and powers
-  off. It serves `out/repo` over HTTP to the VM at 10.0.2.2. About a minute
-  under TCG; a hang means a check is waiting for its 600 s timeout.
+  off with the ACPI power button (`system_powerdown` on the QEMU monitor,
+  which `-nographic` puts on the same terminal: Ctrl-A c). Then it boots
+  the image once more with BIOS firmware (`run-qemu.sh --bios`). It serves
+  `out/repo` over HTTP to the VM at 10.0.2.2. A hang means a check is
+  waiting for its 600 s timeout.
 - `make test-wormholes` (`tests/wormhole-test.py`) needs internet and takes
   several minutes: it sets up the Debian and Kali wormholes from the real
   archives.
@@ -813,5 +854,24 @@ in the README.
   (Ctrl+Backspace, a suggestion from the history taken with End) and
   copies text both ways through a second VNC client using the extended
   clipboard.
+- `make test-vmware` (`tests/vmware-test.py`) runs from WSL on a Windows
+  PC with VMware Workstation (`vmrun.exe`, by default in
+  `D:\VMware Workstation Pro`). It builds a VM from `out/wormos.img` and
+  `scripts/wormos.vmx.in` in `D:\wormos-tools\vms\test` and starts it
+  with a window. The serial port is VMware's "network" type in client
+  mode (`tcp://127.0.0.1:PORT`): WSL forwards the Windows side's
+  localhost to the test's listener, while Windows' firewall would block
+  the other direction. VMware cannot send input from the command line, so
+  the test copies `tests/input-tool.c` (a uinput keyboard and absolute
+  pointer driven through a FIFO) into the guest, and captures the VMware
+  window with `tests/vmshot.ps1` (PrintWindow, PNG), which it expects at
+  `D:\wormos-tools\vmshot.ps1` (`WORMOS_VMSHOT`). vmrun's
+  guest operations (and `vmrun stop soft`) need the tools' vix plugin,
+  which is left out, so the test shuts down from inside. Options: `--no-3d`,
+  `--firmware bios`, `--disk sata|pvscsi|lsilogic`, `--nic e1000|e1000e`.
+- `make test-qemu-windows` (`tests/qemu-windows-test.py`) runs the image in
+  QEMU for Windows (`D:\qemu`), with the Windows Hypervisor Platform when
+  available, UEFI and then BIOS firmware; serial console, monitor and QMP
+  connect to the test over TCP the same way.
 - Faster loop for snap: build natively (`make -C src/snap CC=gcc`) and use
   `--top` on a loopback btrfs image mounted with sudo.

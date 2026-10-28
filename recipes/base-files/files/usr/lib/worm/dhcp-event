@@ -16,7 +16,7 @@ deconfig)
 	ip link set dev "$interface" up
 	;;
 renew|bound)
-	ip addr add "$ip${subnet:+/$subnet}" broadcast "${broadcast:-+}" dev "$interface"
+	ip addr replace "$ip${subnet:+/$subnet}" broadcast "${broadcast:-+}" dev "$interface"
 	if [ -n "$router" ]; then
 		while ip route del default dev "$interface" 2>/dev/null; do :; done
 		metric=0

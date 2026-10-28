@@ -1,10 +1,14 @@
 #!/bin/bash
-# Build a bootable UEFI disk image from the assembled root filesystem.
+# Build a bootable disk image from the assembled root filesystem. It
+# boots with UEFI and with BIOS firmware (GRUB for both, one grub.cfg).
 #
 # Layout (GPT):
-#   1  EFI system partition (FAT32)  GRUB
+#   1  EFI system partition (FAT32)  GRUB for UEFI, grub.cfg
 #   2  WormOS root (btrfs)           subvolumes @, @var, @home, @snapshots,
 #                                    @wormholes
+#   3  BIOS boot partition           GRUB for BIOS (core.img), in the gap
+#                                    before partition 1; its boot sector
+#                                    is in the protective MBR
 #
 # Each partition is built as a separate file and then written into the
 # disk image, so no loop devices are needed. Building the btrfs needs root
@@ -26,6 +30,8 @@ ESP_MB=128
 SECTOR=512
 MB=$((1024 * 1024 / SECTOR))     # sectors per MiB
 
+bios_start=40                    # after the GPT's partition entries
+bios_size=$((MB - bios_start))
 esp_start=$MB
 esp_size=$((ESP_MB * MB))
 root_start=$((esp_start + esp_size))
@@ -35,6 +41,9 @@ new_uuid() { cat /proc/sys/kernel/random/uuid; }
 FS_UUID=$(new_uuid)
 ROOT_PARTUUID=$(new_uuid)
 ESP_PARTUUID=$(new_uuid)
+BIOS_PARTUUID=$(new_uuid)
+# The ESP's FAT volume ID, which GRUB for BIOS searches for (as XXXX-XXXX).
+ESP_ID=$(od -An -N4 -tx4 /dev/urandom | tr -d ' ' | tr a-f A-F)
 
 TMP=$BUILD/image
 sudo rm -rf "$TMP"
@@ -68,11 +77,22 @@ sudo mkfs.btrfs -q \
 	"$TMP/root.img"
 sudo rm -rf "$TMP/fsroot"
 
-msg "Creating EFI system partition"
+msg "Creating the boot loaders and the EFI system partition"
 grub-mkimage -O x86_64-efi -p /EFI/BOOT -o "$TMP/BOOTX64.EFI" \
 	part_gpt fat btrfs zstd normal linux search search_fs_uuid \
 	configfile echo test ls cat sleep reboot halt \
 	serial terminal all_video efi_gop font gfxterm
+
+# GRUB for BIOS finds the ESP by its volume ID and reads the same grub.cfg.
+cat > "$TMP/bios.cfg" <<EOF
+search --no-floppy --fs-uuid --set=root ${ESP_ID:0:4}-${ESP_ID:4:4}
+set prefix=(\$root)/EFI/BOOT
+configfile \$prefix/grub.cfg
+EOF
+grub-mkimage -O i386-pc -c "$TMP/bios.cfg" -p /EFI/BOOT -o "$TMP/core.img" \
+	biosdisk part_gpt fat btrfs zstd normal linux search search_fs_uuid \
+	configfile echo test ls cat sleep reboot halt \
+	serial terminal all_video vbe vga font gfxterm
 
 cat > "$TMP/grub.cfg" <<EOF
 serial --unit=0 --speed=115200
@@ -103,7 +123,7 @@ else
 fi
 EOF
 
-mkfs.fat -F 32 -n WORMOS-EFI -C "$TMP/esp.img" $((ESP_MB * 1024)) > /dev/null
+mkfs.fat -F 32 -n WORMOS-EFI -i "$ESP_ID" -C "$TMP/esp.img" $((ESP_MB * 1024)) > /dev/null
 mmd -i "$TMP/esp.img" ::/EFI ::/EFI/BOOT
 mcopy -i "$TMP/esp.img" "$TMP/BOOTX64.EFI" "$TMP/grub.cfg" ::/EFI/BOOT/
 
@@ -113,12 +133,16 @@ truncate -s ${DISK_MB}M "$IMAGE"
 sfdisk -q "$IMAGE" <<EOF
 label: gpt
 unit: sectors
+first-lba: 34
 start=$esp_start, size=$esp_size, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=$ESP_PARTUUID, name="EFI"
 start=$root_start, size=$root_size, type=4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709, uuid=$ROOT_PARTUUID, name="WormOS"
+start=$bios_start, size=$bios_size, type=21686148-6449-6E6F-744E-656564454649, uuid=$BIOS_PARTUUID, name="BIOS boot"
 EOF
 # Only the data of the (sparse) partition images is copied.
 "$WORMOS_ROOT/scripts/sparse-copy.py" "$TMP/esp.img" "$IMAGE" $((esp_start * SECTOR))
 "$WORMOS_ROOT/scripts/sparse-copy.py" "$TMP/root.img" "$IMAGE" $((root_start * SECTOR))
+"$WORMOS_ROOT/scripts/bios-boot.py" "$IMAGE" /usr/lib/grub/i386-pc/boot.img \
+	"$TMP/core.img" $bios_start $bios_size > /dev/null
 rm -rf "$TMP"
 
 msg "Image ready: $IMAGE ($(du -h "$IMAGE" | cut -f1) used of ${DISK_MB} MiB)"

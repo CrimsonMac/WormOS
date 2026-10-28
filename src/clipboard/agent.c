@@ -3,7 +3,7 @@
  * the SPICE agent's virtio port (com.redhat.spice.0). The same protocol
  * reaches a SPICE client (virt-manager, remote-viewer) through the SPICE
  * server, and QEMU's own windows and VNC server through its qemu-vdagent
- * device.
+ * device. In VMware, which has no such port, vmware.c takes over.
  *
  * Only text, and only the clipboard (not the primary selection). Both
  * sides announce what they hold (grab) and send it when asked (request),
@@ -539,8 +539,11 @@ static void agent_tick(void)
 int agent_main(const char *path)
 {
 	port_path = path ? path : DEFAULT_PORT;
-	if (access(port_path, F_OK) < 0)
+	if (access(port_path, F_OK) < 0) {
+		if (!path && vmware_detected())
+			return vmware_main();
 		return 0;	/* not in a VM with an agent channel: nothing to do */
+	}
 	if (clip_connect() < 0)
 		die("no Wayland display");
 	clip.on_selection = guest_selection;

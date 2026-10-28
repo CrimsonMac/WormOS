@@ -13,7 +13,8 @@ KOBJ=$BUILD/kernel
 key=$({
 	echo "kernel cache 1 $LINUX"
 	echo "env $(build_env_hash)"
-	cat "$WORMOS_ROOT/scripts/build-kernel.sh" "$WORMOS_ROOT/kernel/wormos.config"
+	cat "$WORMOS_ROOT/scripts/build-kernel.sh" "$WORMOS_ROOT/kernel/wormos.config" \
+		"$WORMOS_ROOT"/kernel/patches/*.patch
 } | sha256sum | cut -c1-64)
 if [ "${WBUILD_FORCE:-}" != 1 ] && [ -d "$PKGDIR/linux" ] &&
    [ -f "$BUILD/pkginfo/linux.info" ] && [ -f "$CACHE/linux.key" ] &&
@@ -24,9 +25,12 @@ fi
 mkdir -p "$CACHE"
 rm -f "$CACHE/linux.key"
 
-if [ ! -f "$WORK/linux/Makefile" ]; then
-	unpack "$SOURCES/$LINUX.tar.xz" "$WORK/linux"
-fi
+# A fresh tree, so that the patches in kernel/patches apply exactly once.
+unpack "$SOURCES/$LINUX.tar.xz" "$WORK/linux"
+for p in "$WORMOS_ROOT"/kernel/patches/*.patch; do
+	msg "Applying $(basename "$p")"
+	patch -d "$WORK/linux" -p1 < "$p"
+done
 
 # Keep the build machine's user and host name out of the kernel.
 export KBUILD_BUILD_USER=wormos KBUILD_BUILD_HOST=wormos
@@ -71,7 +75,7 @@ cp "$KOBJ/.config" "$PKGDIR/linux/boot/config-$kver"
 ln -sfn "vmlinuz-$kver" "$PKGDIR/linux/boot/vmlinuz"
 kmake INSTALL_MOD_PATH="$PKGDIR/linux/usr" INSTALL_MOD_STRIP=1 modules_install
 rm -f "$PKGDIR/linux/usr/lib/modules/$kver/build"
-pkginfo linux "${LINUX#linux-}" 5 "The Linux kernel and modules"
+pkginfo linux "${LINUX#linux-}" 6 "The Linux kernel and modules"
 tree_hash "$PKGDIR/linux" > "$CACHE/linux.out"
 echo "$key" > "$CACHE/linux.key"
 

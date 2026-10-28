@@ -51,7 +51,8 @@ for wpkg in "$REPO"/*.wpkg; do
 	linux|linux-headers)
 		files=("$SOURCES/$(basename "$(grep -o 'https://[^ ]*/linux-[0-9.]*\.tar\.xz' \
 			"$WORMOS_ROOT/toolchain/sources")")")
-		[ $name = linux ] && files+=("$WORMOS_ROOT/kernel/wormos.config") ;;
+		[ $name = linux ] && files+=("$WORMOS_ROOT/kernel/wormos.config" \
+			"$WORMOS_ROOT/kernel/patches") ;;
 	*)
 		[ -f "$WORMOS_ROOT/recipes/$name/recipe" ] ||
 			die "no recipe for $name"
@@ -85,7 +86,8 @@ cp "$WORMOS_ROOT"/scripts/{env.sh,build-toolchain.sh,build-kernel.sh} \
 	"$STAGE/wormos-build-tools/scripts/"
 cp "$WORMOS_ROOT"/tools/{wbuild,wpack,wrepo} "$STAGE/wormos-build-tools/tools/"
 cp "$WORMOS_ROOT/toolchain/sources" "$STAGE/wormos-build-tools/toolchain/"
-cp "$WORMOS_ROOT/kernel/wormos.config" "$STAGE/wormos-build-tools/kernel/"
+cp -r "$WORMOS_ROOT/kernel/wormos.config" "$WORMOS_ROOT/kernel/patches" \
+	"$STAGE/wormos-build-tools/kernel/"
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 \
 	-cf "$DEST/wormos-build-tools.tar" -C "$STAGE" wormos-build-tools
 rm -rf "$STAGE"

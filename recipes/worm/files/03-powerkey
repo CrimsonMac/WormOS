@@ -1,0 +1,4 @@
+# The power button (ACPI, as VMs send for "Shut Down", or a keyboard's
+# power key) powers the machine off cleanly.
+type = respawn
+exec = /usr/lib/worm/powerkey

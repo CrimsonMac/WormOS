@@ -544,7 +544,7 @@ def main():
     anon_checks = [(n, c.format(repo=repo), p) for n, c, p in ANON_CHECKS]
     total = (len(CHECKS) + len(KERNEL_CHECKS) + len(DNS_CHECKS) + len(FIREWALL_CHECKS) +
              len(STATUS_CHECKS) + len(panic_checks) + len(SAFE_CHECKS) + 2 +
-             len(HELPER_CHECKS) +
+             len(HELPER_CHECKS) + 3 +
              len(anon_checks) + 2 +
              len(FIREWALL_OPEN_CHECKS) + len(FIREWALL_CLOSE_CHECKS) +
              len(FIREWALL_AFTER_CHECKS) + 3 + len(BLACKHOLE_CHECKS) + len(WHC_CHECKS) +
@@ -686,10 +686,32 @@ def main():
             run_checks(con, SAFE_CHECKS)
             run_checks(con, HELPER_CHECKS)
 
+            # The ACPI power button (QEMU's system_powerdown, as VM
+            # managers send for "Shut Down") powers off cleanly. The QEMU
+            # monitor shares the terminal: Ctrl-A c switches to it and back.
+            out = con.run("ls -l /proc/$(pidof powerkey)/fd | grep -c /dev/input/event")
+            check("power button watched", re.search(r"^[1-9]", out) is not None, out)
+            con.send("\x01c")
+            con.expect("(qemu)", 10)
+            con.send("system_powerdown\n\x01c")
+            out = con.expect("Power down", 120)
+            check("power button powers off cleanly", "powering off" in out, out[-300:])
+            proc.wait(timeout=60)
+            print("powered off cleanly")
+
+            # The same image boots with BIOS firmware (SeaBIOS) too.
+            proc = subprocess.Popen([os.path.join(ROOT, "scripts", "run-qemu.sh"), "--snapshot",
+                                     "--bios"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, env=env)
+            con = Console(proc, log)
+            con.expect("login:", args.timeout)
+            con.send("root\n")
+            con.expect("# ", 60)
+            out = con.run("test -d /sys/firmware/efi && echo efi || echo bios")
+            check("boots with BIOS firmware", out == "bios", out)
             con.send("poweroff\n")
             con.expect("Power down", 120)
             proc.wait(timeout=60)
-            print("powered off cleanly")
         except (TimeoutError, RuntimeError, subprocess.TimeoutExpired) as e:
             print(f"FAIL  {e} (see {LOG})")
             failures += 1

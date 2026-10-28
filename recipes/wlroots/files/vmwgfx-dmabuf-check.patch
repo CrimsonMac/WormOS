@@ -1,0 +1,36 @@
+--- a/types/wlr_linux_dmabuf_v1.c
++++ b/types/wlr_linux_dmabuf_v1.c
+@@ -2,6 +2,7 @@
+ #include <drm_fourcc.h>
+ #include <fcntl.h>
+ #include <stdlib.h>
++#include <string.h>
+ #include <sys/mman.h>
+ #include <unistd.h>
+ #include <wlr/backend.h>
+@@ -205,10 +206,24 @@
+ 	wlr_buffer_drop(&buffer->base);
+ }
+ 
++// VMware's vmwgfx imports DMA-BUFs as its own surface objects, which
++// DRM_IOCTL_GEM_CLOSE cannot close: the check below would reject every
++// buffer of OpenGL clients and disconnect them. The renderer still imports
++// the buffer for real and reports failures.
++static bool device_is_vmwgfx(int fd) {
++	drmVersion *version = drmGetVersion(fd);
++	if (version == NULL) {
++		return false;
++	}
++	bool vmwgfx = version->name != NULL && strcmp(version->name, "vmwgfx") == 0;
++	drmFreeVersion(version);
++	return vmwgfx;
++}
++
+ static bool check_import_dmabuf(struct wlr_dmabuf_attributes *attribs, void *data) {
+ 	struct wlr_linux_dmabuf_v1 *linux_dmabuf = data;
+ 
+-	if (linux_dmabuf->main_device_fd < 0) {
++	if (linux_dmabuf->main_device_fd < 0 || device_is_vmwgfx(linux_dmabuf->main_device_fd)) {
+ 		return true;
+ 	}
+ 

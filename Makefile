@@ -61,6 +61,14 @@ test-wormholes:
 test-torbrowser:
 	tests/torbrowser-test.py
 
+# On a Windows PC, from WSL: VMware Workstation, and QEMU for Windows.
+# VMWARE_ARGS passes options (such as --no-3d or --firmware bios).
+test-vmware:
+	tests/vmware-test.py $(VMWARE_ARGS)
+
+test-qemu-windows:
+	tests/qemu-windows-test.py
+
 # Release images in out/release (VERSION must match os-release).
 release: repo
 	scripts/release.sh $(VERSION)
@@ -78,4 +86,4 @@ clean:
 distclean:
 	rm -rf build out
 
-.PHONY: all toolchain kernel packages repo rootfs image run run-gui test test-wormholes test-torbrowser release sources publish-repo clean distclean
+.PHONY: all toolchain kernel packages repo rootfs image run run-gui test test-wormholes test-torbrowser test-vmware test-qemu-windows release sources publish-repo clean distclean

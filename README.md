@@ -2,7 +2,7 @@
 
 A lightweight, security-focused Linux operating system built around instant, tamper-resistant snapshots.
 
-> **Status:** 1.2: a read-only system with snapshots, packages, a
+> **Status:** 1.3: a read-only system with snapshots, packages, a
 > firewall, sandboxes, Tor and Tor Browser, and a light Wayland desktop
 > with its own panel, login screen, snapshot timeline and sound, running
 > in a virtual machine (QEMU or VMware).
@@ -36,17 +36,16 @@ A lightweight, security-focused Linux operating system built around instant, tam
 
 ## Trying it
 
-Release images run in a virtual machine with UEFI firmware. Download them
-from the release page and check them against `SHA256SUMS`.
+Release images run in a virtual machine, with UEFI or BIOS firmware
+(Secure Boot off). Download them from the release page and check them
+against `SHA256SUMS`.
 
-- **QEMU / virt-manager:** `wormos-1.2-x86_64.qcow2`. In virt-manager,
-  import an existing disk image, choose a generic recent Linux, and set the
-  firmware to UEFI (Customize configuration before install, Overview,
-  Firmware) with Secure Boot off. From the command line:
+- **QEMU / virt-manager:** `wormos-1.3-x86_64.qcow2`. In virt-manager,
+  import an existing disk image and choose a generic recent Linux. From
+  the command line:
   ```
   qemu-system-x86_64 -machine q35 -accel kvm -cpu host -m 2048 -smp 2 \
-      -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
-      -drive file=wormos-1.2-x86_64.qcow2,if=virtio \
+      -drive file=wormos-1.3-x86_64.qcow2,if=virtio \
       -nic user,model=virtio-net-pci -device virtio-vga \
       -device virtio-keyboard-pci -device virtio-tablet-pci \
       -device virtio-serial-pci \
@@ -55,7 +54,8 @@ from the release page and check them against `SHA256SUMS`.
   ```
   The last three lines share the clipboard with QEMU's window (when QEMU
   is built with clipboard support) and with VNC viewers. virt-manager's
-  SPICE display shares it without them.
+  SPICE display shares it without them. For UEFI firmware, add
+  `-drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd`.
 - **QEMU on Windows:** install QEMU from https://qemu.weilnetz.de/w64/
   (it includes the UEFI firmware). For speed, turn on the Windows feature
   "Windows Hypervisor Platform" (Settings, Optional features, More Windows
@@ -64,21 +64,23 @@ from the release page and check them against `SHA256SUMS`.
   ```
   & "C:\Program Files\qemu\qemu-system-x86_64.exe" -machine q35 `
       -accel whpx,kernel-irqchip=off -m 2048 -smp 2 `
-      -drive "if=pflash,format=raw,readonly=on,file=C:\Program Files\qemu\share\edk2-x86_64-code.fd" `
-      -drive file=wormos-1.2-x86_64.qcow2,if=virtio `
+      -drive file=wormos-1.3-x86_64.qcow2,if=virtio `
       -nic user,model=virtio-net-pci -device virtio-vga -display sdl `
       -device virtio-keyboard-pci -device virtio-tablet-pci
   ```
   If QEMU says WHPX is not available, use `-accel tcg` instead: it works
   without the Windows feature, but much more slowly. Ctrl+Alt+G releases
   the mouse.
-- **VMware Workstation / Player:** unzip `wormos-1.2-vmware.zip` and open
-  `WormOS.vmx` (UEFI, NVMe disk, 2 GB of memory, 3D acceleration off).
-  The clipboard is not shared with VMware yet.
+- **VMware Workstation / Player:** unzip `wormos-1.3-vmware.zip` and open
+  `WormOS.vmx` (UEFI, NVMe disk, 2 GB of memory, 3D acceleration on: the
+  desktop draws with the GPU, or in software where VMware has no 3D). The
+  screen follows the window size, and text copied in WormOS lands on the
+  host's clipboard; the host's text comes over when the pointer enters the
+  VM's window.
 
-On the first start, WormOS asks for a user name, a password for it and a
-password for root, on the first console. Then log in with that user: the
-desktop starts.
+On the first start, WormOS asks for your name, a user name, a password for
+it and a password for root. Then the desktop starts; later, log in on the
+login screen.
 
 ## The desktop
 
@@ -389,7 +391,7 @@ A Debian 13 (or similar) host with roughly 35 GB of free disk space:
 ```
 sudo apt install build-essential bison flex gawk texinfo m4 help2man \
     libncurses-dev libssl-dev libelf-dev libgmp-dev libmpc-dev rsync curl xz-utils bzip2 \
-    btrfs-progs dosfstools mtools fakeroot grub-efi-amd64-bin \
+    btrfs-progs dosfstools mtools fakeroot grub-efi-amd64-bin grub-pc-bin bc \
     qemu-system-x86 qemu-utils ovmf zip unzip \
     ninja-build gperf pipx python3-mako python3-yaml python3-ply python3-packaging python3-cairo \
     cmake nasm sassc gettext \
@@ -421,7 +423,7 @@ the QEMU monitor like a user would. It answers the first-boot setup, logs
 in (which starts the desktop), types into the terminal, opens another with
 Super+Enter, checks a screendump of the real screen, and compares memory
 use and system size with their budgets. `tests/desktop-test.py --release
-out/release/wormos-1.2-x86_64.qcow2` runs the same checks on a release
+out/release/wormos-1.3-x86_64.qcow2` runs the same checks on a release
 image, where root can only log in once the first-boot setup is done.
 
 `make test` boots a throwaway copy of the image, checks the running system
@@ -433,8 +435,18 @@ also opens and closes a firewall port and checks it from the host through a
 QEMU port forward (`QEMU_HOSTFWD`), tries to escape from a blackhole (as
 root and as a normal user), switches anonymous mode on and off (checking
 that nothing reaches the host directly), runs `worm panic` and boots safe
-mode from the menu. `make test-wormholes` also checks that Tor connects and
-traffic really goes through it.
+mode from the menu. It ends with the ACPI power button (a clean power-off)
+and a second boot with BIOS firmware. `make test-wormholes` also checks
+that Tor connects and traffic really goes through it.
+
+On a Windows PC, from WSL: `make test-vmware` builds a VMware Workstation VM
+from the image and checks the VMware tools, drivers, clock, network, the
+first-boot setup, the desktop, the pointer, the screen size, sound and the
+clipboard (`VMWARE_ARGS="--no-3d"` without 3D acceleration, `--firmware bios`,
+`--disk sata|pvscsi|lsilogic`, `--nic e1000|e1000e` for other hardware).
+`make test-qemu-windows` boots the image in QEMU for Windows. Both expect
+VMware and QEMU under `D:\` and use `D:\wormos-tools` (see
+`docs/internals.md`, Tests).
 
 Building the disk image uses `sudo` for one step (applying file ownership
 before `mkfs.btrfs`); everything else runs as a normal user.
@@ -452,7 +464,7 @@ into the system. The root filesystem is assembled by installing the base
 packages from that repository with `wh --root`.
 
 The development image has an empty root password (the tests log in with
-it). `make release VERSION=1.2` builds the release images instead
+it). `make release VERSION=1.3` builds the release images instead
 (`scripts/release.sh`): root stays locked until the first-boot setup, the
 disk is 20 GiB, and the output is a qcow2 image and a VMware bundle in
 `out/release`. `make publish-repo` writes the source archives
