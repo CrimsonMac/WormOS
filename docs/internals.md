@@ -867,7 +867,10 @@ in the README.
   window with `tests/vmshot.ps1` (PrintWindow, PNG), which it expects at
   `D:\wormos-tools\vmshot.ps1` (`WORMOS_VMSHOT`). vmrun's
   guest operations (and `vmrun stop soft`) need the tools' vix plugin,
-  which is left out, so the test shuts down from inside. Options: `--no-3d`,
+  which is left out, so the test shuts down from inside. Traffic on the
+  network serial port while the input tool types loses keys in the guest
+  (the kernel still gets them all), so the test waits until typing is done
+  before it uses the console again. Options: `--no-3d`,
   `--firmware bios`, `--disk sata|pvscsi|lsilogic`, `--nic e1000|e1000e`.
 - `make test-qemu-windows` (`tests/qemu-windows-test.py`) runs the image in
   QEMU for Windows (`D:\qemu`), with the Windows Hypervisor Platform when

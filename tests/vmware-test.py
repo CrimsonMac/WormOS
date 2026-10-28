@@ -283,21 +283,6 @@ def main():
             out = con.run(cmd)
             check(name, re.search(pattern, out, re.MULTILINE) is not None, out)
 
-    def wait_idle(con, timeout=120):
-        """Wait until the guest's CPUs are mostly idle. The first session
-        builds font caches and draws a large screen in software; keys typed
-        while the compositor stalls longer than the repeat delay repeat."""
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            out = con.run("head -1 /proc/stat; sleep 2; head -1 /proc/stat")
-            rows = [list(map(int, line.split()[1:])) for line in out.splitlines()
-                    if line.startswith("cpu ")]
-            if len(rows) == 2:
-                delta = [b - a for a, b in zip(*rows)]
-                if sum(delta) and delta[3] / sum(delta) > 0.9:
-                    return
-            time.sleep(1)
-
     def wait_for(con, cmd, pattern, timeout):
         deadline = time.time() + timeout
         while True:
@@ -324,6 +309,11 @@ def main():
 
             def input(cmd):
                 con.run(f"printf '%s\\n' '{cmd}' > /tmp/input")
+                # Traffic on VMware's network serial port while keys are
+                # typed loses keys in the guest: wait until the input tool
+                # is done (about 40 ms a key, more with Shift).
+                if cmd.startswith("type "):
+                    time.sleep(0.6 + 0.07 * len(cmd))
 
             def first_boot():
                 input("key ret")                     # Get started
@@ -371,9 +361,13 @@ def main():
             guest_time = int(con.run("date +%s") or 0)
             check("clock matches the host", abs(guest_time - time.time()) < 10,
                   f"guest {guest_time}, host {time.time():.0f}")
-            out = con.run("hwclock -r -u | cut -c1-24; date -u '+%a %b %e %H:%M'")
-            check("hardware clock in UTC", out.count(time.strftime("%H:", time.gmtime())) == 2,
-                  out)
+            out = con.run("hwclock -r -u | cut -c1-24")
+            try:
+                rtc = time.mktime(time.strptime(out.strip(), "%a %b %d %H:%M:%S %Y"))
+                rtc_ok = abs(rtc - time.mktime(time.gmtime())) < 120
+            except ValueError:
+                rtc_ok = False
+            check("hardware clock in UTC", rtc_ok, f"{out} (UTC now {time.asctime(time.gmtime())})")
             check("VMware sees the tools", vmrun("checkToolsState", win_vmx) == "running",
                   vmrun("checkToolsState", win_vmx))
             deadline = time.time() + 120
@@ -424,7 +418,6 @@ def main():
                   "WLR_NO_HARDWARE_CURSORS=1" in con.run(
                       "tr '\\0' '\\n' < /proc/$(pidof labwc)/environ | grep CURSORS"))
 
-            wait_idle(con)
             input("type echo $(id -un) typed > /tmp/typed\\n")
             out = wait_for(con, "cat /tmp/typed", r"typed", 60)
             if out != f"{USER} typed":

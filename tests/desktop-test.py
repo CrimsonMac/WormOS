@@ -128,6 +128,9 @@ SHELL_CHECKS = [
     ("prompt shows the newest snapshot", f"su {USER} -c 'sh /tmp/zsh-check' 2>&1",
      r"^state=.*\[snap \d+\]"),
     ("large shared history", f"su {USER} -c 'sh /tmp/zsh-check' 2>&1", r"^history=50000$"),
+    ("zsh knows the terminal (moves the cursor over suggestions)",
+     "TERM=foot script -qfc \"zsh -fic 'zmodload zsh/terminfo; print cub1=\\${+terminfo[cub1]}'\" /dev/null",
+     r"cub1=1"),
 ]
 
 CLIPBOARD_CHECKS = [

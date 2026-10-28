@@ -8,6 +8,7 @@
  *   echo 'move 0.5 0.5' > FIFO moves to a position (fractions of the screen)
  *   echo 'click left' > FIFO   clicks a button (left, right, middle)
  *   echo 'hold leftshift' / 'release leftshift' > FIFO
+ *   echo 'delay 120' > FIFO     milliseconds between typed characters
  */
 
 #include <errno.h>
@@ -23,6 +24,7 @@
 #define ABS_MAXV 32767
 
 static int fd;
+static int delay_ms = 15;
 
 static void emit(int type, int code, int value)
 {
@@ -110,9 +112,7 @@ static void type_text(const char *s)
 			emit(EV_KEY, KEY_LEFTSHIFT, 0);
 			sync_events();
 		}
-		/* About 25 keys a second, a fast typist: faster input garbles
-		 * the first line of a new zsh (its suggestions start up). */
-		usleep(15000);
+		usleep(delay_ms * 1000);
 	}
 }
 
@@ -169,6 +169,8 @@ static void command(char *line)
 			emit(EV_ABS, ABS_Y, (int)(y * ABS_MAXV));
 			sync_events();
 		}
+	} else if (!strcmp(line, "delay")) {
+		delay_ms = atoi(arg);
 	} else if (!strcmp(line, "click")) {
 		emit(EV_KEY, button_code(arg), 1);
 		sync_events();
