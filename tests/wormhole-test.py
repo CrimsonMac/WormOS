@@ -48,8 +48,8 @@ CHECKS = [
     ("found by search", "wh search btop", r"^btop .*\[debian\]$"),
     # Without --from: the existing Debian wormhole has it, so Kali is not
     # set up (apt-cache's long answer must not count as a failure).
-    ("source found in an existing wormhole", "wh -y install tree 2>&1 | tail -1; wh list",
-     r"^tree\s+\S+\s+\[debian\]$"),
+    ("source found in an existing wormhole", "wh -y install figlet 2>&1 | tail -1; wh list",
+     r"^figlet\s+\S+\s+\[debian\]$"),
     ("no second wormhole for it", "ls /var/lib/wormholes | grep -c kali", r"^0$"),
     ("desktop entry exported", "grep -E '^(Exec|X-WormOS-Wormhole)=' "
      "/usr/local/share/applications/btop.desktop", r"^Exec=btop\nX-WormOS-Wormhole=true$"),
