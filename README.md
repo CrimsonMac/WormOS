@@ -439,6 +439,9 @@ make test       # boot the image and run automated checks
 `make test-wormholes` checks the Debian and Kali wormholes against the real
 archives; it needs internet access and takes several minutes.
 
+`make test-upgrade FROM=wormos-1.3-x86_64.qcow2` sets up an older release
+image and upgrades it to the packages just built.
+
 `make test` also runs `tests/desktop-test.py`: the VM gets a virtio GPU,
 keyboard and tablet, and the test types on the graphical console through
 the QEMU monitor like a user would. It answers the first-boot setup, logs

@@ -1,0 +1,6 @@
+# Keep the running system's users and groups when a package (base-files)
+# brings new copies of the account files.
+path = etc/passwd
+path = etc/group
+path = etc/shadow
+exec = /usr/lib/wh/keep-accounts /

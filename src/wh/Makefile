@@ -14,19 +14,24 @@ BINDIR  ?= $(PREFIX)/bin
 
 SRCS = wh.c repo.c db.c pkg.c foreign.c hooks.c util.c sig.c ../snap/sha256.c
 
-all: wh whc
+all: wh whc keep-accounts
 
 wh: $(SRCS) wh.h sig.h
 	$(CC) $(CFLAGS) $(MONO_CFLAGS) $(LDFLAGS) -o $@ $(SRCS) $(MONO_LIBS)
 
+keep-accounts: keep-accounts.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ keep-accounts.c
+
 whc: whc.c ../common/ns.c ../common/ns.h
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ whc.c ../common/ns.c
 
-install: wh whc
+install: wh whc keep-accounts
 	install -Dm755 wh $(DESTDIR)$(BINDIR)/wh
 	install -Dm755 whc $(DESTDIR)$(BINDIR)/whc
+	install -Dm755 keep-accounts $(DESTDIR)$(PREFIX)/lib/wh/keep-accounts
+	install -Dm644 keep-accounts.hook $(DESTDIR)$(PREFIX)/share/wh/hooks/keep-accounts.hook
 
 clean:
-	rm -f wh whc
+	rm -f wh whc keep-accounts
 
 .PHONY: all install clean

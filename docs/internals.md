@@ -158,7 +158,19 @@ in the README.
   so the same hook works for a staged system and for an image assembled on
   the build machine (without `LD_PRELOAD`, which the root's loader cannot
   satisfy; build-rootfs gives the files their owner afterwards). Hooks:
-  `gsettings-schemas` (glib) and `mime-database` (shared-mime-info).
+  `gsettings-schemas` (glib), `mime-database` (shared-mime-info) and
+  `keep-accounts` (wh itself, below).
+- base-files ships `/etc/passwd`, `/etc/group` and `/etc/shadow` with the
+  system accounts only, so upgrading it used to replace a running system's
+  accounts (users, root's password, accounts added by packages and the
+  first-boot setup). The `keep-accounts` hook (`src/wh/keep-accounts.c`,
+  `/usr/lib/wh/keep-accounts`, paths `etc/passwd`, `etc/group`,
+  `etc/shadow`) writes the running system's version of each file into the
+  staged root, followed by the staged entries whose names the running
+  system lacks. It does nothing unless the running system is WormOS (on
+  the build machine `/etc/os-release` says otherwise). Since 1.3's wh
+  already runs hooks, the wh package of a newer release brings the hook
+  along in the same upgrade.
   Caches that belong to one package's own folder, such as the Adwaita icon
   cache, are built when the package is built instead.
 - A path owned by another package is a conflict, with one exception: a
@@ -167,10 +179,11 @@ in the README.
   drops the path from busybox's file list (`db_disown`). The busybox
   recipe leaves out the applets other packages replace (`REPLACED`: xz,
   bzip2, less, tree, lsof, libarchive's tar/cpio/unzip, vim's vi and xxd,
-  binutils' strings) and depends on those packages, so an upgrade from a
-  system without them installs them first: they take over the old links,
-  and the new busybox's removal of the files it no longer ships cannot
-  touch them.
+  binutils' strings); `wormos-desktop` depends on those packages. wh
+  plans an upgrade in name order, so on a system that had the links
+  (1.3), busybox is upgraded first and drops them, then the replacements
+  install; a newer wh would also take the links over if the order were
+  reversed.
 
 ## Wormholes
 
@@ -870,6 +883,10 @@ in the README.
   the image once more with BIOS firmware (`run-qemu.sh --bios`). It serves
   `out/repo` over HTTP to the VM at 10.0.2.2. A hang means a check is
   waiting for its 600 s timeout.
+- `make test-upgrade FROM=IMAGE` (`tests/upgrade-test.py`) boots an older
+  release image (qcow2, writes discarded), types its first-boot setup,
+  runs `wh upgrade` against `out/repo` and checks the version, accounts,
+  services and the busybox applets that moved to other packages.
 - `make test-wormholes` (`tests/wormhole-test.py`) needs internet and takes
   several minutes: it sets up the Debian and Kali wormholes from the real
   archives.

@@ -596,6 +596,10 @@ def main():
                         con.expect("wormos login:", 60)
                 check("first-boot setup finished", True)
                 run_checks(con, DEVICE_CHECKS)
+                # Its snapshot (a manifest of the whole system) and the
+                # session may still be under way.
+                wait_for(con, "snap list", r"First boot: created", 300)
+                wait_for(con, "ls -d /run/user/1000", r"^/run/user/1000$", 120)
             else:
                 con.send("root\n")
                 con.expect("# ", 60)
