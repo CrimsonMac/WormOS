@@ -1,7 +1,7 @@
 # WormOS build entry points. See README.md for details.
 
 # In build order: later packages build against earlier ones.
-PACKAGES := base-files busybox worminit wormrd snap \
+PACKAGES := base-files worminit wormrd snap \
 	zlib zstd openssl ca-certificates curl monocypher \
 	libgpg-error npth libassuan libksba libgcrypt gnupg wormhole-keyrings \
 	libmnl libnftnl nftables libxcrypt wh worm bh expat unbound libevent tor \
@@ -15,9 +15,12 @@ PACKAGES := base-files busybox worminit wormrd snap \
 	libjpeg-turbo libtiff shared-mime-info gdk-pixbuf libepoxy graphene gtk4 \
 	gtk4-layer-shell dconf hicolor-icon-theme adwaita-icon-theme wormos-gtk-theme \
 	alsa-lib libsndfile pipewire lua wireplumber worm-shell wormos-snapshots \
-	xorgproto xcb-proto libxau xtrans libxcb libx11 libxext libxrender libxrandr \
+	xorgproto xcb-proto libxau xtrans libxcb libx11 libxext libxfixes libxrender libxrandr \
 	atk gtk3 tor-browser-runtime tor-browser \
 	ncurses zsh-autosuggestions zsh-syntax-highlighting zsh \
+	xz bzip2 readline bash less nano vim htop tmux file tree ncdu jq lsof strace \
+	wireguard-tools sqlite libarchive git openssh rsync python nmap binutils busybox \
+	tor-browser-bundle \
 	wormos-desktop \
 	wormos-login
 

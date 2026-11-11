@@ -161,6 +161,16 @@ in the README.
   `gsettings-schemas` (glib) and `mime-database` (shared-mime-info).
   Caches that belong to one package's own folder, such as the Adwaita icon
   cache, are built when the package is built instead.
+- A path owned by another package is a conflict, with one exception: a
+  symlink to busybox owned by the `busybox` package (an applet link) is
+  taken over by a package that installs the full program there, and wh
+  drops the path from busybox's file list (`db_disown`). The busybox
+  recipe leaves out the applets other packages replace (`REPLACED`: xz,
+  bzip2, less, tree, lsof, libarchive's tar/cpio/unzip, vim's vi and xxd,
+  binutils' strings) and depends on those packages, so an upgrade from a
+  system without them installs them first: they take over the old links,
+  and the new busybox's removal of the files it no longer ships cannot
+  touch them.
 
 ## Wormholes
 
@@ -272,11 +282,31 @@ in the README.
 
 ## Tor Browser
 
-- `tor-browser` (`src/torbrowser/`, GTK 4, `org.wormos.TorBrowser`) and
-  `tor-browser-runtime` are in the image (the desktop depends on both);
-  the browser is not. Tor Browser's `libxul.so` needs GTK 3, ATK and
-  the X11 client libraries (libX11, libX11-xcb, libxcb, libxcb-shm,
-  libXext, libXrandr), even on Wayland.
+- `tor-browser` (`src/torbrowser/`, GTK 4, `org.wormos.TorBrowser`),
+  `tor-browser-runtime` and `tor-browser-bundle` are in the image (the
+  desktop depends on all three). Tor Browser's `libxul.so` needs GTK 3,
+  ATK and the X11 client libraries (libX11, libX11-xcb, libxcb,
+  libxcb-shm, libXext, libXfixes (since 16.0), libXrandr), even on
+  Wayland.
+- `tor-browser-bundle` is the release archive from dist.torproject.org
+  (checksum pinned in the recipe, signature checked when the version was
+  pinned), unpacked untouched to `/opt/tor-browser` with a `version`
+  file: outside `/usr`, so wpack does not strip it and wbuild does not
+  copy its libraries into the sysroot. When the user's copy is missing,
+  the launcher copies the bundle into `~/.local/share/tor-browser/tor-browser`
+  (its own recursive copy with `copy_file_range`, which shares extents on
+  btrfs) and writes the version file; the browser updates that copy
+  itself. A newer bundle in a later image does not replace an existing
+  copy (it would lose the profile; the copy keeps itself current).
+- The browser never runs as root. Started by root, the launcher takes the
+  owner of its terminal (`ttyname(0)`; `su -` keeps the user's pty), copies
+  the environment of one of that user's processes that has
+  `WAYLAND_DISPLAY` (from `/proc/PID/environ`), changes to the user
+  (`initgroups`, `setgid`, `setuid`, and checks that `setuid(0)` fails)
+  and starts itself again. Without such a terminal or session it explains
+  and exits 1. A user without a Wayland display (no `WAYLAND_DISPLAY` and
+  no `$XDG_RUNTIME_DIR/wayland-0`) gets a message instead of GTK's
+  "Failed to open display".
 - `tor-browser-runtime` depends on `gtk3` (3.24, Wayland backend only; no
   X11 backend, so no cairo-xlib or accessibility bridge; Adwaita built in,
   dark, set in `/etc/gtk-3.0/settings.ini`), `atk` (at-spi2-core built with
@@ -285,12 +315,15 @@ in the README.
   `xtrans` only for building). libx11 leaves the Compose tables to
   `xcompose`. Package names are lowercase (wpack's rule).
 - libxul is linked with immediate binding against fifteen `gdk_x11_*`
-  functions and `cairo_xlib_surface_create`, which a Wayland-only GTK 3
-  lacks. `tor-browser-runtime` ships `/usr/lib/tor-browser/libx11-compat.so`,
+  functions (15.x also `cairo_xlib_surface_create`), which a Wayland-only
+  GTK 3 lacks. `tor-browser-runtime` ships `/usr/lib/tor-browser/libx11-compat.so`,
   stand-ins that return zero, and the launcher preloads it. Firefox calls
   them only on an X11 display. A new Tor Browser release that needs more of
   them fails to start until the list grows (compare libxul's undefined
-  symbols with the libraries, as when the list was made).
+  symbols with the libraries, as when the list was made: `nm -D
+  --undefined-only libxul.so` against `nm -D --defined-only` of the
+  image's and the bundle's libraries; also compare `readelf -d` NEEDED,
+  which is how 16.0's new libXfixes was found).
 - First run on a system without the runtime (it was planned as an
   optional package): without the stand-ins the window offers to install the
   runtime through `/usr/lib/worm/install` (`src/worm/install.c`, setuid
@@ -300,7 +333,8 @@ in the README.
   `wh update`, then `wh --yes --from core install NAME`, which restarts the
   system. Exit status 3 means a wrong password.
 - Download (`--download` does the same without a window): the version
-  from `aus1.torproject.org/.../downloads.json`; the archive and signature
+  from `aus1.torproject.org/.../download-linux-x86_64.json` (the older
+  `downloads.json` is deprecated); the archive and signature
   URLs are built from it under `dist.torproject.org`, never taken from the
   list. A version older than `MIN_VERSION` in the source or than
   `~/.local/share/tor-browser/version` is refused. curl is limited to

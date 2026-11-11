@@ -335,6 +335,58 @@ HELPER_CHECKS = [
     ("Tor Browser launcher refuses a bad signature",
      "tor-browser --check /etc/os-release /etc/hostname; echo rc=$?",
      r"does not match(.|\n)*^rc=1$"),
+    ("Tor Browser comes with the image", "cat /opt/tor-browser/version", r"^\d+\.\d+"),
+    ("Tor Browser finds all its libraries",
+     "LD_LIBRARY_PATH=/opt/tor-browser/Browser ldd /opt/tor-browser/Browser/libxul.so "
+     "| grep -c 'not found'", r"^0$"),
+    ("Tor Browser does not run as root",
+     "tor-browser </dev/null; echo rc=$?", r"does not run as root(.|\n)*^rc=1$"),
+    ("Tor Browser needs a desktop",
+     "su tester -c 'env -u WAYLAND_DISPLAY XDG_RUNTIME_DIR=/nonexistent tor-browser'; echo rc=$?",
+     r"no desktop session(.|\n)*^rc=1$"),
+]
+
+# The command-line tools that come with the image.
+TOOL_CHECKS = [
+    ("worm help lists the commands", "worm help | grep -c -e 'snap now' -e 'wh install' "
+     "-e 'bh open' -e 'worm fw' -e tor-browser", r"^[5-9]$"),
+    ("worm help works for users", "su tester -c 'worm help snap' | head -1",
+     r"^usage: snap"),
+    ("bash", "bash -c 'echo ${BASH_VERSINFO[0]}'", r"^5$"),
+    ("less", "less --version | head -1", r"^less \d+"),
+    ("nano", "nano --version | head -1", r"GNU nano"),
+    ("vim and vi", "vim --version | head -1; readlink /usr/bin/vi", r"VIM - Vi IMproved(.|\n)*^vim$"),
+    ("htop", "htop --version", r"^htop 3"),
+    ("tmux", "tmux -V", r"^tmux 3"),
+    ("git", "cd /tmp && git init -q t && cd t && git -c user.name=a -c user.email=a@b "
+     "commit -q --allow-empty -m x && git log --oneline | wc -l", r"^1$"),
+    ("ssh", "ssh -V 2>&1", r"^OpenSSH_10"),
+    ("rsync", "rsync --version | head -1", r"^rsync\s+version 3"),
+    ("tar is bsdtar with xz, zstd and zip",
+     "cd /tmp && echo hi > f && tar -cJf f.txz f && tar -a -cf f.zip f && "
+     "tar --zstd -cf f.tzst f && rm f && unzip -o -q f.zip && cat f && tar --version | head -1",
+     r"^hi\nbsdtar 3"),
+    ("xz and bzip2", "echo ok | xz | xz -d; echo ok | bzip2 | bzcat", r"^ok\nok$"),
+    ("file", "file -b /usr/bin/bash", r"ELF 64-bit LSB pie executable"),
+    ("tree", "tree -d /etc/zsh | tail -1", r"directories"),
+    ("ncdu", "ncdu --version", r"^ncdu 1"),
+    ("jq", "echo '{\"a\":[1,2]}' | jq -c '.a | map(. * 2)'", r"^\[2,4\]$"),
+    ("lsof", "lsof -p 1 | head -1", r"^COMMAND"),
+    ("strace", "strace -f -e trace=openat -o /dev/null true && echo ok", r"^ok$"),
+    ("wg", "wg --version", r"^wireguard-tools"),
+    ("sqlite3", "sqlite3 -list :memory: 'select 6*7'", r"^42$"),
+    ("python with its modules", "python3 -c 'import ssl, sqlite3, ctypes, lzma, bz2, zlib, "
+     "readline, curses, json, venv; print(ssl.OPENSSL_VERSION.split()[0])'", r"^OpenSSL$"),
+    ("python makes a venv with pip", "python3 -m venv /tmp/venv && /tmp/venv/bin/pip --version",
+     r"^pip \d+"),
+    ("nmap", "nmap --version | head -1", r"^Nmap version 7"),
+    ("ncat", "ncat --version 2>&1", r"Ncat: Version 7"),
+    ("tcpdump", "tcpdump --version 2>&1 | head -1", r"^tcpdump version"),
+    ("binutils", "readelf -h /usr/bin/bash | grep -c Machine; strings /usr/bin/bash | grep -c GNU",
+     r"^1\n[1-9]"),
+    ("busybox links taken over cleanly", "readlink /usr/bin/tar; test -L /usr/bin/less || "
+     "echo real; grep -c -e ' usr/bin/less$' -e ' usr/bin/tar$' /usr/lib/wh/db/busybox/files",
+     r"^bsdtar\nreal\n0$"),
 ]
 
 # Snapshot, change the system, and look at the change.
@@ -401,9 +453,9 @@ WORM_CHECKS = [
     ("installed packages recorded", "wh list", r"^wh\s+0\.1\.0-\d+"),
     ("wh update", "wh --repo {repo} update", r"^Package index updated: \d+ packages$"),
     # Only the core repository: Debian's and Kali's lists need the internet.
-    ("wh search", "wh search --from core tcp", r"^tcpdump 4\.99\.7-1$"),
+    ("wh search", "wh search --from core tcpdump", r"^tcpdump 4\.99\.7-1"),
     ("worm unlock", "worm unlock", r"^The system is unlocked"),
-    ("wh refuses while unlocked", "wh --repo {repo} -y install tcpdump 2>&1",
+    ("wh refuses while unlocked", "wh --repo {repo} -y remove tcpdump 2>&1",
      r"the system is unlocked"),
     ("lock refused while a file is open",
      "exec 3>/etc/held; worm lock 2>&1", r"^Cannot lock yet(.|\n)*/etc/held"),
@@ -412,10 +464,16 @@ WORM_CHECKS = [
     ("manual change kept", "ls /etc/held && touch /etc/x 2>&1", r"Read-only file system"),
 ]
 
+# tcpdump comes with the image: the package tests remove it first.
+FIRST_REMOVE_CHECKS = [
+    ("preinstalled tcpdump removed", "ls /usr/bin/tcpdump 2>&1", r"No such file"),
+    ("remove in history", "wh history", r"\sremove\s+\d+\s+tcpdump$"),
+]
+
 AFTER_INSTALL_CHECKS = [
     ("tcpdump runs", "tcpdump --version 2>&1", r"^tcpdump version 4\.99\.7"),
-    ("install in history", "wh history", r"\sinstall\s+\d+\s+libpcap tcpdump$"),
-    ("install snapshot", "snap list", r"auto\s+wh install libpcap tcpdump$"),
+    ("install in history", "wh history", r"\sinstall\s+\d+\s+tcpdump$"),
+    ("install snapshot", "snap list", r"auto\s+wh install tcpdump$"),
     ("still read-only after install", "touch /usr/x 2>&1", r"Read-only file system"),
 ]
 
@@ -544,13 +602,13 @@ def main():
     anon_checks = [(n, c.format(repo=repo), p) for n, c, p in ANON_CHECKS]
     total = (len(CHECKS) + len(KERNEL_CHECKS) + len(DNS_CHECKS) + len(FIREWALL_CHECKS) +
              len(STATUS_CHECKS) + len(panic_checks) + len(SAFE_CHECKS) + 2 +
-             len(HELPER_CHECKS) + 3 +
+             len(HELPER_CHECKS) + len(TOOL_CHECKS) + 3 +
              len(anon_checks) + 2 +
              len(FIREWALL_OPEN_CHECKS) + len(FIREWALL_CLOSE_CHECKS) +
              len(FIREWALL_AFTER_CHECKS) + 3 + len(BLACKHOLE_CHECKS) + len(WHC_CHECKS) +
              len(SNAPSHOT_CHECKS) +
              len(BROWSE_CHECKS) + len(REWIND_CHECKS) + len(HOME_CHECKS) + len(MENU_CHECKS) +
-             len(worm_checks) + len(AFTER_INSTALL_CHECKS) +
+             len(worm_checks) + len(FIRST_REMOVE_CHECKS) + 1 + len(AFTER_INSTALL_CHECKS) +
              len(AFTER_TRIAL_CHECKS) + len(AFTER_TRIAL_END_CHECKS) +
              len(AFTER_REMOVE_CHECKS) + len(AFTER_UNDO_CHECKS) + 9)
     start = time.time()
@@ -650,6 +708,9 @@ def main():
             run_checks(con, MENU_CHECKS)
 
             run_checks(con, worm_checks)
+            restart_with(con, "preinstalled package removed", "wh -y remove tcpdump",
+                         "applied the package change")
+            run_checks(con, FIRST_REMOVE_CHECKS)
             restart_with(con, "install applied", f"wh --repo {repo} -y install tcpdump",
                          "applied the package change")
             run_checks(con, AFTER_INSTALL_CHECKS)
@@ -685,6 +746,7 @@ def main():
             con.expect("# ", 60)
             run_checks(con, SAFE_CHECKS)
             run_checks(con, HELPER_CHECKS)
+            run_checks(con, TOOL_CHECKS)
 
             # The ACPI power button (QEMU's system_powerdown, as VM
             # managers send for "Shut Down") powers off cleanly. The QEMU

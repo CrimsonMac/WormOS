@@ -1,0 +1,10 @@
+## WormOS defaults for nano. Personal settings go in ~/.config/nano/nanorc.
+set linenumbers
+set indicator
+set mouse
+set autoindent
+set tabsize 4
+set zap
+set minibar
+include "/usr/share/nano/*.nanorc"
+include "/usr/share/nano/extra/*.nanorc"

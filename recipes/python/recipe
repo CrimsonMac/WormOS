@@ -1,0 +1,37 @@
+name=python
+version=3.13.18
+description="The Python programming language (python3, pip through venv)"
+depends=(glibc zlib bzip2 xz openssl libffi expat sqlite readline ncurses)
+# Signed by Thomas Wouters (7169605F62C751356D054A26A821E680E5FA6305).
+source=(https://www.python.org/ftp/python/$version/Python-$version.tar.xz)
+sha256=(abb0102e6d4ae027509bcb82327d9dd85515b44a3ba8ad538cfc5e9847029f68)
+
+build() {
+	# A cross build runs the build machine's Python of the same minor
+	# version for the generated files and the bytecode.
+	export ac_cv_file__dev_ptmx=yes ac_cv_file__dev_ptc=no
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--enable-shared --with-build-python="$(command -v python3.13)" \
+		--without-ensurepip --with-system-expat --disable-test-modules \
+		--with-readline=readline --enable-ipv6 --with-computed-gotos \
+		--without-static-libpython
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	local lib=$pkgdir/usr/lib/python3.13
+	# The test suite, IDLE and Tk (no Tk here), and the files for building
+	# C extensions (no compiler on the system).
+	rm -rf "$lib/test" "$lib/idlelib" "$lib/tkinter" "$lib/turtledemo" \
+		"$lib"/config-3.13-* "$pkgdir/usr/bin/idle3"* "$pkgdir/usr/share/man"
+	find "$pkgdir" -name '__pycache__' -path '*/test*' -prune -exec rm -rf {} +
+	# The build configuration names the build machine's compiler wrappers
+	# and directories; on the target they mean nothing.
+	sed -i -e "s|$WORMOS_ROOT/build/host/cc/||g" -e "s|$WORMOS_ROOT[^ '\"]*|/usr/src/python|g" \
+		-e "s|$HOME/[^ '\"]*|/usr/src/python|g" \
+		"$lib"/_sysconfigdata_*.py "$lib"/_sysconfig_vars_*.json 2>/dev/null || true
+	rm -rf "$lib"/__pycache__/_sysconfigdata_*
+	ln -s python3 "$pkgdir/usr/bin/python"
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/python/LICENSE"
+}

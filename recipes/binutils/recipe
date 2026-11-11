@@ -1,0 +1,32 @@
+name=binutils
+version=2.47
+description="Tools for binaries: objdump, readelf, nm, strings, strip and more"
+depends=(glibc zlib zstd)
+# The same archive as the toolchain's (verified then; see toolchain/sources).
+source=(https://ftp.gnu.org/gnu/binutils/binutils-$version.tar.xz)
+sha256=(154ab23b60070e8f27013c22977f1129425d67d1e8acd6e13010e617811e4cff)
+
+# No assembler or linker (there is no compiler on the system), so only the
+# tools that inspect and change binaries, linked statically against BFD.
+build() {
+	mkdir -p build
+	cd build
+	../configure --build="$(gcc -dumpmachine)" --host="$TARGET" --target="$TARGET" \
+		--prefix=/usr --disable-nls --disable-werror --disable-shared \
+		--disable-gdb --disable-gdbserver --disable-sim --disable-ld \
+		--disable-gas --disable-gprof --disable-gprofng --disable-libctf \
+		--without-debuginfod --with-system-zlib --enable-targets=all
+	make -j"$JOBS" all-binutils
+}
+
+package() {
+	local b=build/binutils tool
+	install -d "$pkgdir/usr/bin"
+	for tool in objdump readelf size strings addr2line ar objcopy; do
+		install -m755 $b/$tool "$pkgdir/usr/bin/$tool"
+	done
+	install -m755 $b/nm-new "$pkgdir/usr/bin/nm"
+	install -m755 $b/strip-new "$pkgdir/usr/bin/strip"
+	install -m755 $b/cxxfilt "$pkgdir/usr/bin/c++filt"
+	install -Dm644 COPYING3 "$pkgdir/usr/share/licenses/binutils/COPYING3"
+}

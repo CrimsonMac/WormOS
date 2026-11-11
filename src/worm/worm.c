@@ -275,9 +275,56 @@ static int cmd_lock(const char *comment)
 
 static void usage(FILE *out)
 {
-	fputs("usage: worm status | panic [off] | anon on|off|status | unlock | lock [-c COMMENT]\n"
+	fputs("usage: worm help [COMMAND] | status | panic [off] | anon on|off|status | unlock |\n"
+	      "       worm lock [-c COMMENT]\n"
 	      "       worm fw status | allow PORT[/tcp|/udp] | deny PORT[/tcp|/udp] | load\n"
 	      "PORT is a number or a range such as 6000-6010; tcp is the default.\n", out);
+}
+
+/* worm help: every command that is WormOS's own, in one place. */
+static void overview(void)
+{
+	int tty = isatty(STDOUT_FILENO);
+	const char *b = tty ? "\033[1m" : "", *m = tty ? "\033[35m" : "",
+		   *r = tty ? "\033[0m" : "";
+
+	printf("%sWormOS commands%s  (worm help COMMAND shows the details of one)\n\n", b, r);
+	printf("%sSnapshots%s (root)\n"
+	       "  snap now [-c NOTE]       take a snapshot of the system\n"
+	       "  snap list                list snapshots\n"
+	       "  snap rewind [ID]         go back to the last snapshot (or ID)\n"
+	       "  snap diff ID             what changed since a snapshot\n"
+	       "  snap restore ID PATH     bring back one file or folder\n"
+	       "  snap browse ID           look around inside a snapshot\n"
+	       "  snap pin ID / prune      keep one / delete old ones\n"
+	       "  wormos-snapshots         the same in a window\n\n", m, r);
+	printf("%sSoftware%s (root)\n"
+	       "  wh install PKG           install software (core, then Debian, then Kali)\n"
+	       "  wh install --from debian PKG   from one source\n"
+	       "  wh remove PKG            remove it\n"
+	       "  wh search TERM           find packages\n"
+	       "  wh upgrade               upgrade everything\n"
+	       "  wh undo                  undo the last package change\n"
+	       "  wh install --try PKG     try it; the next restart goes back unless 'wh keep'\n\n",
+	       m, r);
+	printf("%sProtection%s (root)\n"
+	       "  worm status              protections at a glance\n"
+	       "  worm fw status           the firewall (everything inbound is blocked)\n"
+	       "  worm fw allow 22         open a port; worm fw deny 22 closes it\n"
+	       "  worm anon on|off         send all traffic through Tor\n"
+	       "  worm unlock / lock       make / writable for a moment, then read-only again\n"
+	       "  worm panic [off]         cut the network, close sandboxes, take a snapshot\n\n",
+	       m, r);
+	printf("%sSandboxes%s\n"
+	       "  bh open [NAME]           a disposable sandbox (blackhole): no network,\n"
+	       "                           no access to your files or the system\n"
+	       "  bh put NAME FILE...      copy files into it\n"
+	       "  bh list / bh close NAME  list / throw away\n\n", m, r);
+	printf("%sDesktop and terminal%s\n"
+	       "  tor-browser [URL]        Tor Browser\n"
+	       "  clip copy / clip paste   the clipboard from the terminal (ls | clip copy)\n"
+	       "  welcome [--full]         the greeting of new terminals / the whole guide\n"
+	       "  su -                     become root for administration\n", m, r);
 }
 
 int main(int argc, char **argv)
@@ -286,7 +333,27 @@ int main(int argc, char **argv)
 		usage(stderr);
 		return 2;
 	}
-	if (!strcmp(argv[1], "help") || !strcmp(argv[1], "--help")) {
+	if (!strcmp(argv[1], "help") && argc == 2) {
+		overview();
+		return 0;
+	}
+	if (!strcmp(argv[1], "help") && argc == 3) {
+		static const char *const known[] = { "snap", "wh", "worm", "bh", "clip",
+						     "tor-browser", NULL };
+
+		for (int i = 0; known[i]; i++) {
+			if (!strcmp(argv[2], known[i])) {
+				if (!strcmp(argv[2], "worm")) {
+					usage(stdout);
+					return 0;
+				}
+				execlp(argv[2], argv[2], "--help", (char *)NULL);
+				die("cannot run %s", argv[2]);
+			}
+		}
+		die("no help for %s; worm help lists the commands", argv[2]);
+	}
+	if (!strcmp(argv[1], "--help")) {
 		usage(stdout);
 		return 0;
 	}

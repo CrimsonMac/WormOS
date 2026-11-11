@@ -1,0 +1,20 @@
+name=jq
+version=1.8.2
+description="Command-line JSON processor"
+depends=(glibc)
+source=(https://github.com/jqlang/jq/releases/download/jq-$version/jq-$version.tar.gz)
+sha256=(71b8d6e8f5fe81f6c6d0d110e3892251f6ce76ed095abd315e26e6e1193af3af)
+
+build() {
+	# Regular expressions come from the bundled Oniguruma, linked in.
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-static --disable-docs --disable-maintainer-mode \
+		--with-oniguruma=builtin
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/doc"
+}

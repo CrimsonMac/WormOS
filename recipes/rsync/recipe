@@ -1,0 +1,22 @@
+name=rsync
+version=3.5.2
+description="Fast incremental file transfer"
+depends=(glibc zlib zstd openssl)
+# Signed by Andrew Tridgell (C0E1054505704F757D925AB26A64E8AA2EFBCF5D).
+source=(https://download.samba.org/pub/rsync/src/rsync-$version.tar.gz)
+sha256=(a10d591825251e070f74c98df3daad195def4ed81b4a2de16169026aea33f6c8)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-md2man --disable-xxhash --disable-lz4 --disable-idn --enable-zstd \
+		--enable-openssl --with-included-popt --without-included-zlib
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -rf "$pkgdir/usr/share/man"
+	# rrsync needs Python; rsync-ssl is a bash script for openssl s_client.
+	rm -f "$pkgdir/usr/bin/rrsync"
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/rsync/COPYING"
+}

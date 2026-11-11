@@ -1,0 +1,27 @@
+name=bash
+version=5.3
+description="The GNU Bourne Again shell"
+depends=(glibc ncurses readline)
+# Signed by Chet Ramey (7C0135FB088AAF6C66C650B9BB5869F064EA74AB).
+source=(https://ftp.gnu.org/gnu/bash/bash-$version.tar.gz)
+sha256=(0d5cd86965f869a26cf64f4b71be7b96f90a3ba8b3d74e27e8e9d9d5550f31ba)
+
+build() {
+	# Answers for checks a cross build cannot run (true for glibc).
+	export bash_cv_job_control_missing=present bash_cv_sys_named_pipes=present \
+		bash_cv_func_sigsetjmp=present bash_cv_getcwd_malloc=yes \
+		bash_cv_func_ctype_nonascii=yes bash_cv_printf_a_format=yes \
+		bash_cv_unusable_rtsigs=no bash_cv_wcwidth_broken=no
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--without-bash-malloc --with-installed-readline --with-curses \
+		--disable-nls
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	# Loadable builtins and their headers, bashbug (mails a report), docs.
+	rm -rf "$pkgdir/usr/lib" "$pkgdir/usr/include" "$pkgdir/usr/share"
+	rm -f "$pkgdir/usr/bin/bashbug"
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/bash/COPYING"
+}

@@ -13,7 +13,8 @@
  *     place, owned by root.
  *
  * A path already owned by another package, or present but owned by none,
- * is a conflict and stops the installation. On an upgrade, files the new
+ * is a conflict and stops the installation. The one exception is a busybox
+ * applet link: a package with the full program takes it over. On an upgrade, files the new
  * version no longer ships are removed afterwards.
  */
 
@@ -616,7 +617,20 @@ static int check_conflict(const char *name, const char *path, int pfd,
 		warn("%s: %s is a directory on this system", name, path);
 		return -1;
 	}
-	if ((owner = db_owner(path, name))) {
+	if ((owner = db_owner(path, name)) && !strcmp(owner, "busybox") &&
+	    S_ISLNK(st.st_mode)) {
+		char target[64];
+		ssize_t n = readlinkat(pfd, leaf, target, sizeof(target) - 1);
+
+		if (n > 0) {
+			target[n] = '\0';
+			if (!strcmp(target, "busybox") || !strcmp(target, "../bin/busybox")) {
+				free(owner);
+				return db_disown("busybox", path) < 0 ? -1 : 0;
+			}
+		}
+	}
+	if (owner) {
 		warn("%s: %s is already installed by %s", name, path, owner);
 		free(owner);
 		return -1;

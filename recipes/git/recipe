@@ -1,0 +1,27 @@
+name=git
+version=2.56.1
+description="Distributed version control system"
+depends=(glibc zlib openssl curl expat pcre2 bash less)
+source=(https://www.kernel.org/pub/software/scm/git/git-$version.tar.xz)
+sha256=(f0b0bf89264b9bd2e1c640363e7529643989da76281600473c50745cd34a607f)
+
+# No Perl, Python, Rust or Tcl/Tk on the system: no git send-email, git svn,
+# gitk or git gui. Built-in commands are not installed as git-* links.
+gitmake() {
+	make prefix=/usr gitexecdir=/usr/lib/git-core CC="$CC" AR="$AR" \
+		CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
+		NO_PERL=1 NO_PYTHON=1 NO_TCLTK=1 NO_GETTEXT=1 NO_RUST=1 NO_INSTALL_HARDLINKS=1 \
+		SKIP_DASHED_BUILT_INS=1 USE_LIBPCRE2=1 CURL_LDFLAGS=-lcurl \
+		SHELL_PATH=/bin/sh PAGER_ENV='LESS=FRX LV=-c' \
+		HOST_CPU=x86_64 uname_S=Linux uname_M=x86_64 uname_R=6.18 "$@"
+}
+
+build() {
+	gitmake -j"$JOBS" all
+}
+
+package() {
+	gitmake DESTDIR="$pkgdir" install
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/gitweb" "$pkgdir/usr/share/perl5"
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/git/COPYING"
+}

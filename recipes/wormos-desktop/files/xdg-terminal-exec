@@ -1,0 +1,5 @@
+#!/bin/sh
+# Runs a program in a terminal: GLib uses this for desktop entries with
+# Terminal=true (htop, vim and the like).
+[ "${1:-}" = -e ] && shift
+exec foot "$@"

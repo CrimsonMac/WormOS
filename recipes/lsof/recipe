@@ -1,0 +1,19 @@
+name=lsof
+version=4.99.7
+description="Lists open files and the processes holding them"
+depends=(glibc)
+source=(https://github.com/lsof-org/lsof/releases/download/$version/lsof-$version.tar.gz)
+sha256=(4a10391aab0b8ce1f539e82a1966693b2a6cf225972a6504ebb7ec4fa71675de)
+
+# Without libtirpc: lsof -v prints its build flags, which would carry the
+# sysroot paths pkg-config gives for it.
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-static --without-libtirpc
+	make -j"$JOBS"
+}
+
+package() {
+	install -Dm755 lsof "$pkgdir/usr/bin/lsof"
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/lsof/COPYING"
+}

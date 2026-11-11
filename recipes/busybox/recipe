@@ -1,8 +1,10 @@
 name=busybox
 version=1.38.0
-release=3
+release=4
 description="Core command-line utilities (temporary userland)"
-depends=(glibc)
+# The packages that replace some applets (see REPLACED): on an upgrade from
+# a system without them, they are installed first and take over the links.
+depends=(glibc xz bzip2 less tree lsof libarchive vim binutils)
 source=(https://busybox.net/downloads/busybox-$version.tar.bz2)
 sha256=(34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2)
 
@@ -52,6 +54,10 @@ build() {
 	make CROSS_COMPILE="$TARGET-" CONFIG_EXTRA_LDFLAGS="$LDFLAGS" -j"$JOBS"
 }
 
+REPLACED="xz unxz xzcat lzma unlzma lzcat bzip2 bunzip2 bzcat less tree lsof tar cpio
+	unzip vi xxd strings"
+REPLACED=$(echo $REPLACED)
+
 package() {
 	install -Dm755 busybox "$pkgdir/usr/bin/busybox"
 	install -Dm4755 ../busybox-su/busybox "$pkgdir/usr/bin/su"
@@ -64,6 +70,10 @@ package() {
 	while read -r path; do
 		applet=${path##*/}
 		case $applet in busybox|su) continue ;; esac
+		# Applets whose full versions are packages of their own (xz, bzip2,
+		# less, tree, lsof, libarchive's tar/cpio/unzip, vim's vi and xxd,
+		# binutils' strings).
+		case " $REPLACED " in *" $applet "*) continue ;; esac
 		case $path in
 			*sbin/*) ln -sf ../bin/busybox "$pkgdir/usr/sbin/$applet" ;;
 			*)       ln -sf busybox "$pkgdir/usr/bin/$applet" ;;

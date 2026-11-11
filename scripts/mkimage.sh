@@ -16,7 +16,7 @@
 # intercept, so the owners and modes fakeroot recorded are applied for real
 # to a temporary copy of the tree first.
 #
-# IMAGE (default out/wormos.img) and DISK_MB (default 4096) choose the
+# IMAGE (default out/wormos.img) and DISK_MB (default 8192) choose the
 # output file and the disk size.
 
 . "$(dirname "$0")/env.sh"
@@ -25,7 +25,7 @@ STATE=$BUILD/fakeroot.state
 [ -f "$STATE" ] && [ -d "$ROOTFS" ] || die "run scripts/build-rootfs.sh first"
 
 IMAGE=${IMAGE:-$OUT/wormos.img}
-DISK_MB=${DISK_MB:-4096}
+DISK_MB=${DISK_MB:-8192}
 ESP_MB=128
 SECTOR=512
 MB=$((1024 * 1024 / SECTOR))     # sectors per MiB

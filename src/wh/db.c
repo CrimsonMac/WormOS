@@ -219,6 +219,32 @@ int db_files(const char *name, char ***paths, int *count)
 	return 0;
 }
 
+/* Drop path from the file list of package name (another package takes it
+ * over). */
+int db_disown(const char *name, const char *path)
+{
+	char dir[PATH_MAX], file[PATH_MAX + 8], **paths, *list = NULL;
+	size_t listlen = 0;
+	int count, ret;
+	FILE *mem;
+
+	if (db_files(name, &paths, &count) < 0)
+		return -1;
+	if (!(mem = open_memstream(&list, &listlen)))
+		die("out of memory");
+	for (int i = 0; i < count; i++)
+		if (strcmp(paths[i] + 2, path) != 0)
+			fprintf(mem, "%s\n", paths[i]);
+	fclose(mem);
+	db_free_files(paths, count);
+	db_dir(dir, sizeof(dir), name);
+	snprintf(file, sizeof(file), "%s/files", dir);
+	ret = write_file(file, list);
+	free(list);
+	owners_free();
+	return ret;
+}
+
 void db_free_files(char **paths, int count)
 {
 	for (int i = 0; i < count; i++)

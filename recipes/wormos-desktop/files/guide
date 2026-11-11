@@ -14,6 +14,8 @@
     a size yourself:  wlr-randr  lists outputs and modes, e.g.
       wlr-randr --output Virtual-1 --custom-mode 1920x1080
 
+  worm help lists every WormOS command.
+
   Administration happens as root: run  su -  (or the "Root Terminal" program).
     snap now -c "note"     take a snapshot of the system
     snap list              list snapshots;  snap rewind  goes back
@@ -21,7 +23,7 @@
     worm fw allow 22       open a port in the firewall
     worm anon on           send all traffic through Tor
     bh open                a disposable sandbox for untrusted programs
-    wh install htop        software from Debian, in a wormhole
+    wh install fastfetch   software from Debian, in a wormhole
 
   The terminal
     Grey text after the cursor is an earlier command: Right or End takes it.

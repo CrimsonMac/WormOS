@@ -1,0 +1,18 @@
+name=htop
+version=3.5.3
+description="Interactive process viewer"
+depends=(glibc ncurses)
+source=(https://github.com/htop-dev/htop/releases/download/$version/htop-$version.tar.xz)
+sha256=(a8b164386494cb85bb255a415a3f5f80afe7a0c4491da5d113b3a0f951087e65)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--sysconfdir=/etc --enable-unicode --disable-sensors --disable-hwloc \
+		--disable-capabilities --disable-delayacct
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -rf "$pkgdir/usr/share/man"
+}

@@ -1,0 +1,18 @@
+name=readline
+version=8.3
+description="GNU readline: line editing for interactive programs"
+depends=(glibc ncurses)
+# Signed by Chet Ramey (7C0135FB088AAF6C66C650B9BB5869F064EA74AB).
+source=(https://ftp.gnu.org/gnu/readline/readline-$version.tar.gz)
+sha256=(fe5383204467828cd495ee8d1d3c037a7eba1389c22bc6a041f627976f9061cc)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-static --with-curses --disable-install-examples
+	make -j"$JOBS" SHLIB_LIBS=-lncursesw
+}
+
+package() {
+	make DESTDIR="$pkgdir" SHLIB_LIBS=-lncursesw install
+	rm -rf "$pkgdir/usr/share" "$pkgdir/usr/bin"
+}

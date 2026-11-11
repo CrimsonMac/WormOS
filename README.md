@@ -217,6 +217,23 @@ The repository is published at
 together with a source archive for every package built from upstream
 code (its recipe, patches and upstream archives).
 
+### Included tools
+
+Besides the desktop, the image comes with everyday command-line tools, all
+built from source and kept in the core repository:
+
+| | |
+|---|---|
+| Shells and terminal | zsh, bash, tmux, less, htop, ncdu, tree |
+| Editors | nano, vim (also `vi`) |
+| Development | git, Python 3 (with `venv` and pip), sqlite3, jq, strace, binutils (objdump, readelf, nm, strings) |
+| Archives | tar, cpio and unzip from libarchive (zip, 7z, ISO, xz, zstd...), xz, bzip2, zstd, gzip |
+| Network | curl, OpenSSH client (ssh, scp, sftp), rsync, nmap with ncat and nping, tcpdump, wg (WireGuard) |
+| Other | file, lsof, gpg, Tor Browser |
+
+Each can be removed with `wh remove`. `worm help` lists WormOS's own
+commands.
+
 ### Software from Debian and Kali
 
 The core repository holds the base system and the tools that need direct
@@ -226,9 +243,9 @@ Kali, and installs it into a container for that distribution, a
 *wormhole*. Its commands appear on your `PATH` as if installed natively.
 
 ```
-wh install htop               # not in core: found in Debian, installed there
+wh install fastfetch          # not in core: found in Debian, installed there
 wh install --from kali hashid # pick the source
-wh remove htop
+wh remove fastfetch
 ```
 
 `wh search` looks in Debian and Kali too (`--from` picks one source, such
@@ -289,19 +306,21 @@ Programs can also use Tor's SOCKS port directly (127.0.0.1:9050).
 
 ## Tor Browser
 
-Tor Browser is in the launcher and the menu. The browser itself is not in
-the image: the first time it is opened, it downloads the current release
-from torproject.org (about 140 MB), checks its signature against the Tor
-Browser Developers' key that comes with WormOS, and unpacks it into
-`~/.local/share/tor-browser`. (The system libraries it needs,
-`tor-browser-runtime`, are in the image; on a system without them the
-first run offers to install them, asking for the root password, and the
-system restarts.)
+Tor Browser comes with the image (`/opt/tor-browser`, verified against the
+Tor Browser Developers' signature when the image is built). It is in the
+launcher and the menu, and `tor-browser` starts it from a terminal. The
+first start copies it into `~/.local/share/tor-browser`, where it keeps
+its settings and updates itself; on the system's btrfs the copy shares
+the files' data and takes a moment.
 
-From then on it starts right away and keeps itself up to date. In
-anonymous mode it uses the system's Tor instead of its own. From a
-terminal: `tor-browser --download` sets up or refreshes the browser
-without a window.
+It runs as your own user, never as root: started from a root terminal
+(`su -`), it starts as the user who opened that terminal. In anonymous
+mode it uses the system's Tor instead of its own.
+
+On a system without the bundled copy, the first start downloads the
+current release from torproject.org (about 150 MB), checks its signature
+against the key that comes with WormOS and unpacks it;
+`tor-browser --download` does the same without a window.
 
 Anonymous mode hides where traffic comes from, not who you are: logging
 in to an account still identifies you. For browsing, Tor Browser (planned)
@@ -399,6 +418,9 @@ sudo apt install build-essential bison flex gawk texinfo m4 help2man \
     libllvmspirvlib-19-dev spirv-tools libclc-19-dev
 pipx install meson==1.12.1
 ```
+
+Python 3.13 (Debian 13's `python3`) must be on the build machine: a cross
+build of Python runs a Python of the same minor version.
 
 Meson comes from pipx because some packages need a newer one than Debian
 13 ships (the build puts `~/.local/bin` first in `PATH`). LLVM is only used

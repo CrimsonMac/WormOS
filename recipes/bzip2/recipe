@@ -1,0 +1,25 @@
+name=bzip2
+version=1.0.8
+description="bzip2 compression and its library"
+depends=(glibc)
+# Signed by Mark Wielaard (EC3CFE88F6CA0788774F5C1D1AA44BE649DE760A).
+source=(https://sourceware.org/pub/bzip2/bzip2-$version.tar.gz)
+sha256=(ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269)
+
+build() {
+	# The shared library and a bzip2 linked against it.
+	make -f Makefile-libbz2_so CC="$CC" \
+		CFLAGS="$CFLAGS -fPIC -Wall -Winline -D_FILE_OFFSET_BITS=64"
+}
+
+package() {
+	install -Dm755 bzip2-shared "$pkgdir/usr/bin/bzip2"
+	ln -s bzip2 "$pkgdir/usr/bin/bunzip2"
+	ln -s bzip2 "$pkgdir/usr/bin/bzcat"
+	install -Dm755 libbz2.so.$version "$pkgdir/usr/lib/libbz2.so.$version"
+	ln -s libbz2.so.$version "$pkgdir/usr/lib/libbz2.so.1.0"
+	ln -s libbz2.so.$version "$pkgdir/usr/lib/libbz2.so.1"
+	ln -s libbz2.so.$version "$pkgdir/usr/lib/libbz2.so"
+	install -Dm644 bzlib.h "$pkgdir/usr/include/bzlib.h"
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/bzip2/LICENSE"
+}

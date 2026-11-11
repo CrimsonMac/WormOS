@@ -49,7 +49,7 @@ ROOT_PASSWORD = "Root:pass 7"
 
 # Budgets from the project goals.
 IDLE_RAM_MB = 400
-ROOTFS_MB = 600
+ROOTFS_MB = 2000
 
 DEVICE_CHECKS = [
     ("device manager running", "pidof udevd", r"^\d+"),

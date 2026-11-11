@@ -1,0 +1,27 @@
+name=file
+version=5.48
+description="Identifies the type of a file"
+depends=(glibc zlib xz bzip2 zstd)
+# Signed by Christos Zoulas (BE04995BA8F90ED0C0C176C471112AB16CB33B3A).
+source=(https://astron.com/pub/file/file-$version.tar.gz)
+sha256=(ed14656883b23a364b4057c05595d93252da9bc473d30106519519d0da141283)
+
+build() {
+	# The magic database is compiled by a file of the same version: build
+	# one for this machine first.
+	mkdir native
+	(cd native && CC=gcc CFLAGS=-O2 LDFLAGS= PKG_CONFIG=false ../configure \
+		--disable-shared --disable-libseccomp --disable-zlib --disable-bzlib \
+		--disable-xzlib --disable-zstdlib --disable-lzlib &&
+	 make -j"$JOBS" -C src magic.h && make -j"$JOBS" -C src file)
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-static --disable-libseccomp --enable-zlib --enable-bzlib \
+		--enable-xzlib --enable-zstdlib --disable-lzlib
+	make -j"$JOBS" FILE_COMPILE="$srcdir/native/src/file"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man"
+}

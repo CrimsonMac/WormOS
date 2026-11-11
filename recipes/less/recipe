@@ -1,0 +1,17 @@
+name=less
+version=710
+description="A pager: shows text a screen at a time"
+depends=(glibc ncurses)
+source=(https://www.greenwoodsoftware.com/less/less-$version.tar.gz)
+sha256=(d1008fb78dcae1323ddab664bcb352a61f022b1b131bd8018548e021d975ec7a)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--sysconfdir=/etc --with-regex=posix
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -rf "$pkgdir/usr/share/man"
+}

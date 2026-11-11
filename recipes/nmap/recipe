@@ -1,0 +1,21 @@
+name=nmap
+version=7.993
+description="Network scanner (with ncat and nping)"
+depends=(glibc gcc-libs openssl libpcap pcre2 zlib)
+source=(https://nmap.org/dist/nmap-$version.tar.bz2)
+sha256=(270e55f04915bfcecb5db8feb959d4c5ba86a48c094520a4f1c07571e1c79c59)
+
+build() {
+	# Lua, liblinear and libssh2 come bundled; Zenmap and ndiff need Python.
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--with-openssl --with-libpcap --with-libpcre --with-libz \
+		--with-liblua=included --with-liblinear=included --with-libssh2=included \
+		--without-zenmap --without-ndiff
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -rf "$pkgdir/usr/share/man"
+	rm -f "$pkgdir/usr/bin/uninstall_ndiff" "$pkgdir/usr/bin/uninstall_zenmap"
+}

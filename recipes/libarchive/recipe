@@ -1,0 +1,28 @@
+name=libarchive
+version=3.8.11
+description="Archive library with bsdtar, bsdcpio and bsdunzip (tar, cpio and unzip)"
+depends=(glibc zlib xz bzip2 zstd openssl expat)
+# Signed by Martin Matuska (659C84C0E23EA1FA97E0B58CC040B508D63D2B36).
+source=(https://github.com/libarchive/libarchive/releases/download/v$version/libarchive-$version.tar.xz)
+sha256=(a3dc0872b1b39da34dc18ef1b944f0f11ffd37425d70ae04be679279f1cf43d2)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-static --with-zlib --with-bz2lib --with-lzma --with-zstd \
+		--with-openssl --with-expat --without-xml2 --without-lz4 --without-lzo2 \
+		--without-nettle --without-mbedtls --without-cng --disable-acl \
+		--enable-bsdtar=shared --enable-bsdcpio=shared --enable-bsdcat=shared \
+		--enable-bsdunzip=shared
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man"
+	# The full-featured tar, cpio and unzip (zip, 7z, ISO, xz, zstd...).
+	ln -s bsdtar "$pkgdir/usr/bin/tar"
+	ln -s bsdcpio "$pkgdir/usr/bin/cpio"
+	ln -s bsdunzip "$pkgdir/usr/bin/unzip"
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/libarchive/COPYING"
+}

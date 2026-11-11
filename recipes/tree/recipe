@@ -1,0 +1,16 @@
+name=tree
+version=2.3.2
+description="Lists folders as a tree"
+depends=(glibc)
+source=(https://gitlab.com/OldManProgrammer/unix-tree/-/archive/$version/unix-tree-$version.tar.gz)
+sha256=(513a53cbc42ca1f4ea06af2bab1f5283524a3848266b1d162416f8033afc4985)
+
+build() {
+	make CC="$CC" LDFLAGS="$LDFLAGS" \
+		CFLAGS="$CFLAGS -DLINUX -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64"
+}
+
+package() {
+	install -Dm755 tree "$pkgdir/usr/bin/tree"
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/tree/LICENSE"
+}
