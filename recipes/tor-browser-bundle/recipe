@@ -1,0 +1,23 @@
+name=tor-browser-bundle
+version=16.0.1
+description="Tor Browser itself, copied into each user's home on its first start"
+depends=(tor-browser-runtime)
+# Signed by the Tor Browser Developers (primary key
+# EF6E286DDA85EA2A4BA7DE684E2C6E8793298290, signing subkey
+# 022DA248432D2A0E0F54E65E316C1FACD62D07D9).
+source=(https://dist.torproject.org/torbrowser/$version/tor-browser-linux-x86_64-$version.tar.xz)
+sha256=(5b36ad610c20c81faa72caf27d1cd3a11f14a327c320b4cec581400016ba78b0)
+noextract=1
+
+# The bundle goes to /opt, untouched: outside /usr, so wpack neither strips
+# its binaries nor are its libraries copied into the build sysroot. The
+# tor-browser launcher copies it into ~/.local/share/tor-browser, where the
+# browser keeps its profile and updates itself.
+package() {
+	install -d "$pkgdir/opt"
+	tar -xJf "$SOURCES/tor-browser-linux-x86_64-$version.tar.xz" -C "$pkgdir/opt"
+	# The bundle's own desktop entry and launcher script are not used.
+	rm -f "$pkgdir/opt/tor-browser/start-tor-browser.desktop"
+	echo "$version" > "$pkgdir/opt/tor-browser/version"
+	chmod -R go-w "$pkgdir/opt/tor-browser"
+}

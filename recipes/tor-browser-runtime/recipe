@@ -1,7 +1,8 @@
 name=tor-browser-runtime
 version=1.0
+release=2
 description="System libraries for Tor Browser (installed by its first run)"
-depends=(glibc gtk3 atk libx11 libxcb libxext libxrender libxrandr alsa-lib dbus
+depends=(glibc gtk3 atk libx11 libxcb libxext libxfixes libxrender libxrandr alsa-lib dbus
 	fontconfig freetype)
 localsrc=recipes/tor-browser-runtime/files
 

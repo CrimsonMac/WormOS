@@ -1,13 +1,20 @@
 /*
  * tor-browser - start Tor Browser, setting it up on the first run.
  *
- * Tor Browser is not part of the image. The first run installs the system
- * libraries it needs (the core package tor-browser-runtime, through the
- * setuid helper /usr/lib/worm/install with root's password; the system
- * restarts), then downloads the current release from torproject.org into
- * ~/.local/share/tor-browser, checks its signature against the Tor Browser
- * Developers' key shipped with this package, and unpacks it. After that it
- * only starts the browser. Tor Browser updates itself.
+ * The image ships Tor Browser in /opt/tor-browser (the package
+ * tor-browser-bundle). The first start copies it into
+ * ~/.local/share/tor-browser, where the browser keeps its profile and
+ * updates itself; on btrfs the copy shares the data (copy_file_range).
+ * Without the bundle, the first run installs the system libraries it needs
+ * (the core package tor-browser-runtime, through the setuid helper
+ * /usr/lib/worm/install with root's password; the system restarts), then
+ * downloads the current release from torproject.org, checks its signature
+ * against the Tor Browser Developers' key shipped with this package, and
+ * unpacks it. After that it only starts the browser.
+ *
+ * The browser never runs as root. Started by root (su - in the desktop's
+ * terminal), it starts again as the user who owns the terminal, with the
+ * environment of that user's desktop session.
  *
  * Steps of the download:
  *   1. The release version from Tor Browser's download list; the archive
@@ -33,7 +40,11 @@
  */
 
 #define _GNU_SOURCE
+#include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <grp.h>
+#include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,14 +57,15 @@
 #define CSS              "/usr/share/wormos/tor-browser/tor-browser.css"
 #define KEYRING          "/usr/share/wormos/tor-browser/tor-browser-developers.gpg"
 #define TOR_BROWSER_KEY  "EF6E286DDA85EA2A4BA7DE684E2C6E8793298290"
-#define MIN_VERSION      "15.0.26"
-#define DOWNLOADS_JSON   "https://aus1.torproject.org/torbrowser/update_3/release/downloads.json"
+#define MIN_VERSION      "16.0.1"
+#define DOWNLOADS_JSON   "https://aus1.torproject.org/torbrowser/update_3/release/download-linux-x86_64.json"
 #define DIST             "https://dist.torproject.org/torbrowser"
 #define COMPAT           "/usr/lib/tor-browser/libx11-compat.so"
 #define RUNTIME          "tor-browser-runtime"
 #define INSTALL_HELPER   "/usr/lib/worm/install"
 #define ANON_SWITCH      "/etc/worm/anon"
 #define SYSTEM_TOR_SOCKS "9050"
+#define BUNDLE           "/opt/tor-browser"
 
 static char *top;          /* ~/.local/share/tor-browser */
 static GtkWidget *window, *stack, *status, *progress, *detail, *retry;
@@ -153,6 +165,14 @@ static gboolean signature_ok(const char *file, const char *sig, char **why)
 
 /* ---- starting the browser ---- */
 
+/* The browser gets a session of its own: closing the terminal it was
+ * started from does not close it. */
+static void detach(gpointer data)
+{
+	(void)data;
+	setsid();
+}
+
 static void start_browser(char **urls)
 {
 	char *browser = g_build_filename(top, "tor-browser", "Browser", NULL);
@@ -198,8 +218,8 @@ static void start_browser(char **urls)
 	g_ptr_array_add(argv, NULL);
 	/* Like the start script: its output goes nowhere. */
 	if (!g_spawn_async(browser, (char **)argv->pdata, env,
-			   G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL, NULL, NULL,
-			   NULL, &error)) {
+			   G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL |
+			   G_SPAWN_STDIN_FROM_DEV_NULL, detach, NULL, NULL, &error)) {
 		g_printerr("tor-browser: cannot start Tor Browser: %s\n", error->message);
 		g_error_free(error);
 	}
@@ -694,6 +714,198 @@ static void activate(GtkApplication *app, gpointer data)
 	gtk_window_present(GTK_WINDOW(window));
 }
 
+/* ---- the copy shipped with the system ---- */
+
+static gboolean copy_file(const char *from, const char *to, mode_t mode)
+{
+	int in = open(from, O_RDONLY | O_CLOEXEC), out;
+	gboolean ok = FALSE;
+	struct stat st;
+
+	if (in < 0)
+		return FALSE;
+	out = open(to, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, mode & 07777);
+	if (out >= 0 && fstat(in, &st) == 0) {
+		off_t left = st.st_size;
+		ssize_t n = 0;
+
+		/* Shares the extents on btrfs; a plain copy elsewhere. */
+		while (left > 0 && (n = copy_file_range(in, NULL, out, NULL, left, 0)) > 0)
+			left -= n;
+		if (left > 0 && n < 0) {
+			char buf[65536];
+
+			while ((n = read(in, buf, sizeof buf)) > 0)
+				if (write(out, buf, n) != n)
+					break;
+			ok = n == 0;
+		} else {
+			ok = left == 0;
+		}
+		ok = ok && fchmod(out, mode & 07777) == 0;
+	}
+	if (out >= 0 && close(out) < 0)
+		ok = FALSE;
+	close(in);
+	return ok;
+}
+
+static gboolean copy_tree(const char *from, const char *to)
+{
+	DIR *dir = opendir(from);
+	struct dirent *e;
+	gboolean ok = TRUE;
+	struct stat st;
+
+	if (!dir || stat(from, &st) < 0 || mkdir(to, 0700) < 0) {
+		if (dir)
+			closedir(dir);
+		return FALSE;
+	}
+	while (ok && (e = readdir(dir))) {
+		char *a, *b;
+
+		if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
+			continue;
+		a = g_build_filename(from, e->d_name, NULL);
+		b = g_build_filename(to, e->d_name, NULL);
+		if (lstat(a, &st) < 0) {
+			ok = FALSE;
+		} else if (S_ISDIR(st.st_mode)) {
+			ok = copy_tree(a, b);
+		} else if (S_ISLNK(st.st_mode)) {
+			char *target = g_file_read_link(a, NULL);
+
+			ok = target && symlink(target, b) == 0;
+			g_free(target);
+		} else if (S_ISREG(st.st_mode)) {
+			ok = copy_file(a, b, st.st_mode | S_IWUSR);
+		}
+		g_free(a);
+		g_free(b);
+	}
+	closedir(dir);
+	/* The user's copy must be writable: the browser updates itself. */
+	return ok && stat(from, &st) == 0 && chmod(to, (st.st_mode & 07777) | S_IWUSR) == 0;
+}
+
+/* Copy /opt/tor-browser into the user's folder. */
+static gboolean install_bundle(void)
+{
+	char *dest = path("tor-browser"), *tmp = path("tor-browser.new");
+	char *vfile = path("version"), *version = NULL;
+	const char *rm_tmp[] = { "rm", "-rf", tmp, NULL };
+	gboolean ok;
+
+	g_mkdir_with_parents(top, 0700);
+	run(rm_tmp, NULL, NULL);
+	fprintf(stderr, "tor-browser: setting up Tor Browser in %s\n", top);
+	ok = copy_tree(BUNDLE, tmp) && rename(tmp, dest) == 0;
+	if (!ok) {
+		fprintf(stderr, "tor-browser: cannot copy %s: %s\n", BUNDLE, g_strerror(errno));
+		run(rm_tmp, NULL, NULL);
+	} else if (g_file_get_contents(BUNDLE "/version", &version, NULL, NULL)) {
+		g_file_set_contents(vfile, g_strstrip(version), -1, NULL);
+	}
+	g_free(version);
+	g_free(vfile);
+	g_free(tmp);
+	g_free(dest);
+	return ok;
+}
+
+/* ---- root and the desktop session ---- */
+
+/* The environment of a process of UID inside the desktop session (one that
+ * has WAYLAND_DISPLAY), or NULL. */
+static char **session_environ(uid_t uid)
+{
+	DIR *proc = opendir("/proc");
+	struct dirent *e;
+	char **env = NULL;
+
+	while (proc && !env && (e = readdir(proc))) {
+		char *file, *data = NULL;
+		struct stat st;
+		gsize len;
+
+		if (!g_ascii_isdigit(e->d_name[0]))
+			continue;
+		file = g_strdup_printf("/proc/%s/environ", e->d_name);
+		if (stat(file, &st) == 0 && st.st_uid == uid &&
+		    g_file_get_contents(file, &data, &len, NULL) && len > 0) {
+			GPtrArray *vars = g_ptr_array_new();
+			gboolean wayland = FALSE;
+
+			for (gsize i = 0; i < len; i += strlen(data + i) + 1) {
+				wayland |= g_str_has_prefix(data + i, "WAYLAND_DISPLAY=");
+				g_ptr_array_add(vars, g_strdup(data + i));
+			}
+			g_ptr_array_add(vars, NULL);
+			env = (char **)g_ptr_array_free(vars, FALSE);
+			if (!wayland) {
+				g_strfreev(env);
+				env = NULL;
+			}
+		}
+		g_free(data);
+		g_free(file);
+	}
+	if (proc)
+		closedir(proc);
+	return env;
+}
+
+/* Started as root: start again as the user of this desktop session. */
+static void leave_root(char **argv)
+{
+	const char *tty = ttyname(STDIN_FILENO);
+	struct passwd *pw = NULL;
+	char **env = NULL;
+	struct stat st;
+
+	/* su - keeps the terminal, which belongs to the user who opened it. */
+	if (tty && stat(tty, &st) == 0 && st.st_uid != 0)
+		pw = getpwuid(st.st_uid);
+	if (pw)
+		env = session_environ(pw->pw_uid);
+	if (!env) {
+		fprintf(stderr, "tor-browser: Tor Browser does not run as root. Start it as "
+				"your own user from the desktop (the launcher or a terminal "
+				"without su).\n");
+		exit(1);
+	}
+	if (initgroups(pw->pw_name, pw->pw_gid) < 0 || setgid(pw->pw_gid) < 0 ||
+	    setuid(pw->pw_uid) < 0 || setuid(0) == 0) {
+		fprintf(stderr, "tor-browser: cannot change to user %s\n", pw->pw_name);
+		exit(1);
+	}
+	if (chdir(pw->pw_dir) < 0 && chdir("/") < 0)
+		fprintf(stderr, "tor-browser: cannot change directory\n");
+	fprintf(stderr, "tor-browser: Tor Browser does not run as root; starting it as %s.\n",
+		pw->pw_name);
+	execve("/proc/self/exe", argv, env);
+	fprintf(stderr, "tor-browser: cannot start again: %s\n", g_strerror(errno));
+	exit(1);
+}
+
+/* Is there a Wayland display to show a window on? */
+static gboolean have_display(void)
+{
+	const char *name = g_getenv("WAYLAND_DISPLAY"), *dir = g_getenv("XDG_RUNTIME_DIR");
+	char *sock;
+	gboolean ok;
+
+	if (name && *name)
+		return TRUE;
+	if (!dir)
+		return FALSE;
+	sock = g_build_filename(dir, "wayland-0", NULL);
+	ok = access(sock, F_OK) == 0;
+	g_free(sock);
+	return ok;
+}
+
 int main(int argc, char **argv)
 {
 	GtkApplication *app;
@@ -722,6 +934,19 @@ int main(int argc, char **argv)
 		fprintf(stderr, "usage: tor-browser [URL...] | --download | --check FILE SIG\n");
 		return 2;
 	}
+
+	if (getuid() == 0 || geteuid() == 0)
+		leave_root(argv);
+	if (!have_display()) {
+		fprintf(stderr, "tor-browser: no desktop session here (WAYLAND_DISPLAY is not "
+				"set). Start Tor Browser from the desktop.\n");
+		return 1;
+	}
+
+	/* The copy that comes with the system. */
+	if (access(COMPAT, F_OK) == 0 && !browser_installed() &&
+	    access(BUNDLE "/Browser/firefox", X_OK) == 0)
+		install_bundle();
 
 	/* Set up already: just start it. */
 	if (access(COMPAT, F_OK) == 0 && browser_installed()) {

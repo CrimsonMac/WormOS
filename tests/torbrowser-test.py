@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Set up Tor Browser on the desktop as a user would, and start it.
+"""Start Tor Browser on the desktop as a user would.
 
-Needs internet access: the browser comes from torproject.org. The VM gets
-the desktop test's virtual GPU, keyboard and tablet. After the first-boot
-setup the user opens Tor Browser, whose window offers the download (its
-libraries are in the image), then downloads and checks the browser
-(tor-browser --download) and starts it, once normally and once in
-anonymous mode, where it must use the system's Tor. The console output is written to build/torbrowser.log.
+The VM gets the desktop test's virtual GPU, keyboard and tablet. After the
+first-boot setup, root starts Tor Browser from a terminal that belongs to
+the user, with a clean environment (as after su - in the desktop's
+terminal): it must start as the user, copy the browser that comes with
+the image into the user's home and open its window. Then it starts once
+more in anonymous mode, where it must use the system's Tor. Last, the
+download path (tor-browser --download, which needs internet access)
+fetches and checks the current release from torproject.org. The console
+output is written to build/torbrowser.log.
 
 Usage: tests/torbrowser-test.py [--timeout SECONDS]
 """
@@ -37,17 +40,31 @@ USER, USER_PASSWORD, ROOT_PASSWORD = desktop.USER, desktop.USER_PASSWORD, deskto
 BROWSER = f"/home/{USER}/.local/share/tor-browser"
 
 RUNTIME_CHECKS = [
-    ("libraries in the image", "wh list | grep -c -e '^tor-browser-runtime ' -e '^gtk3 '",
-     r"^2$"),
+    ("libraries and browser in the image",
+     "wh list | grep -c -e '^tor-browser-runtime ' -e '^gtk3 ' -e '^tor-browser-bundle '",
+     r"^3$"),
     ("X11 stand-ins present", "ls /usr/lib/tor-browser/libx11-compat.so", r"compat\.so$"),
+]
+
+COPY_CHECKS = [
+    ("copied from the image", f"cmp {BROWSER}/version /opt/tor-browser/version && echo same",
+     r"^same$"),
+    ("browser belongs to the user", f"stat -c %U {BROWSER}/tor-browser/Browser/firefox.real",
+     rf"^{USER}$"),
+    ("user's copy is writable (updates)",
+     f"su {USER} -c 'test -w {BROWSER}/tor-browser/Browser && echo yes'", r"^yes$"),
 ]
 
 DOWNLOAD_CHECKS = [
     ("version recorded", f"cat {BROWSER}/version", r"^\d+\.\d+(\.\d+)*$"),
-    ("browser belongs to the user", f"stat -c %U {BROWSER}/tor-browser/Browser/firefox.real",
-     rf"^{USER}$"),
     ("no download left behind", f"ls {BROWSER}/download | wc -l", r"^0$"),
 ]
+
+# Root with a clean environment in a terminal that belongs to the user, as
+# after "su -" in the desktop's terminal.
+# (sleep keeps the terminal's input open while the launcher hands over.)
+AS_ROOT = (f"(sleep 60 | env -i PATH=/usr/bin:/usr/sbin HOME=/root TERM=linux script -qfc "
+           f"'chown {{user}} \"$(tty)\"; tor-browser' /dev/null > /tmp/tb-root.log 2>&1 &)")
 
 # When the browser does not start: run it as the launcher does, with its output.
 DIAGNOSE = r"""cd ~/.local/share/tor-browser/tor-browser/Browser || exit 1
@@ -75,7 +92,7 @@ def main():
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, env=env)
     passed = failures = 0
-    total = len(RUNTIME_CHECKS) + len(DOWNLOAD_CHECKS) + 8
+    total = len(RUNTIME_CHECKS) + len(COPY_CHECKS) + len(DOWNLOAD_CHECKS) + 8
 
     def check(name, ok, out=""):
         nonlocal passed, failures
@@ -155,26 +172,15 @@ def main():
             check("desktop started", re.search(r"^\d+$", out, re.M) is not None, out)
             time.sleep(10)
 
-            # The libraries are in the image: the first run offers the download.
+            # Everything is in the image; root starts it from the user's terminal.
             run_checks(con, RUNTIME_CHECKS)
-            con.run(f"su {USER} -c '/tmp/in-session tor-browser > /tmp/tb.log 2>&1 &'")
-            out = wait_for(con, "pidof tor-browser", r"^\d+$", 120)
-            time.sleep(8)
-            w, h, px = screen("setup")
-            check("setup window offers the download",
-                  re.search(r"^\d+$", out, re.M) is not None and
-                  desktop.solid_block(px, w, h, desktop.ACCENT) is not None,
-                  con.run("cat /tmp/tb.log"))
-            con.run("kill $(pidof tor-browser)")
-
-            # Download and check the browser.
-            out = session(con, "tor-browser --download", 3600)
-            check("downloaded, checked and unpacked", "is ready" in out, out[-500:])
-            run_checks(con, DOWNLOAD_CHECKS)
-
             before = screen("before-browser")[2]
-            session(con, "tor-browser")
-            browser_started(con, "own Tor")
+            con.run(AS_ROOT.format(user=USER))
+            browser_started(con, "started by root, runs as the user")
+            out = con.run("cat /tmp/tb-root.log; stat -c %U /proc/$(pidof -s firefox.real)")
+            check("root's start handed over to the user",
+                  "starting it as " + USER in out and out.rstrip().endswith(USER), out)
+            run_checks(con, COPY_CHECKS)
             # Its window takes a while to appear under emulation.
             deadline = time.time() + 240
             while True:
@@ -202,6 +208,11 @@ def main():
                   "TOR_PROVIDER=none" in out and "TOR_SKIP_LAUNCH=1" in out and
                   "TOR_SOCKS_PORT=9050" in out, out)
             con.run("kill $(pidof firefox.real); worm anon off", 120)
+
+            # The download path, for systems without the bundled copy.
+            out = session(con, "tor-browser --download", 3600)
+            check("downloaded, checked and unpacked", "is ready" in out, out[-500:])
+            run_checks(con, DOWNLOAD_CHECKS)
 
             con.send("poweroff\n")
             con.expect("Power down", 120)

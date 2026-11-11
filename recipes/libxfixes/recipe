@@ -1,0 +1,19 @@
+name=libxfixes
+version=6.0.2
+description="X11 miscellaneous fixes extension library"
+depends=(glibc libx11)
+# Signed by Alan Coopersmith (3AB285232C46AE43D8E192F4DAB0F78EA6E7E2D2).
+source=(https://www.x.org/releases/individual/lib/libXfixes-$version.tar.xz)
+sha256=(39f115d72d9c5f8111e4684164d3d68cc1fd21f9b27ff2401b08fddfc0f409ba)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--sysconfdir=/etc --localstatedir=/var --disable-static
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.la
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/doc"
+}
