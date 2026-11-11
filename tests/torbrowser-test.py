@@ -47,7 +47,7 @@ RUNTIME_CHECKS = [
 ]
 
 COPY_CHECKS = [
-    ("copied from the image", f"cmp {BROWSER}/version /opt/tor-browser/version && echo same",
+    ("copied from the image", f"[ \"$(cat {BROWSER}/version)\" = \"$(cat /opt/tor-browser/version)\" ] && echo same",
      r"^same$"),
     ("browser belongs to the user", f"stat -c %U {BROWSER}/tor-browser/Browser/firefox.real",
      rf"^{USER}$"),
@@ -73,7 +73,8 @@ LD_PRELOAD=/usr/lib/tor-browser/libx11-compat.so timeout 90 ./firefox > /tmp/tb-
 echo "exit status $?" >> /tmp/tb-diag.log
 """
 
-ENVIRON = "tr '\\0' '\\n' < /proc/$(pidof -s firefox.real)/environ | grep -E '^(TOR_|LD_PRELOAD|HOME)'"
+# The main process is the oldest; content processes get a trimmed environment.
+ENVIRON = "tr '\\0' '\\n' < /proc/$(pidof firefox.real | tr ' ' '\\n' | sort -n | head -1)/environ | grep -E '^(TOR_|LD_PRELOAD|HOME)'"
 
 
 def main():
@@ -96,6 +97,7 @@ def main():
 
     def check(name, ok, out=""):
         nonlocal passed, failures
+        ok = bool(ok)
         passed += ok
         failures += not ok
         print(f"{'PASS' if ok else 'FAIL'}  {name}")
@@ -193,7 +195,7 @@ def main():
                   f"{changed} pixels changed")
             out = con.run(ENVIRON)
             check("X11 stand-ins preloaded, private home",
-                  re.search(r"^LD_PRELOAD=.*/usr/lib/tor-browser/libx11-compat\.so", out, re.M) and
+                  re.search(r"^LD_PRELOAD=.*/usr/lib/tor-browser/libx11-compat\.so", out, re.M) is not None and
                   f"HOME={BROWSER}/tor-browser/Browser" in out and "TOR_PROVIDER" not in out,
                   out)
 

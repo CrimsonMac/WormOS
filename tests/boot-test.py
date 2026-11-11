@@ -336,6 +336,8 @@ HELPER_CHECKS = [
      "tor-browser --check /etc/os-release /etc/hostname; echo rc=$?",
      r"does not match(.|\n)*^rc=1$"),
     ("Tor Browser comes with the image", "cat /opt/tor-browser/version", r"^\d+\.\d+"),
+    ("Tor Browser bundle usable by users",
+     "su tester -c 'test -x /opt/tor-browser/Browser/firefox.real && echo yes'", r"^yes$"),
     ("Tor Browser finds all its libraries",
      "LD_LIBRARY_PATH=/opt/tor-browser/Browser ldd /opt/tor-browser/Browser/libxul.so "
      "| grep -c 'not found'", r"^0$"),

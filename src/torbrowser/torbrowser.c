@@ -884,7 +884,7 @@ static void leave_root(char **argv)
 		fprintf(stderr, "tor-browser: cannot change directory\n");
 	fprintf(stderr, "tor-browser: Tor Browser does not run as root; starting it as %s.\n",
 		pw->pw_name);
-	execve("/proc/self/exe", argv, env);
+	execve("/usr/bin/tor-browser", argv, env);
 	fprintf(stderr, "tor-browser: cannot start again: %s\n", g_strerror(errno));
 	exit(1);
 }
