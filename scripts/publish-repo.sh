@@ -27,16 +27,38 @@ if ! gh release view "$TAG" -R "$PACKAGES_REPO" > /dev/null 2>&1; then
 fi
 
 mapfile -t local_files < <(ls "$REPO"/*.wpkg "$REPO/index" "$REPO/index.sig" "$OUT/sources"/*)
-mapfile -t remote < <(gh release view "$TAG" -R "$PACKAGES_REPO" --json assets -q '.assets[].name')
+# Name and SHA-256 of every asset already published (GitHub records each
+# asset's digest), so unchanged files are not uploaded again.
+declare -A digest
+while read -r name sum; do
+	digest[$name]=${sum#sha256:}
+done < <(gh api "repos/$PACKAGES_REPO/releases/tags/$TAG" --paginate \
+	--jq '.assets[] | .name + " " + (.digest // "")')
+remote=("${!digest[@]}")
+
+# GitHub's upload endpoint sometimes times out: try each file a few times.
+upload() {
+	local try
+	for try in 1 2 3; do
+		gh release upload "$TAG" -R "$PACKAGES_REPO" --clobber "$@" && return 0
+		msg "Upload failed (attempt $try), trying again"
+		sleep 10
+	done
+	die "could not upload $*"
+}
 
 # Packages first, the index and its signature last: a client never sees an
 # index naming packages that are not there yet.
-msg "Uploading ${#local_files[@]} files"
+n=0
 for f in "${local_files[@]}"; do
-	case $(basename "$f") in index|index.sig) continue ;; esac
-	gh release upload "$TAG" -R "$PACKAGES_REPO" --clobber "$f"
+	name=$(basename "$f")
+	case $name in index|index.sig) continue ;; esac
+	[ "${digest[$name]:-}" = "$(sha256sum "$f" | cut -c1-64)" ] && continue
+	upload "$f"
+	n=$((n + 1))
 done
-gh release upload "$TAG" -R "$PACKAGES_REPO" --clobber "$REPO/index" "$REPO/index.sig"
+msg "Uploaded $n changed files of ${#local_files[@]}"
+upload "$REPO/index" "$REPO/index.sig"
 
 declare -A keep
 for f in "${local_files[@]}"; do
