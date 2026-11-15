@@ -26,14 +26,15 @@ A lightweight, security-focused Linux operating system built around instant, tam
   ```
 - Separate system and home snapshots, built on Btrfs, with fast rewinds.
 - Snapshots protected from the running system, verified at boot, and restorable from the boot menu.
-- Blackholes: disposable sandboxes for untrusted software and malware analysis (`bh` / `blackhole`); a virtual machine mode for stronger isolation.
+- Blackholes: disposable sandboxes for untrusted software and malware analysis (`bh` / `blackhole`); a virtual machine mode for stronger isolation is planned.
 - An nftables firewall that denies inbound traffic by default (`worm fw`).
 - Tor built in, Tor Browser with signature-verified installation, and an optional system-wide anonymous mode.
-- Hardened defaults: full-disk encryption, MAC address randomization, encrypted DNS, a hardened kernel and no telemetry.
+- Hardened defaults: MAC address randomization, encrypted DNS, a hardened kernel and no telemetry (full-disk encryption in the installer is planned).
 - Tool kits (forensics, network analysis, blue team, reverse engineering, web testing, passwords, penetration testing), installed on demand into containers (`worm kit`).
 - An independent init system and package manager (`wh` / `wormhole`), with
   automatic snapshots before every change (`snap auto on|off`).
 - A lightweight Wayland desktop.
+- A live ISO that runs from memory and installs WormOS onto a disk.
 
 ## Trying it
 
