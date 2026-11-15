@@ -1,5 +1,0 @@
-# VMware guest tools, only inside VMware: follows the window size, keeps
-# time and handles shutdown requests from the host. They talk to VMware
-# over VMCI sockets when the transport is loaded (udev loads only VMCI).
-type = daemon
-exec = vmware-checkvm > /dev/null 2>&1 && { modprobe -q vmw_vsock_vmci_transport; exec vmtoolsd; }

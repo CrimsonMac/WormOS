@@ -12,7 +12,7 @@ BINDIR   ?= $(PREFIX)/bin
 PROTOCOLS = ext-data-control-v1
 HEADERS   = $(PROTOCOLS:%=%-client-protocol.h)
 PROTO_SRC = $(PROTOCOLS:%=%-protocol.c)
-SRCS      = clip.c agent.c vmware.c
+SRCS      = clip.c agent.c
 OBJS      = $(SRCS:.c=.o) $(PROTO_SRC:.c=.o)
 
 all: clip

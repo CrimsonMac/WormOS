@@ -64,8 +64,5 @@ void reader_add(int fd, void (*fn)(char *data, size_t len, void *arg), void *arg
 
 int agent_main(const char *port);
 
-/* VMware: the clipboard through its backdoor (vmware.c). */
-bool vmware_detected(void);
-int vmware_main(void);
 
 #endif
