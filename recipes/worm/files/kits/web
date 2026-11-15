@@ -1,0 +1,11 @@
+# The Web testing tool kit (worm kit show web).
+title = Web testing
+description = Scanners and fuzzers for web applications
+included = curl, Tor Browser
+tool = sqlmap
+tool = gobuster
+tool = ffuf
+tool = feroxbuster
+tool = whatweb
+tool = wfuzz
+tool = dirb

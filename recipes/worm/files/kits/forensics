@@ -1,0 +1,16 @@
+# The Forensics tool kit (worm kit show forensics).
+title = Forensics
+description = Disk images, deleted files, metadata, hashes and signatures
+included = file, strings, sqlite3, python3, gpg, bh (open samples in a blackhole)
+tool = sleuthkit
+tool = testdisk
+tool = foremost
+tool = scalpel
+tool = binwalk
+tool = libimage-exiftool-perl
+tool = dc3dd
+tool = ewf-tools
+tool = gddrescue
+tool = hashdeep
+tool = ssdeep
+tool = yara

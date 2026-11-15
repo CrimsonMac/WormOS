@@ -1,0 +1,14 @@
+# The Network analysis tool kit (worm kit show network).
+title = Network analysis
+description = Name lookups, routes, throughput, connections and captures
+included = nmap, ncat, nping, tcpdump, curl, ssh, wg (WireGuard)
+tool = bind9-dnsutils
+tool = whois
+tool = traceroute
+tool = mtr-tiny
+tool = iperf3
+tool = socat
+tool = netcat-openbsd
+tool = ipcalc
+tool = tshark
+tool = ngrep

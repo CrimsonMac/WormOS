@@ -1,0 +1,13 @@
+# The Blue team tool kit (worm kit show blueteam).
+title = Blue team
+description = Malware scanning, system audits, rootkit checks and detection rules
+included = worm status, snap verify, bh (open samples in a blackhole)
+tool = clamav
+tool = lynis
+tool = chkrootkit
+tool = rkhunter
+tool = yara
+tool = python3-yara
+tool = python3-pefile
+tool = pev
+tool = ssdeep
