@@ -6,7 +6,7 @@ LDFLAGS += -Wl,-z,relro,-z,now
 PREFIX  ?= /usr
 BINDIR  ?= $(PREFIX)/bin
 
-OBJS = bh.o box.o sandbox.o ../common/ns.o
+OBJS = bh.o box.o relay.o sandbox.o ../common/ns.o
 
 all: bh
 

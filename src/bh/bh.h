@@ -23,7 +23,14 @@ void warn(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 /* Start the box and run argv (a shell when NULL); returns its exit code. */
 int box_run(const struct box *b, char *const argv[]);
 
+/* bh's side of the program's terminal or output (relay.c). */
+void relay_terminal(int sock, pid_t child);
+void relay_output(int out, int err);
+
 /* No new privileges, Landlock confined to /, then the seccomp filter. */
 int sandbox_apply(void);
+
+/* In each program before exec: keep only the harmless capabilities. */
+int sandbox_drop_caps(void);
 
 #endif

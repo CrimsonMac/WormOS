@@ -167,6 +167,19 @@ static void make_dir(const char *dir, const char *sub, mode_t mode, uid_t owner)
 }
 
 /*
+ * Root's blackholes run as their own ID, which must reach the root
+ * directory inside: their directory is open to that ID's group only, not
+ * to other users (who could otherwise use what a blackhole left there).
+ */
+static void box_protect(const struct box *b)
+{
+	if (getuid() != 0)
+		return;
+	if (chown(b->dir, 0, b->id) < 0 || chmod(b->dir, 0710) < 0)
+		die("cannot protect %s: %s", b->dir, strerror(errno));
+}
+
+/*
  * Create the blackhole's directories. Its root holds mount points for the
  * host's /usr and /etc and its own writable directories, all owned by the
  * blackhole: what the host has there is owned by IDs it does not have.
@@ -193,15 +206,17 @@ static void box_create(struct box *b)
 	/* One creation at a time, so two never take the same ID. */
 	if ((pfd = open(parent, O_RDONLY | O_DIRECTORY | O_CLOEXEC)) < 0 || flock(pfd, LOCK_EX) < 0)
 		die("cannot lock %s: %s", parent, strerror(errno));
-	if (mkdir(b->dir, uid == 0 ? 0711 : 0700) < 0) {
+	if (mkdir(b->dir, 0700) < 0) {
 		if (errno != EEXIST)
 			die("cannot create %s: %s", b->dir, strerror(errno));
 		close(pfd);
 		if (read_info(b->dir, &b->id, NULL) < 0)
 			die("%s is damaged; 'bh close %s' removes it", b->dir, b->name);
+		box_protect(b);
 		return;
 	}
 	b->id = uid == 0 ? free_root_id(parent) : uid;
+	box_protect(b);
 	for (size_t i = 0; i < sizeof(layout) / sizeof(layout[0]); i++)
 		make_dir(b->dir, layout[i].path, layout[i].mode, b->id);
 	for (size_t i = 0; i < sizeof(links) / sizeof(links[0]); i++) {
@@ -437,6 +452,8 @@ static int cmd_close(const char *name)
 		}
 		if (pid <= 1 || kill(pid, SIGTERM) < 0)
 			die("cannot stop '%s'; exit its shell first", name);
+		/* A stopped bh (a suspended job) handles the signal once it runs. */
+		kill(pid, SIGCONT);
 		if (flock(fd, LOCK_EX) < 0)
 			die("cannot lock %s: %s", b.dir, strerror(errno));
 	}

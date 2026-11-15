@@ -5,23 +5,35 @@
  * - No new privileges: setuid files and file capabilities do nothing.
  * - Landlock: file access only beneath the blackhole's own root, so a file
  *   descriptor or mount leaked from the host still opens nothing there.
+ * - Landlock scopes: no signals to processes outside the blackhole and
+ *   no connecting to abstract UNIX sockets created outside it.
  * - seccomp: a filter refusing system calls a sandbox has no business
  *   making (mounts, new namespaces, kernel keyrings, modules, BPF,
- *   io_uring, terminal input injection...) and every non-x86_64 ABI.
+ *   io_uring, terminal input injection, line disciplines...), every
+ *   non-x86_64 ABI, and every socket family but UNIX, IPv4, IPv6 and
+ *   routing netlink (no vsock, which network namespaces do not isolate,
+ *   no packet sockets, no netfilter).
+ * - Capabilities: programs keep only those that act on the blackhole's
+ *   own files and processes (sandbox_drop_caps), so root inside cannot
+ *   configure its network namespace (tc, nf_tables), ptrace its init or
+ *   use raw sockets: kernel code that has often been exploited.
  */
 
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/audit.h>
+#include <linux/capability.h>
 #include <linux/filter.h>
 #include <linux/landlock.h>
+#include <linux/netlink.h>
 #include <linux/seccomp.h>
 #include <sched.h>
 #include <stddef.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/prctl.h>
+#include <sys/socket.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -48,8 +60,13 @@ static int landlock(void)
 	if (abi >= 5)
 		fs |= LANDLOCK_ACCESS_FS_IOCTL_DEV;
 	attr.handled_access_fs = fs;
+	if (abi >= 6)
+		attr.scoped = LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET | LANDLOCK_SCOPE_SIGNAL;
 
-	ruleset = syscall(SYS_landlock_create_ruleset, &attr, sizeof(attr), 0);
+	/* Older kernels reject the larger structure: pass only what they know. */
+	ruleset = syscall(SYS_landlock_create_ruleset, &attr,
+			  abi >= 6 ? sizeof(attr) : offsetof(struct landlock_ruleset_attr, scoped),
+			  0);
 	if (ruleset < 0) {
 		warn("cannot create a Landlock ruleset: %s", strerror(errno));
 		return -1;
@@ -86,6 +103,8 @@ static const int blocked[] = {
 	SYS_settimeofday, SYS_clock_settime, SYS_clock_adjtime, SYS_adjtimex,
 	SYS_iopl, SYS_ioperm, SYS_quotactl, SYS_quotactl_fd,
 	SYS_open_by_handle_at, SYS_name_to_handle_at, SYS_lookup_dcookie, SYS_uselib,
+	SYS_modify_ldt, SYS_fanotify_init, SYS_nfsservctl, SYS_pidfd_getfd,
+	SYS_process_vm_writev,
 };
 
 #define CLONE_NEW_ANY (CLONE_NEWNS | CLONE_NEWCGROUP | CLONE_NEWUTS | CLONE_NEWIPC | \
@@ -98,7 +117,7 @@ static const int blocked[] = {
 
 static int seccomp(void)
 {
-	struct sock_filter f[128];
+	struct sock_filter f[256];
 	struct sock_fprog prog;
 	unsigned n = 0;
 
@@ -126,12 +145,39 @@ static int seccomp(void)
 	f[n++] = DENY(EPERM);
 	f[n++] = RET(SECCOMP_RET_ALLOW);
 
-	/* ioctl: no faking terminal input, which could reach the host shell. */
-	f[n++] = JUMP(BPF_JEQ, SYS_ioctl, 0, 4);
+	/*
+	 * ioctl: no faking terminal input, no console tricks, no line
+	 * disciplines (n_gsm and friends have been exploited for root).
+	 */
+	f[n++] = JUMP(BPF_JEQ, SYS_ioctl, 0, 7);
 	f[n++] = LOAD(args[1]);
-	f[n++] = JUMP(BPF_JEQ, TIOCSTI, 1, 0);
-	f[n++] = JUMP(BPF_JEQ, TIOCLINUX, 0, 1);
+	f[n++] = JUMP(BPF_JEQ, TIOCSTI, 3, 0);
+	f[n++] = JUMP(BPF_JEQ, TIOCLINUX, 2, 0);
+	f[n++] = JUMP(BPF_JEQ, TIOCSETD, 1, 0);
+	f[n++] = JUMP(BPF_JEQ, TIOCCONS, 0, 1);
 	f[n++] = DENY(EPERM);
+	f[n++] = RET(SECCOMP_RET_ALLOW);
+
+	/* socket: UNIX, IPv4, IPv6, and netlink for routing and socket lists only. */
+	f[n++] = JUMP(BPF_JEQ, SYS_socket, 0, 11);
+	f[n++] = LOAD(args[0]);
+	f[n++] = JUMP(BPF_JEQ, AF_UNIX, 8, 0);
+	f[n++] = JUMP(BPF_JEQ, AF_INET, 7, 0);
+	f[n++] = JUMP(BPF_JEQ, AF_INET6, 6, 0);
+	f[n++] = JUMP(BPF_JEQ, AF_NETLINK, 1, 0);
+	f[n++] = DENY(EAFNOSUPPORT);
+	f[n++] = LOAD(args[2]);
+	f[n++] = JUMP(BPF_JEQ, NETLINK_ROUTE, 2, 0);
+	f[n++] = JUMP(BPF_JEQ, NETLINK_SOCK_DIAG, 1, 0);
+	f[n++] = DENY(EPROTONOSUPPORT);
+	f[n++] = RET(SECCOMP_RET_ALLOW);
+
+	/* socketpair only makes sense for UNIX sockets. */
+	f[n++] = JUMP(BPF_JEQ, SYS_socketpair, 0, 4);
+	f[n++] = LOAD(args[0]);
+	f[n++] = JUMP(BPF_JEQ, AF_UNIX, 1, 0);
+	f[n++] = DENY(EAFNOSUPPORT);
+	f[n++] = RET(SECCOMP_RET_ALLOW);
 
 	f[n++] = RET(SECCOMP_RET_ALLOW);
 
@@ -139,6 +185,42 @@ static int seccomp(void)
 	prog.filter = f;
 	if (syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, 0, &prog) < 0) {
 		warn("cannot install the seccomp filter: %s", strerror(errno));
+		return -1;
+	}
+	return 0;
+}
+
+/*
+ * Called in each program's process before exec: keep only the capabilities
+ * that act on the blackhole's own files and processes. NO_NEW_PRIVS (set by
+ * sandbox_apply) means exec cannot give any back.
+ */
+int sandbox_drop_caps(void)
+{
+	static const int keep[] = {
+		CAP_CHOWN, CAP_DAC_OVERRIDE, CAP_FOWNER, CAP_FSETID, CAP_KILL,
+		CAP_SETGID, CAP_SETUID, CAP_NET_BIND_SERVICE,
+	};
+	struct __user_cap_header_struct hdr = { _LINUX_CAPABILITY_VERSION_3, 0 };
+	struct __user_cap_data_struct data[2] = { 0 };
+
+	for (int cap = 0; cap <= 63; cap++) {
+		int kept = 0;
+
+		for (size_t i = 0; i < sizeof(keep) / sizeof(keep[0]); i++)
+			kept |= keep[i] == cap;
+		if (!kept && prctl(PR_CAPBSET_DROP, cap, 0, 0, 0) < 0 && errno != EINVAL) {
+			warn("cannot drop capability %d: %s", cap, strerror(errno));
+			return -1;
+		}
+	}
+	for (size_t i = 0; i < sizeof(keep) / sizeof(keep[0]); i++) {
+		data[keep[i] / 32].effective |= 1u << (keep[i] % 32);
+		data[keep[i] / 32].permitted |= 1u << (keep[i] % 32);
+	}
+	if (syscall(SYS_capset, &hdr, data) < 0 ||
+	    prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0) < 0) {
+		warn("cannot drop capabilities: %s", strerror(errno));
 		return -1;
 	}
 	return 0;

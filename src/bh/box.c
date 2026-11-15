@@ -16,6 +16,13 @@
  * only network interface), applies sandbox_apply() and runs the program.
  * When the program exits, init exits and the kernel kills everything left
  * in the blackhole.
+ *
+ * Programs never get the host's terminal. When bh runs on one, init opens
+ * a pseudo-terminal from the blackhole's own devpts and hands its master
+ * to bh, which relays keys and output (relay.c): no ioctl inside reaches
+ * the host terminal, and output loses the escape sequences that would set
+ * the host's clipboard. Output to a terminal without input from one goes
+ * through pipes for the same reason.
  */
 
 #define _GNU_SOURCE
@@ -31,10 +38,12 @@
 #include <sys/ioctl.h>
 #include <sys/mount.h>
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
+#include <termios.h>
 #include <unistd.h>
 
 #include "bh.h"
@@ -42,6 +51,16 @@
 
 static pid_t child;
 static char cgroup[PATH_MAX];
+
+/* How the program's input and output reach bh (set before the clone). */
+static struct {
+	int pty;                /* run on a pseudo-terminal relayed by bh */
+	int sock[2];            /* pty: init sends the master through it */
+	int out[2], err[2];     /* otherwise: pipes for output to a terminal */
+	int null_in;            /* otherwise: input from /dev/null, not a terminal */
+	struct termios termios; /* pty: the host terminal's settings and size */
+	struct winsize size;
+} io = { .sock = { -1, -1 }, .out = { -1, -1 }, .err = { -1, -1 } };
 
 static void kill_child(int sig)
 {
@@ -149,6 +168,27 @@ static void setup_dev(const char *root)
 	}
 }
 
+/*
+ * The blackhole's root is its own and may hold anything a previous session
+ * left there: make sure each mount point is a real directory, so no mount
+ * follows a symlink planted in it.
+ */
+static void mount_point(const char *root, const char *name)
+{
+	char path[PATH_MAX];
+	struct stat st;
+
+	snprintf(path, sizeof(path), "%s/%s", root, name);
+	if (lstat(path, &st) == 0) {
+		if (S_ISDIR(st.st_mode))
+			return;
+		if (unlink(path) < 0)
+			fail(name);
+	}
+	if (mkdir(path, 0755) < 0)
+		fail(name);
+}
+
 static void loopback_up(void)
 {
 	struct ifreq ifr = { 0 };
@@ -181,6 +221,15 @@ static void run_program(const struct box *b, char *const argv[])
 	setenv("BLACKHOLE", b->name, 1);
 	if (chdir("/root") < 0)
 		fail("enter /root");
+	if (io.pty) {
+		/* A session of its own, with the blackhole's terminal. */
+		if (setsid() < 0 || ioctl(3, TIOCSCTTY, 0) < 0 ||
+		    dup2(3, 0) < 0 || dup2(3, 1) < 0 || dup2(3, 2) < 0)
+			fail("attach the terminal");
+		close(3);
+	}
+	if (sandbox_drop_caps() < 0)
+		_exit(127);
 	if (!argv)
 		argv = shell;
 	execvp(argv[0], argv);
@@ -188,11 +237,55 @@ static void run_program(const struct box *b, char *const argv[])
 	_exit(127);
 }
 
+/* Open the blackhole's own pseudo-terminal and send its master to bh. */
+static void open_terminal(void)
+{
+	char ctl[CMSG_SPACE(sizeof(int))] = { 0 };
+	struct iovec iov = { .iov_base = "m", .iov_len = 1 };
+	struct msghdr msg = { .msg_iov = &iov, .msg_iovlen = 1,
+			      .msg_control = ctl, .msg_controllen = sizeof(ctl) };
+	struct cmsghdr *cm = CMSG_FIRSTHDR(&msg);
+	int master, slave, null;
+
+	if ((master = posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC)) < 0 || unlockpt(master) < 0)
+		fail("open a terminal");
+	if ((slave = ioctl(master, TIOCGPTPEER, O_RDWR | O_NOCTTY | O_CLOEXEC)) < 0)
+		fail("open a terminal");
+	tcsetattr(slave, TCSANOW, &io.termios);
+	ioctl(slave, TIOCSWINSZ, &io.size);
+	cm->cmsg_level = SOL_SOCKET;
+	cm->cmsg_type = SCM_RIGHTS;
+	cm->cmsg_len = CMSG_LEN(sizeof(int));
+	memcpy(CMSG_DATA(cm), &master, sizeof(int));
+	if (sendmsg(io.sock[1], &msg, 0) != 1)
+		fail("pass the terminal on");
+	close(master);
+	close(io.sock[1]);
+	/* The program gets the slave as fd 3; init lets go of the host terminal. */
+	if (dup2(slave, 3) < 0 || (null = open("/dev/null", O_RDWR | O_CLOEXEC)) < 0 ||
+	    dup2(null, 0) < 0 || dup2(null, 1) < 0 || dup2(null, 2) < 0)
+		fail("set up the terminal");
+}
+
 static void box_init(const struct box *b, char *const argv[])
 {
+	static const char *const points[] = { "usr", "etc", "proc", "dev", "inbox" };
+	struct rlimit nproc = { 1024, 1024 };
 	char root[300], inbox[300];
 	int status;
 	pid_t pid;
+
+	/* Output meant for a terminal goes through bh; no terminal as input. */
+	if (!io.pty && ((io.out[1] >= 0 && dup2(io.out[1], 1) < 0) ||
+			(io.err[1] >= 0 && dup2(io.err[1], 2) < 0)))
+		fail("set up the output");
+	if (io.null_in) {
+		int null = open("/dev/null", O_RDONLY | O_CLOEXEC);
+
+		if (null < 0 || dup2(null, 0) < 0)
+			fail("set up the input");
+		close(null);
+	}
 
 	/* Root inside, which is b->id outside. */
 	if (setresgid(0, 0, 0) < 0 || setresuid(0, 0, 0) < 0)
@@ -207,6 +300,8 @@ static void box_init(const struct box *b, char *const argv[])
 	/* pivot_root needs the new root to be a mount point. */
 	if (mount(root, root, NULL, MS_BIND | MS_REC, NULL) < 0)
 		fail("mount the blackhole's root");
+	for (size_t i = 0; i < sizeof(points) / sizeof(points[0]); i++)
+		mount_point(root, points[i]);
 	/* No submounts below these, so they can be bound alone. */
 	if (ns_bind(root, "/usr", "/usr", MS_RDONLY) < 0 ||
 	    ns_bind(root, "/etc", "/etc", MS_RDONLY) < 0)
@@ -224,14 +319,23 @@ static void box_init(const struct box *b, char *const argv[])
 	if (sethostname(b->name, strlen(b->name)) < 0)
 		fail("set the host name");
 	loopback_up();
+	if (io.pty)
+		open_terminal();
+	/* Nothing inside may ptrace init or take its descriptors. */
+	prctl(PR_SET_DUMPABLE, 0);
+	/* Fork bombs stop here, also for users' blackholes (no cgroup). */
+	if (setrlimit(RLIMIT_NPROC, &nproc) < 0)
+		fail("limit the processes");
 	if (sandbox_apply() < 0)
 		_exit(127);
-	close_range(3, ~0U, 0);
+	close_range(io.pty ? 4 : 3, ~0U, 0);
 
 	if ((pid = fork()) < 0)
 		fail("start the program");
 	if (pid == 0)
 		run_program(b, argv);
+	if (io.pty)
+		close(3);
 
 	/* As init: reap everything, leave with the program. */
 	for (;;) {
@@ -259,6 +363,17 @@ int box_run(const struct box *b, char *const argv[])
 	}
 	if (pipe2(go, O_CLOEXEC) < 0)
 		die("cannot create a pipe: %s", strerror(errno));
+	/* Only in the terminal's foreground: a background job cannot set raw mode. */
+	io.pty = isatty(0) && tcgetpgrp(0) == getpgrp() && tcgetattr(0, &io.termios) == 0;
+	io.null_in = !io.pty && isatty(0);
+	if (io.pty) {
+		ioctl(0, TIOCGWINSZ, &io.size);
+		if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, io.sock) < 0)
+			die("cannot create a socket: %s", strerror(errno));
+	} else if ((isatty(1) && pipe2(io.out, O_CLOEXEC) < 0) ||
+		   (isatty(2) && pipe2(io.err, O_CLOEXEC) < 0)) {
+		die("cannot create a pipe: %s", strerror(errno));
+	}
 	fflush(NULL);
 	child = syscall(SYS_clone, CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWNET |
 			CLONE_NEWIPC | CLONE_NEWUTS | SIGCHLD, NULL, NULL, NULL, NULL);
@@ -275,6 +390,12 @@ int box_run(const struct box *b, char *const argv[])
 	}
 
 	close(go[0]);
+	if (io.sock[1] >= 0)
+		close(io.sock[1]);
+	if (io.out[1] >= 0)
+		close(io.out[1]);
+	if (io.err[1] >= 0)
+		close(io.err[1]);
 	if (ns_map_ids(child, 0, b->id, 0, b->id) < 0) {
 		warn("cannot map IDs into the blackhole: %s", strerror(errno));
 		kill(child, SIGKILL);
@@ -295,6 +416,10 @@ int box_run(const struct box *b, char *const argv[])
 	signal(SIGQUIT, SIG_IGN);
 	sigaction(SIGTERM, &kill_sa, NULL);
 	sigaction(SIGHUP, &kill_sa, NULL);
+	if (io.pty)
+		relay_terminal(io.sock[0], child);
+	else
+		relay_output(io.out[0], io.err[0]);
 	while (waitpid(child, &status, 0) < 0)
 		if (errno != EINTR)
 			die("cannot wait for the blackhole: %s", strerror(errno));
