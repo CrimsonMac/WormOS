@@ -1,0 +1,87 @@
+name=licenses
+version=1.0
+description="License texts of WormOS and of every program it is built from"
+# Collected from the upstream archives the other recipes use, so the image
+# carries the license of everything in it (under /usr/share/licenses).
+noextract=1
+
+# File names that hold license texts, at the top of a source tree or in a
+# directory of license files.
+license_files() {
+	grep -iE '^[^/]+/((licen[cs]es?|copying|copyright)[^/]*|(licen[cs]es?|docs)/(licen[cs]e|copying)[^/]*|licen[cs]es?/[^/]+|notice(\.txt|\.md)?|ofl\.txt)$' |
+		grep -v '/$'
+}
+
+collect() {
+	local pkg=$1 archive=$2 dest list
+	[ -f "$archive" ] || return 0
+	dest="$pkgdir/usr/share/licenses/$pkg"
+	list=$(tar -tf "$archive" 2>/dev/null | license_files) || true
+	if [ -z "$list" ]; then
+		# Licensed in the source files' headers only (libdrm), public
+		# domain (sqlite), or with its own documentation (Tor Browser).
+		echo "no license file found for $pkg" >&2
+		return 0
+	fi
+	mkdir -p "$dest"
+	printf '%s\n' "$list" | tar -xf "$archive" -C "$dest" --strip-components=1 \
+		--no-same-owner --no-same-permissions -T -
+}
+
+note() {
+	local pkg=$1
+	shift
+	mkdir -p "$pkgdir/usr/share/licenses/$pkg"
+	printf '%s\n' "$@" > "$pkgdir/usr/share/licenses/$pkg/NOTE"
+}
+
+build() {
+	:
+}
+
+package() {
+	local dir recipe pkg first
+	install -Dm644 "$WORMOS_ROOT/LICENSE" "$pkgdir/usr/share/licenses/wormos/COPYING"
+
+	# The toolchain's glibc and gcc runtime libraries, and the kernel.
+	while read -r url _; do
+		case "$url" in
+		*/glibc-*) collect glibc "$SOURCES/${url##*/}" ;;
+		*/gcc-*) collect gcc-libs "$SOURCES/${url##*/}" ;;
+		*/linux-*) collect linux "$SOURCES/${url##*/}" ;;
+		esac
+	done < <(grep -v '^#' "$WORMOS_ROOT/toolchain/sources")
+
+	for dir in "$WORMOS_ROOT/recipes"/*/; do
+		recipe=$dir/recipe
+		pkg=$(basename "$dir")
+		[ "$pkg" = licenses ] && continue
+		# Packages that install their own license files keep them.
+		grep -q 'share/licenses' "$recipe" && continue
+		first=$( (source=(); . "$recipe" >/dev/null 2>&1; s=${source[0]:-}; echo "${s%%::*}::${s#*::}") )
+		case "$first" in
+		::) continue ;;   # built from this repository: WormOS's own license
+		esac
+		# NAME::URL stores the download as NAME.
+		local stored=${first%%::*} url=${first#*::}
+		[ "$stored" = "$url" ] && stored=${url##*/}
+		[ -n "$stored" ] || stored=${url##*/}
+		case "$stored" in
+		*.tar*|*.tgz|*.tbz2|*.txz) collect "$pkg" "$SOURCES/$stored" ;;
+		*) echo "not an archive, no license collected: $pkg" >&2 ;;
+		esac
+	done
+	# Packages without a license file in their archive.
+	note libdrm "libdrm is under the MIT license, stated in the header of each source file."
+	note sqlite "SQLite is in the public domain (https://sqlite.org/copyright.html)."
+	note ca-certificates "The certificate list comes from Mozilla's NSS (certdata.txt) and is" \
+		"under the Mozilla Public License 2.0 (https://mozilla.org/MPL/2.0/)."
+	note wormhole-keyrings "Public signing keys of the Debian and Kali package archives, as" \
+		"published by those projects, used to verify their packages."
+	note tor-browser-bundle "Tor Browser is distributed unmodified, as published by The Tor" \
+		"Project; its licenses are in /opt/tor-browser/Browser/TorBrowser/Docs/Licenses." \
+		"Tor and the Tor logo are trademarks of The Tor Project, Inc."
+
+	find "$pkgdir/usr/share/licenses" -type d -exec chmod 755 {} +
+	find "$pkgdir/usr/share/licenses" -type f -exec chmod 644 {} +
+}
