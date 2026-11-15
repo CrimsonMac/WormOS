@@ -25,17 +25,30 @@ tip=$(awk -v seed="$$$(date +%s)" '
 	/^[^#]/ && NF { tips[n++] = $0 }
 	END { if (n) { srand(seed); print tips[int(rand() * n)] } }' /usr/share/wormos/tips)
 
+snaps=$(sed -n 's/^count = //p' /run/snap-status 2>/dev/null)
+
 m='\033[35m' b='\033[1m' d='\033[2m' r='\033[0m'
+# The logo: a wormhole seen from above, its rings brighter towards the
+# core. 24-bit colours; terminals without them pick the nearest.
+c1='\033[38;2;91;33;182m' c2='\033[38;2;124;58;237m' c3='\033[38;2;167;139;250m'
+c4='\033[38;2;216;180;254m' c5='\033[1;38;2;253;244;255m'
+if [ -n "${NO_COLOR:-}" ] || [ "${TERM:-dumb}" = dumb ]; then
+	m= b= d= r= c1= c2= c3= c4= c5=
+fi
 printf "\n"
-printf "   ${m}.-~~~-.${r}\n"
-printf "  ${m}(  (o)  )${r}   ${b}%s${r}  ${d}·${r}  Linux %s  ${d}·${r}  up %s\n" \
-	"$PRETTY_NAME" "$(uname -r)" "$uptime"
-printf "   ${m}'-~~~-'${r}    Memory %s  ${d}·${r}  Tor mode %s\n" "$mem" "$anon"
+printf "  ${c1}     .-''''''''-.${r}        ${b}%s${r}\n" "$PRETTY_NAME"
+printf "  ${c1}   .'${c2}  .-''''-.  ${c1}'.${r}      ${d}─────────────────────────────${r}\n"
+printf "  ${c1}  /${c2}  .'${c3} .-''-. ${c2}'.  ${c1}\\\\${r}     ${m}Kernel${r}    Linux %s\n" "$(uname -r)"
+printf "  ${c1} |${c2}  |${c3}  (${c4}  ${c5}@${c4}  ${c3})  ${c2}|  ${c1}|${r}     ${m}Uptime${r}    %s\n" "$uptime"
+printf "  ${c1}  \\\\${c2}  '.${c3} '-..-' ${c2}.'  ${c1}/${r}     ${m}Memory${r}    %s\n" "$mem"
+printf "  ${c1}   '.${c2}  '-....-'  ${c1}.'${r}      ${m}Snapshots${r} %s  ${d}·${r}  ${m}Tor mode${r} %s\n" \
+	"${snaps:-0}" "$anon"
+printf "  ${c1}     '-........-'${r}\n"
 printf "\n"
-printf "  ${b}snap now${r}    take a snapshot        ${b}wh install${r}   add software\n"
-printf "  ${b}snap list${r}   snapshots, ${b}rewind${r}      ${b}bh open${r}      disposable sandbox\n"
-printf "  ${b}worm status${r} protections            ${b}su -${r}         administration\n"
-printf "  ${b}worm help${r}   every WormOS command\n"
+printf "  ${b}snap now${r}     take a snapshot          ${b}wh install${r}   add software\n"
+printf "  ${b}snap list${r}    snapshots, ${b}rewind${r}        ${b}bh open${r}      disposable sandbox\n"
+printf "  ${b}worm status${r}  protections              ${b}worm kit${r}     tool kits\n"
+printf "  ${b}worm help${r}    every WormOS command     ${b}su -${r}         administration\n"
 printf "\n"
 [ -n "$tip" ] && printf "  ${m}Tip:${r} %s\n" "$tip"
 printf "  ${d}welcome --full shows the guide; touch ~/.hushlogin hides this.${r}\n\n"

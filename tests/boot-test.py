@@ -50,9 +50,9 @@ CHECKS = [
     ("system bus answers",
      "dbus-send --system --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus "
      "org.freedesktop.DBus.GetId", r'string "[0-9a-f]{32}"'),
-    ("VMware tools installed, idle outside VMware",
-     "ls /usr/bin/vmtoolsd && echo running=$(pidof vmtoolsd | wc -w)",
-     r"^/usr/bin/vmtoolsd\nrunning=0$"),
+    ("license texts installed",
+     "ls /usr/share/licenses/wormos/COPYING /usr/share/licenses/glibc /usr/share/licenses/linux "
+     "> /dev/null && echo n=$(ls /usr/share/licenses | wc -l)", r"^n=(1[0-9][0-9]|[5-9][0-9])$"),
     ("settings schemas compiled by the hook",
      "gsettings list-schemas | grep -c '^org.gtk.gtk4.Settings'", r"^[1-9]$"),
     ("file type database compiled by the hook",
@@ -119,6 +119,10 @@ FIREWALL_CHECKS = [
      "nft list table inet worm | grep -c 'policy drop'", r"^2$"),
     ("loaded before the network", "ls /etc/worm/services | grep -E 'firewall|network' | tr '\\n' ' '",
      r"^05-firewall 30-network\s*$"),
+    ("pings get no answer", "nft list chain inet worm input | grep -c echo-request", r"^0$"),
+    ("network waits for the firewall", "grep -c 'nft list chain inet worm input' /usr/lib/worm/network",
+     r"^1$"),
+    ("dhcp names no client", "cat /proc/$(pidof udhcpc)/cmdline | tr '\\0' ' '", r"-V\s+-s"),
     ("web server started",
      "mkdir -p /tmp/www && echo hi > /tmp/www/index.html && httpd -p 8080 -h /tmp/www && echo ok",
      r"^ok$"),
@@ -181,6 +185,27 @@ BLACKHOLE_CHECKS = [
     ("sandboxed", "bh open t1 -- grep -E 'NoNewPrivs|Seccomp:' /proc/self/status",
      r"NoNewPrivs:\s+1(.|\n)*Seccomp:\s+2"),
     ("no nested namespaces", "bh open t1 -- unshare -U true 2>&1", r"not permitted"),
+    ("own terminal", "bh open t1 -- tty", r"^/dev/pts/0\s*$"),
+    ("only harmless capabilities", "bh open t1 -- grep -E 'Cap(Bnd|Eff)' /proc/self/status",
+     r"CapEff:\s+00000000000004fb(.|\n)*CapBnd:\s+00000000000004fb|"
+     r"CapBnd:\s+00000000000004fb(.|\n)*CapEff:\s+00000000000004fb"),
+    ("cannot configure its network", "bh open t1 -- ip link set lo down 2>&1",
+     r"not permitted"),
+    ("no vsock",
+     "bh open t1 -- python3 -c 'import socket; socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM)' 2>&1",
+     r"Address family not supported"),
+    ("no packet sockets",
+     "bh open t1 -- python3 -c 'import socket; socket.socket(socket.AF_PACKET, socket.SOCK_RAW)' 2>&1",
+     r"Address family not supported"),
+    ("no netfilter",
+     "bh open t1 -- python3 -c 'import socket; socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, 12)' 2>&1",
+     r"Protocol not supported"),
+    ("process limit", "bh open t1 -- grep 'Max processes' /proc/self/limits", r"\s1024\s+1024\s"),
+    ("clipboard sequences dropped",
+     "bh open t1 -- printf 'a\\033]52;c;ZXZpbA==\\007b\\n' | od -An -c | tr -s ' '",
+     r"^\s*a b \\r \\n\s*$"),
+    ("other sequences kept", "bh open t1 -- printf '\\033]0;t\\007' | od -An -c | tr -s ' '",
+     r"^\s*033 \] 0 ; t \\a\s*$"),
     ("no inherited descriptors",
      "exec 7</home; bh open t1 -- sh -c 'echo fds=$(ls /proc/self/fd | tr \"\\n\" \" \")'; exec 7<&-",
      r"^fds=0 1 2 3\s*$"),
@@ -190,6 +215,8 @@ BLACKHOLE_CHECKS = [
      "bh open t1 -- sleep 60 & sleep 5; cat /sys/fs/cgroup/blackholes/t1/pids.max; bh list",
      r"^1024$(.|\n)*^t1\s+running"),
     ("one session at a time", "bh open t1 -- true 2>&1", r"already open"),
+    ("root's blackholes closed to users", "stat -c '%a %U' /var/lib/blackholes/0/t1",
+     r"^710 root$"),
     ("bh close", "bh close t1", r"^Closed blackhole t1\.$"),
     ("everything removed",
      "sleep 1; echo n=$(ls /var/lib/blackholes/0 /sys/fs/cgroup/blackholes | grep -c t1)",
@@ -204,6 +231,9 @@ BLACKHOLE_CHECKS = [
      r"^\s*0\s+[1-9]\d*\s+1$"),
     ("user's blackhole is private", "ls -ld /var/lib/blackholes/$(id -u tester)",
      r"^drwx------\s+\d+\s+tester\s"),
+    ("user's blackhole cannot reach root's",
+     "bh open t9 -- true; su tester -c 'ls /var/lib/blackholes/0/t9' 2>&1; bh close t9",
+     r"Permission denied"),
     ("user closes it", "su tester -c 'bh close u1'", r"^Closed blackhole u1\.$"),
     ("power helper is setuid root", "stat -c '%U %a' /usr/lib/worm/power", r"^root 4755$"),
     ("power helper only for administrators",
@@ -234,6 +264,44 @@ WHC_CHECKS = [
     ("wormhole removed", "rm -rf /var/lib/wormholes/mini && echo ok", r"^ok$"),
 ]
 
+TIME_CHECKS = [
+    ("UTC by default", "worm time", r"^Time zone: UTC$"),
+    ("time zone set", "worm time zone Europe/Berlin && date +%Z", r"^CES?T$"),
+    ("time zone is a link into the zone data", "readlink /etc/localtime",
+     r"^/usr/share/zoneinfo/Europe/Berlin$"),
+    ("unknown time zone refused", "worm time zone ../../etc/passwd 2>&1; echo rc=$?",
+     r"unknown time zone(.|\n)*rc=1"),
+    ("back to UTC", "worm time zone UTC && date +%Z && ls /etc/localtime 2>&1", r"^UTC\n.*No such file"),
+    ("clock checked over HTTPS", "cat /etc/worm/services/35-time | grep -c timesync; pidof timesync || "
+     "ps -o args | grep -c '[t]imesync'", r"^1\n[1-9]"),
+]
+
+PASSWD_CHECKS = [
+    ("a user password", "mount -o remount,bind,rw / && echo tester:first1 | chpasswd -c sha512 "
+     "> /dev/null && mount -o remount,bind,ro / && echo ok", r"^ok$"),
+    ("wrong current password refused",
+     "su tester -c 'printf \"nope\\nsecond2\\n\" | /usr/lib/worm/passwd' 2>&1; echo rc=$?",
+     r"current password is wrong(.|\n)*rc=3"),
+    ("user changes their password",
+     "H=$(grep '^tester:' /etc/shadow); su tester -c 'printf \"first1\\nsecond2\\n\" | "
+     "/usr/lib/worm/passwd' && [ \"$(grep '^tester:' /etc/shadow)\" != \"$H\" ] && echo changed",
+     r"^changed$"),
+    ("new password works", "su tester -c 'printf \"second2\\nthird3\\n\" | /usr/lib/worm/passwd' "
+     "&& echo ok", r"^ok$"),
+    ("root stays read-only", "touch /probe 2>&1", r"Read-only file system"),
+    ("only one's own account", "su tester -c '/usr/bin/worm passwd-apply root < /dev/null' 2>&1",
+     r"needs root"),
+]
+
+KIT_CHECKS = [
+    ("tool kits listed", "worm kit list", r"^forensics(.|\n)*^pentest(.|\n)*^web"),
+    ("kit contents", "worm kit show forensics", r"sleuthkit(.|\n)*Not installed"),
+    ("unknown kit refused", "worm kit show nothing 2>&1; echo rc=$?", r"no kit(.|\n)*rc=1"),
+    ("users cannot install kits", "su tester -c 'worm kit install web' 2>&1", r"needs root"),
+    ("console greeting up to date", "grep -c \"$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release "
+     "| tr -d '\\\"')\" /etc/issue", r"^1$"),
+]
+
 STATUS_CHECKS = [
     ("worm status", "worm status",
      r"System\s+read-only(.|\n)*Mode\s+normal(.|\n)*Packages\s+no change waiting(.|\n)*"
@@ -249,6 +317,9 @@ ANON_CHECKS = [
     ("tor runs unprivileged", "sleep 3; ps -o user,comm | grep -w tor", r"^tor\s+tor"),
     ("connections sent to Tor", "nft list chain inet worm anon_nat",
      r"udp dport 53 redirect to :5353(.|\n)*l4proto (tcp|6) redirect to :9040"),
+    ("only what was sent to Tor reaches it", "nft list chain inet worm output",
+     r"ct status dnat ip daddr 127\.0\.0\.1 accept(.|\n)*meta skuid \d+ meta l4proto (tcp|6) accept"
+     r"(.|\n)*meta skuid 0 udp sport 68 udp dport 67 accept"),
     ("everything else blocked", "ping -c 1 -W 3 10.0.2.2 2>&1", r"not permitted|100% packet loss"),
     ("direct request attempted", "wget -q -T 10 -O- {repo}anon-leak-check 2>&1; echo done",
      r"done$"),
@@ -607,7 +678,7 @@ def main():
              len(HELPER_CHECKS) + len(TOOL_CHECKS) + 3 +
              len(anon_checks) + 2 +
              len(FIREWALL_OPEN_CHECKS) + len(FIREWALL_CLOSE_CHECKS) +
-             len(FIREWALL_AFTER_CHECKS) + 3 + len(BLACKHOLE_CHECKS) + len(WHC_CHECKS) +
+             len(FIREWALL_AFTER_CHECKS) + 3 + len(BLACKHOLE_CHECKS) + len(WHC_CHECKS) + len(KIT_CHECKS) + len(TIME_CHECKS) + len(PASSWD_CHECKS) +
              len(SNAPSHOT_CHECKS) +
              len(BROWSE_CHECKS) + len(REWIND_CHECKS) + len(HOME_CHECKS) + len(MENU_CHECKS) +
              len(worm_checks) + len(FIRST_REMOVE_CHECKS) + 1 + len(AFTER_INSTALL_CHECKS) +
@@ -658,6 +729,9 @@ def main():
             run_checks(con, FIREWALL_AFTER_CHECKS)
             run_checks(con, BLACKHOLE_CHECKS)
             run_checks(con, WHC_CHECKS)
+            run_checks(con, KIT_CHECKS)
+            run_checks(con, PASSWD_CHECKS)
+            run_checks(con, TIME_CHECKS)
             run_checks(con, STATUS_CHECKS)
             run_checks(con, anon_checks)
             check("nothing reached the network directly in anonymous mode",

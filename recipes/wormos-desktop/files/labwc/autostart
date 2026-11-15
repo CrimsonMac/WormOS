@@ -4,9 +4,13 @@ dbus-update-activation-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP > /dev/nu
 swaybg -i /usr/share/backgrounds/wormos.png -m fill > /dev/null 2>&1 &
 # The panel, the application launcher and notifications.
 worm-shell > "$XDG_RUNTIME_DIR/shell.log" 2>&1 &
-# The clipboard shared with the VM's host (QEMU, virt-manager, VMware); it
+# The clipboard shared with the VM's host (QEMU, virt-manager); it
 # exits at once outside such a VM.
 clip agent > "$XDG_RUNTIME_DIR/clip.log" 2>&1 &
+# The live system (the ISO) opens the installer.
+if [ -e /run/wormos/live ] && [ -x /usr/bin/wormos-installer ]; then
+	wormos-installer > /dev/null 2>&1 &
+fi
 # A welcome terminal the first time a user starts the desktop.
 if [ ! -e "$HOME/.config/wormos/welcomed" ]; then
 	mkdir -p "$HOME/.config/wormos" && touch "$HOME/.config/wormos/welcomed"

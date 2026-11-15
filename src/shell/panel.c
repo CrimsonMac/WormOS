@@ -360,19 +360,24 @@ static void power_clicked(GtkButton *button, gpointer data)
 	struct panel *panel = data;
 	const char *action = g_object_get_data(G_OBJECT(button), "action");
 
-	/* Restart and shut down ask for a second click. */
+	/* Restart, shut down and panic ask for a second click. */
 	if (strcmp(action, "logout") && panel->confirm != GTK_WIDGET(button)) {
 		if (panel->confirm)
 			power_label(panel->confirm, NULL);
 		panel->confirm = GTK_WIDGET(button);
-		power_label(GTK_WIDGET(button), !strcmp(action, "off")
-				? "Click again to shut down" : "Click again to restart");
+		power_label(GTK_WIDGET(button), !strcmp(action, "off") ? "Click again to shut down" :
+			    !strcmp(action, "panic") ? "Click again to cut the network" :
+			    "Click again to restart");
 		return;
 	}
 	if (!strcmp(action, "logout"))
 		power_logout();
 	else if (!power_request(action))
 		power_label(GTK_WIDGET(button), "Only administrators can do this");
+	else if (!strcmp(action, "panic")) {
+		power_label(GTK_WIDGET(button), "Network cut; 'worm panic off' (root) restores it");
+		panel->confirm = NULL;
+	}
 }
 
 static GtkWidget *power_button(struct panel *panel, const char *icon, const char *label,
@@ -388,7 +393,7 @@ static GtkWidget *power_button(struct panel *panel, const char *icon, const char
 	g_object_set_data(G_OBJECT(button), "label", (gpointer)label);
 	g_object_set_data(G_OBJECT(button), "text", text);
 	gtk_widget_add_css_class(button, "power-action");
-	if (!strcmp(action, "off"))
+	if (!strcmp(action, "off") || !strcmp(action, "panic"))
 		gtk_widget_add_css_class(button, "destructive-action");
 	g_signal_connect(button, "clicked", G_CALLBACK(power_clicked), panel);
 	return button;
@@ -434,6 +439,10 @@ static GtkWidget *power_menu(struct panel *panel)
 	gtk_box_append(GTK_BOX(row), dropdown);
 	gtk_box_append(GTK_BOX(box), row);
 
+	gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+	/* worm panic: cut the network, stop blackholes, keep a snapshot. */
+	gtk_box_append(GTK_BOX(box), power_button(panel, "network-offline-symbolic",
+						  "Panic: cut the network", "panic"));
 	gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 	gtk_box_append(GTK_BOX(box), power_button(panel, "system-log-out-symbolic", "Log out",
 						  "logout"));

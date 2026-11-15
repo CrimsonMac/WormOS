@@ -23,7 +23,7 @@ fi
 # and are installed with wh, as on a running system.
 PACKAGES=(base-files glibc gcc-libs busybox worminit wormrd snap wh worm linux
 	zstd curl gnupg wormhole-keyrings libmnl libnftnl nftables bh expat unbound
-	libevent tor kmod eudev seatd linux-firmware dbus open-vm-tools wormos-login
+	libevent tor kmod eudev seatd linux-firmware dbus wormos-login licenses wormos-installer tzdata
 	wormos-desktop labwc wlroots mesa foot swaybg grim wlr-randr xcompose font-inter font-hack
 	# Everyday command-line tools. Listed here rather than as dependencies,
 	# so that each one can be removed on its own.

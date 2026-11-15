@@ -2,10 +2,11 @@
 
 A lightweight, security-focused Linux operating system built around instant, tamper-resistant snapshots.
 
-> **Status:** 1.3: a read-only system with snapshots, packages, a
-> firewall, sandboxes, Tor and Tor Browser, and a light Wayland desktop
-> with its own panel, login screen, snapshot timeline and sound, running
-> in a virtual machine (QEMU or VMware).
+> **Status:** 1.5: a read-only system with snapshots, packages, a
+> firewall, sandboxes, Tor and Tor Browser, tool kits and a light Wayland
+> desktop with its own panel, login screen, snapshot timeline and sound.
+> It runs live from an ISO and installs onto a disk, or as a ready-made
+> disk image in QEMU and virt-manager.
 
 ## Philosophy
 
@@ -14,7 +15,7 @@ A lightweight, security-focused Linux operating system built around instant, tam
 - **Reversible:** the base system is immutable, and every state can be snapshotted and restored in seconds.
 - **Isolated:** risky work runs in disposable sandboxes that cannot reach the host or its snapshots.
 
-## Planned features
+## Features
 
 - `snap`, a simple snapshot tool, plus a graphical timeline:
   ```
@@ -29,23 +30,38 @@ A lightweight, security-focused Linux operating system built around instant, tam
 - An nftables firewall that denies inbound traffic by default (`worm fw`).
 - Tor built in, Tor Browser with signature-verified installation, and an optional system-wide anonymous mode.
 - Hardened defaults: full-disk encryption, MAC address randomization, encrypted DNS, a hardened kernel and no telemetry.
-- Optional tool kits (forensics, blue team, network analysis), installed on demand into isolated containers (`worm kit`).
+- Tool kits (forensics, network analysis, blue team, reverse engineering, web testing, passwords, penetration testing), installed on demand into containers (`worm kit`).
 - An independent init system and package manager (`wh` / `wormhole`), with
   automatic snapshots before every change (`snap auto on|off`).
 - A lightweight Wayland desktop.
 
 ## Trying it
 
-Release images run in a virtual machine, with UEFI or BIOS firmware
-(Secure Boot off). Download them from the release page and check them
-against `SHA256SUMS`.
+Download a release from the release page and check it against
+`SHA256SUMS`. Both kinds start with UEFI or BIOS firmware (Secure Boot
+off).
 
-- **QEMU / virt-manager:** `wormos-1.3-x86_64.qcow2`. In virt-manager,
+- **The ISO** (`wormos-1.5-x86_64.iso`): a live system and an installer.
+  Boot a virtual machine from it (as a CD/DVD), or write it to a USB stick
+  as it is (`dd`, or a tool such as Ventoy or balenaEtcher) and start a PC
+  from the stick. WormOS copies itself into memory and starts the desktop
+  as the user "live", without a password; nothing is written to any disk.
+  Give it at least 2 GB of memory (4 GB is comfortable): everything you
+  change lives in memory too, until you restart.
+
+  The installer opens by itself ("Install WormOS" in the launcher). Choose
+  a disk of at least 8 GB: it is **erased** and gets WormOS, which then
+  fills it. Restart without the ISO; WormOS asks for your name and
+  passwords, as in the disk image below. The live system's snapshots and
+  files are not carried over.
+
+- **The disk image for QEMU / virt-manager** (`wormos-1.5-x86_64.qcow2`): an
+  installed system, ready to start. In virt-manager,
   import an existing disk image and choose a generic recent Linux. From
   the command line:
   ```
   qemu-system-x86_64 -machine q35 -accel kvm -cpu host -m 2048 -smp 2 \
-      -drive file=wormos-1.3-x86_64.qcow2,if=virtio \
+      -drive file=wormos-1.5-x86_64.qcow2,if=virtio \
       -nic user,model=virtio-net-pci -device virtio-vga \
       -device virtio-keyboard-pci -device virtio-tablet-pci \
       -device virtio-serial-pci \
@@ -64,23 +80,22 @@ against `SHA256SUMS`.
   ```
   & "C:\Program Files\qemu\qemu-system-x86_64.exe" -machine q35 `
       -accel whpx,kernel-irqchip=off -m 2048 -smp 2 `
-      -drive file=wormos-1.3-x86_64.qcow2,if=virtio `
+      -drive file=wormos-1.5-x86_64.qcow2,if=virtio `
       -nic user,model=virtio-net-pci -device virtio-vga -display sdl `
       -device virtio-keyboard-pci -device virtio-tablet-pci
   ```
   If QEMU says WHPX is not available, use `-accel tcg` instead: it works
   without the Windows feature, but much more slowly. Ctrl+Alt+G releases
   the mouse.
-- **VMware Workstation / Player:** unzip `wormos-1.3-vmware.zip` and open
-  `WormOS.vmx` (UEFI, NVMe disk, 2 GB of memory, 3D acceleration on: the
-  desktop draws with the GPU, or in software where VMware has no 3D). The
-  screen follows the window size, and text copied in WormOS lands on the
-  host's clipboard; the host's text comes over when the pointer enters the
-  VM's window.
+- **VMware is not supported for now.** It cannot be tested at the moment,
+  so there is no VMware bundle and the VMware guest tools are left out.
+  The ISO may still work in VMware, but nothing is promised; QEMU,
+  virt-manager (KVM) and real PCs are the supported targets.
 
-On the first start, WormOS asks for your name, a user name, a password for
-it and a password for root. Then the desktop starts; later, log in on the
-login screen.
+On the first start of an installed system (from the ISO or the disk
+image), WormOS asks for your name, a user name, a password for it and a
+password for root. Then the desktop starts; later, log in on the login
+screen.
 
 ## The desktop
 
@@ -102,6 +117,14 @@ idles at well under 100 MB of memory.
   Ctrl+Alt+F1 returns to the desktop.
 - Administration is done as root: `su -` in a terminal, or the menu's root
   terminal.
+- `passwd` (or `worm passwd`) changes your own password, although `/etc`
+  is read-only: it asks for the current one first.
+- Time: the first-boot setup asks for your time zone; `worm time` shows the
+  time, the zone and the last clock check, `worm time zone Europe/Berlin`
+  changes the zone (as root; `worm time zones` lists them). The clock is
+  checked over HTTPS every six hours (the `Date` of an authenticated
+  answer, which unlike plain NTP cannot be forged on the way, and which
+  also works through Tor).
 - Copy and paste between WormOS and the machine it runs on works with
   virt-manager (SPICE) and QEMU (see above). In a terminal, `clip copy`
   copies its arguments or standard input and `clip paste` prints the
@@ -110,8 +133,7 @@ idles at well under 100 MB of memory.
   them; `environment` sets the keyboard layout) and `/etc/xdg/foot/foot.ini`.
 - Screen resolution: `wlr-randr` lists outputs and their modes, and
   `wlr-randr --output NAME --custom-mode 1920x1080` changes one. To keep a
-  setting, add the command to `~/.config/labwc/autostart`. (Without guest
-  tools, VMware does not resize the screen with its window.)
+  setting, add the command to `~/.config/labwc/autostart`.
 
 ### The terminal
 
@@ -135,14 +157,15 @@ Terminals run [zsh](https://www.zsh.org) with a configuration in
 - The prompt shows the newest snapshot and anything waiting for a
   restart, `[snap 14] tester@wormos:~$`; root's ends in `#` and says
   `[unlocked]` while the system is writable. Inside a blackhole it starts
-  with `[bh:NAME]`. A failed command's status appears on the right.
+  with `[bh:NAME]`, inside a git repository the branch follows the folder
+  (`~/src/app (main)$`). A failed command's status and the time of
+  commands that ran for 5 seconds or more appear on the right.
 - A missing command suggests `wh search`.
 
 Root's own login on the consoles uses the plain `sh`; the menu's root
 terminal opens zsh.
 
-Graphics: Intel GPUs (with the i915/xe firmware) and VMware's virtual GPU
-use OpenGL ES through Mesa; other virtual GPUs (virtio, QXL, bochs) use a
+Graphics: Intel GPUs (with the i915/xe firmware) use OpenGL ES through Mesa; other virtual GPUs (virtio, QXL, bochs) use a
 fast software renderer, and so does any GPU on which OpenGL ES fails to
 start.
 Programs installed from Debian or Kali that support Wayland open on the
@@ -275,8 +298,12 @@ worm lock                 # read-only again, and snapshot the changes
 ## Firewall
 
 Inbound traffic is dropped unless it answers a connection this machine
-started (outbound is not filtered). The rules load before any network
-interface comes up.
+started (outbound is not filtered). Pings get no answer, so the machine
+does not show itself on the network; only the ICMP messages connections
+need (errors, IPv6 neighbour discovery) come in. The rules load before any
+network interface comes up, and the network is only started once they
+are in place: if they cannot be loaded, the machine stays offline. DHCP
+requests do not name the system or its DHCP client.
 
 ```
 worm fw status            # active? which ports are open?
@@ -296,10 +323,12 @@ worm anon status          # is it on, has Tor connected yet?
 worm anon off
 ```
 
-In anonymous mode only Tor itself reaches the network. Every other TCP
-connection, from any program, user, wormhole or root, is sent through
-Tor, DNS queries are answered by Tor, and everything Tor cannot carry
-(UDP, ICMP, IPv6) is blocked. The rules load before the network comes
+In anonymous mode only Tor itself reaches the network, and only with TCP.
+Every other TCP connection, from any program, user, wormhole or root, is
+sent through Tor, DNS queries are answered by Tor, and everything Tor
+cannot carry (UDP, ICMP, IPv6) is blocked. The one exception is root's
+DHCP renewal of the local address. Connections that were open before the
+switch are cut, not carried on outside Tor. The rules load before the network comes
 up and stay in place while Tor connects, so nothing leaks in between.
 The setting is kept across restarts and is part of system snapshots.
 Programs can also use Tor's SOCKS port directly (127.0.0.1:9050).
@@ -323,7 +352,7 @@ against the key that comes with WormOS and unpacks it;
 `tor-browser --download` does the same without a window.
 
 Anonymous mode hides where traffic comes from, not who you are: logging
-in to an account still identifies you. For browsing, Tor Browser (planned)
+in to an account still identifies you. For browsing, Tor Browser
 protects against much more than routing alone.
 
 ## When something goes wrong
@@ -334,9 +363,15 @@ worm panic                # cut the network, stop all blackholes, snapshot
 worm panic off            # bring the network back
 ```
 
+On the desktop, the power menu (top right) has **Panic: cut the network**,
+which does the same for administrators with a second click and asks for
+no password. Bringing the network back needs root (`worm panic off`).
+
 `worm panic` drops all traffic and takes the network devices down, stops
-every blackhole (keeping their files), and saves the system and homes as a
-pinned snapshot for later analysis.
+every blackhole of every user (keeping their files), and saves the system
+and homes as a pinned snapshot for later analysis. It finds running
+blackholes through the kernel's own lock table, so nothing a blackhole's
+owner wrote can hide one from it.
 
 The boot menu has a **safe mode** entry: it rewinds to the newest
 known-good snapshot and starts without network. Snapshots left behind by a
@@ -375,14 +410,61 @@ bh close lab              # stop it and delete everything in it
 Inside, programs run as root of the blackhole only: outside, they are an
 unprivileged user. They see the system's programs read-only, but not
 `/home`, `/root`, `/var`, the disks or the snapshots, nor the host's
-processes. There is no network except loopback. A seccomp filter refuses
-mounts, new namespaces, kernel keyrings, BPF, io_uring and similar calls,
-and Landlock keeps file access inside the blackhole. Blackholes opened by
-root are limited to 1024 processes and half the memory.
+processes. There is no network except loopback. The layers:
+
+- **Namespaces:** own users, mounts, processes, network, IPC and host name.
+- **Capabilities:** root inside keeps only those that act on the
+  blackhole's own files and processes; it cannot configure its network
+  (no packet filters or traffic control), use raw sockets or ptrace the
+  blackhole's init, kernel code that has often been exploited.
+- **seccomp:** refuses mounts, new namespaces, kernel keyrings, BPF,
+  io_uring, modules, terminal injection and line disciplines, 32-bit
+  system calls, and every socket family but UNIX, IPv4, IPv6 and routing
+  netlink (no vsock, which crosses network namespaces to the hypervisor).
+- **Landlock:** file access stays inside the blackhole, and no signals or
+  abstract UNIX sockets reach outside it.
+- **Its own terminal:** programs get a pseudo-terminal of the blackhole;
+  `bh` relays keys and output, so nothing inside can type into your shell
+  or use the terminal's ioctls, and output cannot set your clipboard
+  (OSC 52 is removed).
+- **Limits:** at most 1024 processes; blackholes opened by root also get
+  at most half the memory.
+- Root's blackholes keep their files where other users cannot reach them.
 
 Limits: a blackhole shares the kernel with the host, so a kernel exploit
 can still escape it (a virtual machine mode is planned). Blackholes have
-no network access yet, and only one session per blackhole runs at a time.
+no network access yet, only one session per blackhole runs at a time, and
+blackholes of users have no memory limit.
+
+## Tool kits
+
+Tool kits are sets of tools for one kind of work, installed when you need
+them instead of shipped with the system:
+
+```
+worm kit list                 # the kits
+worm kit show forensics       # what one contains
+worm kit install forensics    # install it (as root)
+worm kit remove forensics     # remove it again
+```
+
+| Kit | For |
+|---|---|
+| `forensics` | disk images, deleted files, metadata, hashes (sleuthkit, testdisk, foremost, binwalk, exiftool, yara...) |
+| `network` | lookups, routes, throughput, captures (dig, mtr, iperf3, socat, tshark, ngrep...) |
+| `blueteam` | malware scanning and audits (clamav, lynis, chkrootkit, rkhunter, yara...) |
+| `reverse` | disassemblers and debuggers (radare2, gdb, ltrace, upx, pwntools...) |
+| `web` | web application scanners and fuzzers (sqlmap, gobuster, ffuf, feroxbuster...) |
+| `passwords` | crackers and hash tools (john, hashcat, hydra, medusa...) |
+| `pentest` | from Kali: Metasploit, exploit-db, NetExec, Impacket, Responder... |
+
+Each tool comes from the first source that has it (Debian, then Kali) and
+runs in that distribution's wormhole, which shares your home folder: your
+files are the kits' workspace, and the base system stays untouched. A tool
+no source has is reported and skipped. Open samples you do not trust in a
+blackhole, not with a kit's tools on your files.
+
+Use these tools only on systems and data you are allowed to examine.
 
 ## Roadmap
 
@@ -391,8 +473,9 @@ no network access yet, and only one session per blackhole runs at a time.
 3. Security baseline (firewall, sandboxing, hardening)
 4. Graphics stack and Wayland compositor
 5. Desktop shell and snapshot timeline
-6. Tool kits
-7. Bootable ISO and installer
+6. Tool kits (first set done)
+7. Bootable ISO and installer (live ISO and disk installer done; disk
+   encryption still to come)
 
 ## Building
 
@@ -439,7 +522,7 @@ make test       # boot the image and run automated checks
 `make test-wormholes` checks the Debian and Kali wormholes against the real
 archives; it needs internet access and takes several minutes.
 
-`make test-upgrade FROM=wormos-1.3-x86_64.qcow2` sets up an older release
+`make test-upgrade FROM=wormos-1.5-x86_64.qcow2` sets up an older release
 image and upgrades it to the packages just built.
 
 `make test` also runs `tests/desktop-test.py`: the VM gets a virtio GPU,
@@ -448,7 +531,7 @@ the QEMU monitor like a user would. It answers the first-boot setup, logs
 in (which starts the desktop), types into the terminal, opens another with
 Super+Enter, checks a screendump of the real screen, and compares memory
 use and system size with their budgets. `tests/desktop-test.py --release
-out/release/wormos-1.3-x86_64.qcow2` runs the same checks on a release
+out/release/wormos-1.5-x86_64.qcow2` runs the same checks on a release
 image, where root can only log in once the first-boot setup is done.
 
 `make test` boots a throwaway copy of the image, checks the running system
@@ -464,13 +547,15 @@ mode from the menu. It ends with the ACPI power button (a clean power-off)
 and a second boot with BIOS firmware. `make test-wormholes` also checks
 that Tor connects and traffic really goes through it.
 
-On a Windows PC, from WSL: `make test-vmware` builds a VMware Workstation VM
-from the image and checks the VMware tools, drivers, clock, network, the
-first-boot setup, the desktop, the pointer, the screen size, sound and the
-clipboard (`VMWARE_ARGS="--no-3d"` without 3D acceleration, `--firmware bios`,
-`--disk sata|pvscsi|lsilogic`, `--nic e1000|e1000e` for other hardware).
-`make test-qemu-windows` boots the image in QEMU for Windows. Both expect
-VMware and QEMU under `D:\` and use `D:\wormos-tools` (see
+`make iso` builds the live and installation ISO (`out/wormos.iso`) from
+the same root filesystem, and `make test-iso` boots it in QEMU with an
+empty disk: it checks the live system (running from memory, snapshots,
+firewall), installs WormOS onto the disk with the installer's backend,
+then starts the installed disk with UEFI and with BIOS firmware, and the
+ISO with BIOS firmware.
+
+On a Windows PC, from WSL: `make test-qemu-windows` boots the image in
+QEMU for Windows, which it expects under `D:\qemu` (see
 `docs/internals.md`, Tests).
 
 Building the disk image uses `sudo` for one step (applying file ownership
@@ -489,9 +574,9 @@ into the system. The root filesystem is assembled by installing the base
 packages from that repository with `wh --root`.
 
 The development image has an empty root password (the tests log in with
-it). `make release VERSION=1.3` builds the release images instead
+it). `make release VERSION=1.5` builds the release images instead
 (`scripts/release.sh`): root stays locked until the first-boot setup, the
-disk is 20 GiB, and the output is a qcow2 image and a VMware bundle in
+disk is 20 GiB, and the output is the ISO and a qcow2 image in
 `out/release`. `make publish-repo` writes the source archives
 (`scripts/source-archives.sh`, into `out/sources`) and uploads them with
 the repository to the package release (`scripts/publish-repo.sh`, needs
@@ -505,12 +590,13 @@ filesystem read-only, including `/var` and `/home`.)
 
 | Path | Contents |
 | --- | --- |
-| `scripts/` | Build scripts (toolchain, kernel, root filesystem, image, QEMU) |
+| `scripts/` | Build scripts (toolchain, kernel, root filesystem, disk image, ISO, QEMU) |
 | `tools/wbuild` | Package builder |
 | `tools/wpack`, `tools/wrepo` | Package files and the signed repository |
 | `keys/` | Public key of the package repository |
 | `recipes/` | Package recipes |
-| `src/` | WormOS components: `worminit` (init), `wormrd` (initramfs init), `snap`, `wh`, `worm` |
+| `src/` | WormOS components: `worminit` (init), `wormrd` (initramfs init), `snap`, `wh`, `worm`, `bh`, the desktop shell, login, snapshot app and installer |
+| `tests/` | Automated tests in QEMU |
 | `kernel/` | Kernel configuration |
 | `toolchain/` | Pinned toolchain sources and checksums |
 
@@ -539,3 +625,23 @@ package() {
 
 Build it with `tools/wbuild example`. Every source is verified against its
 pinned SHA-256 checksum before use.
+
+## License
+
+WormOS's own code (everything in this repository that does not come from
+another project) is free software under the GNU General Public License,
+version 3 or (at your option) any later version: see [LICENSE](LICENSE).
+
+WormOS is built from many other projects, each under its own license
+(GPL, LGPL, MIT, BSD, MPL and others). Their license texts are installed
+in `/usr/share/licenses/NAME`, and the source of every package built from
+upstream code (its recipe, patches and the upstream archives) is published
+next to the package in the [package repository](https://github.com/CrimsonMac/wormos-packages/releases/tag/core).
+See [docs/legal.md](docs/legal.md) for details, trademarks and the privacy
+statement.
+
+WormOS comes with **no warranty**, to the extent permitted by law (see
+sections 15 and 16 of the license). Its security features reduce risk;
+they do not make running untrusted software safe, and no system is
+impenetrable: read the limits stated in each section above. To report a
+security problem, see [SECURITY.md](SECURITY.md).

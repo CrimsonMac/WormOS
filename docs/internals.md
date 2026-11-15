@@ -106,12 +106,67 @@ in the README.
 - `src/wormrd/wormrd.c` is the initramfs `/init`. It finds the btrfs by UUID or
   label (reading the superblock itself), mounts the top level at `/top`, runs
   `snap --top /top boot [--rewind ID]`, mounts `@` read-only and switches root
-  to worminit. A busybox rescue shell is included.
+  to worminit. A busybox rescue shell is included. It links the device it
+  used as `/dev/wormos-root` (devtmpfs is one instance, so the link
+  survives the switch to worminit's own `/dev` mount).
 - `src/worminit/worminit.c` is PID 1. Services are key=value files in
   `/etc/worm/services/` with `type` oneshot, daemon or respawn.
 - Subvolumes: `@` (root, read-only), `@var` (`/var`, not in system snapshots),
   `@home`, `@snapshots` (never mounted), `@wormholes`. `/root` is bind-mounted
-  from `/var/roothome`. `/var`, `/home` and `/root` come from fstab.
+  from `/var/roothome`. `/var`, `/home` and `/root` come from fstab, whose
+  btrfs entries name `/dev/wormos-root` rather than `LABEL=WORMOS`: another
+  disk with that label (a second WormOS disk, or an installed WormOS seen
+  from the live ISO) must never be mounted instead. `10-filesystems` runs
+  `/usr/lib/worm/mount-filesystems`, which makes the link from the root
+  mount in `/proc/self/mountinfo` if it is missing (an initramfs older
+  than the link), then `mount -a`.
+
+## Live system and ISO
+
+- `scripts/mkiso.sh` (`make iso`) runs `mkimage.sh` with `SHRINK=1` and
+  `PARTS_DIR`: the btrfs is made with `mkfs.btrfs --shrink` (no free space)
+  and the pieces are kept: `system.img`, `esp.img`, `head.img` (the first
+  MiB of the disk image: protective MBR with GRUB's boot code, GPT,
+  GRUB's `core.img` in sectors 40-2047), the fs UUID and the kernel
+  command line. The ISO holds the kernel, the initramfs, `wormos/
+  system.img.zst` (zstd; `--shrink` keeps whole allocated chunks, mostly
+  empty, so the file is 1.2 GB raw and about half compressed),
+  `system.size`, `esp.img.zst` and `head.img`. `grub-mkrescue` makes it a
+  hybrid image (El Torito for BIOS and UEFI, MBR/GPT for USB sticks) with
+  the volume ID `WORMOS_LIVE`; its menu boots `wormos.live` plus the
+  installed system's command line without `root=`.
+- `wormrd` with `wormos.live` scans block devices for an ISO 9660 primary
+  volume descriptor with that volume ID (30 s for USB sticks), mounts it,
+  unpacks `system.img.zst` with zstd (in the initramfs) into a file on a
+  tmpfs sized to three quarters of the memory, skipping zero blocks, and
+  extends the file to the tmpfs size (a hole). It attaches the file to a
+  loop device (`LOOP_CTL_GET_FREE`, `LOOP_CONFIGURE`), unmounts the ISO and
+  the tmpfs (the loop device keeps the file), grows the btrfs to the
+  device (`BTRFS_IOC_RESIZE max`) and continues as on a disk. Discards
+  reach the tmpfs, so deleted data frees memory. A soft reboot finds the
+  device through `/dev/wormos-root`.
+- `11-live` (`/usr/lib/worm/live-setup`) creates the user `live` (groups as
+  the first-boot setup gives, no password), clears root's password, marks
+  `/run/wormos/live` and puts a visible copy of the installer's desktop
+  entry (`NoDisplay=true` in the system's) in the live user's
+  applications. wormlogin then starts the live user's desktop without the
+  greeter, every time; the session's autostart opens the installer.
+- The installer: `wormos-installer` (`src/installer`, GTK 4) and the setuid
+  backend `/usr/lib/worm/install-system` (`src/worm/install-system.c`),
+  which refuses to run unless `/proc/cmdline` has `wormos.live` and the
+  caller is root or in `wheel`. `list` prints whole disks of at least
+  8 GiB that are not loop, RAM, CD, device-mapper or md devices, not the
+  ISO and not mounted or used as swap. `install DISK` mounts the ISO again
+  in a private mount namespace, opens the disk with `O_EXCL`, writes the
+  protective MBR (GRUB's boot code from `head.img`), a fresh GPT (random
+  disk and partition GUIDs, the layout of `mkimage.sh`, the root partition
+  to the last MiB boundary before the backup table) and GRUB's `core.img`,
+  the ESP and the system image (all written in full: stale data inside a
+  FAT or btrfs image would be read as structure), re-reads the partition
+  table (`BLKRRPART`) and grows the btrfs to its partition. The copy has
+  the live system's fs UUID; the kernel mounts it under a temporary one
+  (btrfs temp-fsid, single-device clones). The installed system starts
+  with the first-boot setup.
 
 ## snap
 
@@ -285,8 +340,12 @@ in the README.
   10.192.0.0/10. `worm anon status` reads the last "Bootstrapped N%" line
   of the log.
 - Rules (`write_anon()` in `fw.c`), added to the `inet worm` table: an
-  output filter (policy drop) accepting loopback, Tor's UID and DHCP
-  renewals, rejecting the rest (TCP with a reset); and a NAT output chain
+  output filter (policy drop) accepting `oif lo`, packets the NAT chain
+  redirected (`ct status dnat` to 127.0.0.1 or ::1; after a redirect `oif`
+  still names the original device), Tor's UID for TCP only and root's DHCP
+  renewals (`meta skuid 0`, source port 68 to 67), rejecting the rest (TCP
+  with a reset). There is no `ct state established` rule, so connections
+  opened before the switch are cut; and a NAT output chain
   returning Tor's packets, redirecting UDP port 53 to 5353 and every other
   IPv4 TCP connection outside 127.0.0.0/8 to 9040. The resolver's own
   upstream connections are redirected like any other. Without a `tor`
@@ -379,14 +438,17 @@ in the README.
   loopback in input, output and forward; hardware devices go down (the
   DHCP script leaves them down while the marker exists). Then every
   running blackhole of every user is stopped: the bh holding its lock gets
-  SIGKILL and its init follows through `PR_SET_PDEATHSIG`. The PID comes
-  from the user's `pid` file, so it is only signalled when that process
-  belongs to the owner of the user's directory and is not PID 1; waiting
-  for the lock is bounded. Root's blackhole cgroups get `cgroup.kill` and
+  SIGKILL and its init follows through `PR_SET_PDEATHSIG`. The holder comes
+  from `/proc/locks` (FLOCK entries with the lock file's inode; btrfs
+  reports another device number there, so it is confirmed by a descriptor
+  of that process on the same file), never from the `pid` file, which the
+  blackhole's owner can write. It is only signalled when it belongs to the
+  owner of the user's directory and is not PID 1; waiting for the lock is
+  bounded. Root's blackhole cgroups get `cgroup.kill` and
   are removed. Last, `snap now --all --suspect` and `snap pin`.
 - `worm panic off` removes the marker, reloads the normal rules, brings
-  the devices up and sends SIGUSR1 to udhcpc (taking a device down dropped
-  its routes).
+  the devices up and sends SIGUSR1 to root's udhcpc (taking a device down
+  dropped its routes).
 - Snapshots marked `suspect = yes` in `info`: the "Before rewind" ones
   (`snap boot`) and `snap now --suspect` (panic).
 - `menu.c` writes a safe mode entry before the "Rewind to a snapshot"
@@ -411,7 +473,9 @@ in the README.
 - State: `/var/lib/blackholes` is sticky and world-writable like `/tmp`;
   each user has `UID/` (0700, 0711 for root, refused unless owned by the
   caller) holding `NAME/` with `lock` (flocked by the running bh), `pid`,
-  `info` (outside ID, creation time), `rootfs/` and `inbox/`.
+  `info` (outside ID, creation time), `rootfs/` and `inbox/`. Root's
+  `NAME/` is `root:ID 0710`: the blackhole's ID reaches its root through
+  the group, other users get nothing.
 - IDs: root inside maps to one ID outside: the caller's own for a user,
   `0x40000000 + n` (allocated per blackhole, under a lock on `UID/`) for
   root. Root's supplementary groups are dropped first.
@@ -425,7 +489,27 @@ in the README.
   and `/dev/shm`, binds the inbox, pivots, unshares a cgroup namespace,
   brings up `lo`, applies the sandbox, closes all descriptors above 2 and
   forks the program with a clean environment. It stays as init and exits
-  with the program, which kills the rest of the PID namespace.
+  with the program, which kills the rest of the PID namespace. Before the
+  mounts, each mount point in the blackhole's root (`usr`, `etc`, `proc`,
+  `dev`, `inbox`) is made a real directory again, so no mount follows a
+  symlink left by an earlier session. Init sets `RLIMIT_NPROC` to 1024
+  (counted per user namespace, and only `CAP_SYS_RESOURCE` in the initial
+  namespace could raise it, so it limits users' blackholes too) and makes
+  itself non-dumpable.
+- Terminal (`relay.c`): when bh runs in the foreground of a terminal, init
+  opens a pseudo-terminal from the blackhole's own devpts, sets the host
+  terminal's modes and size on it and sends the master to bh over a
+  socketpair (`SCM_RIGHTS`); the program gets the slave as its controlling
+  terminal in a new session, init's own stdio become `/dev/null`. bh puts
+  the host terminal in raw mode, relays both ways (non-blocking master,
+  input buffered so a large paste cannot deadlock) and passes `SIGWINCH`
+  on, until the master reads EIO. Without a terminal as input (pipes, or a
+  background job, which may not set raw mode or flush without SIGTTOU),
+  input comes from `/dev/null` if it was a terminal, and output to a
+  terminal goes through pipes that bh relays. Output is filtered on the
+  way: OSC 52 sequences (clipboard) are dropped, everything else passes.
+  At the end, input the terminal sent meanwhile (answers to queries from
+  inside) is flushed so the host shell never reads it.
 - Why no overlay of `/`: overlayfs clones its lower layer, and the kernel
   refuses to clone `/` from a user namespace because its submounts are
   locked. `/usr` and `/etc` have no submounts and can be bound alone. Host
@@ -433,11 +517,24 @@ in the README.
   writable anyway.
 - Sandbox: `PR_SET_NO_NEW_PRIVS`; a Landlock ruleset handling every file
   system right of the running ABI with one rule, everything beneath the new
-  `/`; a seccomp filter that kills non-x86_64 ABIs (i386, x32), refuses
-  mounts, namespace calls (and `clone` with `CLONE_NEW*`; `clone3` gets
-  ENOSYS so libc falls back to `clone`), keyrings, BPF, perf, io_uring,
-  modules, kexec, reboot, swap, syslog, clock setting, iopl/ioperm, file
-  handles, and `TIOCSTI`/`TIOCLINUX` ioctls.
+  `/`, and from ABI 6 the scopes for abstract UNIX sockets and signals; a
+  seccomp filter that kills non-x86_64 ABIs (i386, x32), refuses mounts,
+  namespace calls (and `clone` with `CLONE_NEW*`; `clone3` gets ENOSYS so
+  libc falls back to `clone`), keyrings, BPF, perf, io_uring, modules,
+  kexec, reboot, swap, syslog, clock setting, iopl/ioperm, `modify_ldt`,
+  fanotify, `pidfd_getfd`, `process_vm_writev`, file handles, the ioctls
+  `TIOCSTI`, `TIOCLINUX`, `TIOCSETD` and `TIOCCONS`, and every socket
+  family but `AF_UNIX`, `AF_INET`, `AF_INET6` and `AF_NETLINK` with
+  `NETLINK_ROUTE` or `NETLINK_SOCK_DIAG` (no vsock, which network
+  namespaces do not isolate, no packet sockets, no netfilter netlink);
+  `socketpair` only for `AF_UNIX`.
+- Capabilities (`sandbox_drop_caps`, in each program before exec): the
+  bounding set, effective and permitted sets keep `CHOWN`, `DAC_OVERRIDE`,
+  `FOWNER`, `FSETID`, `KILL`, `SETUID`, `SETGID` and `NET_BIND_SERVICE`
+  (`CapBnd` 0x4fb); ambient ones are cleared. Root inside therefore lacks
+  `CAP_NET_ADMIN` (tc, nf_tables, interface changes in its namespace),
+  `CAP_NET_RAW`, `CAP_SYS_ADMIN` and `CAP_SYS_PTRACE` (init is
+  non-dumpable).
 - `bh put` opens the sources first, then (as the blackhole's ID for root)
   creates each file in the inbox with `O_CREAT|O_EXCL|O_NOFOLLOW`: the
   blackhole may be running and controls what is in there.
@@ -457,12 +554,18 @@ in the README.
   (refused while a package change is pending, as for `worm unlock`).
 - The ruleset is generated into `/run/worm/firewall.nft` and loaded with
   `nft -f`: `destroy table inet worm` plus the new table, one transaction.
-  Input policy drop with established/related, loopback, essential ICMP and
-  ICMPv6 (neighbour discovery with hop limit 255), DHCPv6 replies and the
-  sets `open_tcp`/`open_udp`; a named counter `dropped` counts the rest.
-  Forward policy drop. Output is not filtered.
+  Input policy drop with established/related, loopback, ICMP and ICMPv6
+  errors (no echo requests: pings go unanswered), neighbour discovery with
+  hop limit 255, DHCPv6 replies and the sets `open_tcp`/`open_udp`; a named
+  counter `dropped` counts the rest. Forward policy drop. Output is not
+  filtered.
 - The service `05-firewall` runs `worm fw load` before the network. A bad
-  port list loads the firewall with no open ports and exits 1.
+  port list loads the firewall with no open ports and exits 1. `30-network`
+  runs `/usr/lib/worm/network`, which starts udhcpc (on `eth0`, or the
+  first wired device) only once `inet worm` has an input chain, trying
+  `worm fw load` once more first; otherwise it fails and worminit retries,
+  so the machine stays offline without a firewall. udhcpc runs with
+  `-V ''` (no vendor class naming the client) and sends no host name.
 - nftables is built with mini-gmp and without the CLI, JSON or xtables.
 - `powerkey` (`/usr/lib/worm/powerkey`, service `03-powerkey`) watches
   every input device with a power key (the ACPI power button, keyboards)
@@ -470,6 +573,31 @@ in the README.
   (SIGUSR2 to worminit) when it is pressed. That is what QEMU's
   `system_powerdown`, virt-manager's and VMware's "Shut Down" (without
   the tools) and a PC's power button send. The devices are not grabbed.
+
+## Tool kits
+
+- `worm kit` (`src/worm/kit.c`). Kits are files in `/usr/share/worm/kits`
+  (from `recipes/worm/files/kits`): `title`, `description`, `included`
+  (tools WormOS already has, shown only) and one `tool = PACKAGE` per
+  package. `list` and `show` work for everyone; `install` and `remove` need
+  root. `install` runs `wh --yes install PACKAGE` for each tool in turn, so
+  each comes from the first source that has it (core, Debian, Kali) and a
+  missing one is reported and skipped, then records the installed packages
+  in `/var/lib/worm/kits/NAME`. `remove` runs `wh --yes remove` for each
+  recorded package that no other installed kit recorded. Kits hold only
+  packages from Debian and Kali (a core package would mean a soft reboot
+  for each). The tools run in wormholes, which share the home folder.
+
+## Licenses
+
+- `recipes/licenses` collects license files from every recipe's first
+  upstream archive (names such as `COPYING*`, `LICENSE*`, `COPYRIGHT*`,
+  `NOTICE` at the top of the tree, and files in a `LICENSES/` directory)
+  into `/usr/share/licenses/NAME`, plus glibc, gcc-libs and linux from the
+  toolchain archives, WormOS's own `LICENSE` as `wormos/COPYING`, and short
+  notes for packages without a license file (libdrm, sqlite,
+  ca-certificates, the keyrings, Tor Browser). Recipes that install their
+  own license files are skipped, so no path has two owners.
 
 ## Devices and modules
 
@@ -653,17 +781,10 @@ in the README.
   `hotplug_mode_update` property; when it changes, the mode is added to the
   output and requested through `request_state`, which labwc applies. A mode
   set by hand (wlr-randr) stays until the window size changes again.
-- VMware passes the window size to the guest only through its tools:
-  `open-vm-tools` builds just the root service (vmtoolsd) with the
-  resolutionKMS plugin (window size to vmwgfx), timeSync, powerOps
-  (shutdown and reboot call busybox `poweroff`/`reboot`, no scripts) and
-  guestInfo. The plugins that let the host reach into the guest (vix:
-  running programs and copying files; shared folders; guestStore, gdp and
-  componentMgr; appInfo, which lists running programs; vmbackup) are
-  removed. The service `48-vmtools` starts it only when `vmware-checkvm`
-  finds VMware, after loading `vmw_vsock_vmci_transport` (udev loads only
-  VMCI itself; without it the tools fall back to the backdoor channel). open-vm-tools needs libtirpc and libxcrypt (glibc no longer
-  ships Sun RPC or crypt); libxcrypt is built with the strong hashes only.
+- VMware is not supported for now: open-vm-tools (window size, time sync,
+  power operations) is no longer built. The kernel's vmwgfx driver and
+  the session's vmwgfx settings remain, so the ISO may still start there.
+  libxcrypt is built with the strong hashes only.
 - `xcompose` ships libX11's UTF-8 Compose table (`/usr/share/X11/locale`,
   mapped to every UTF-8 locale) so dead keys and the Compose key work.
 - labwc's configuration is in `/etc/xdg/labwc` (`rc.xml`, `menu.xml`,
@@ -758,18 +879,6 @@ in the README.
   through `-chardev qemu-vdagent,clipboard=on`, which `run-qemu.sh`
   always adds. QEMU's VNC server passes plain ClientCutText to the guest
   and the guest's copies to clients using the extended clipboard.
-- In VMware, which has no SPICE port, `clip agent` uses VMware's backdoor
-  (`vmware.c`) with the text copy and paste of its first tools (version
-  1); the current protocol lives in open-vm-tools' X11/gtkmm plugin,
-  which is not built. The backdoor is an I/O port only VMware answers, so
-  it is used only when CPUID names VMware as the hypervisor; ordinary
-  users may use it. Copies made in the guest go to the host at once
-  (`SETSELLENGTH`/`SETNEXTPIECE`; VMware turns `\n` into `\r\n`). The
-  host's text comes when the pointer enters the VM's window: the agent
-  polls `GETPTRLOCATION` on every tick (-100,-100 means outside) and then
-  reads `GETSELLENGTH`/`GETNEXTPIECE`. UTF-8 text up to 65436 bytes; the
-  last text exchanged is not sent back.
-
 ## Sound
 
 - Kernel: the HD Audio controller driver, codec drivers (generic,
@@ -849,12 +958,11 @@ in the README.
 - `scripts/release.sh VERSION` (`make release VERSION=X`) builds the root
   filesystem with `WORMOS_RELEASE=1` (root's password field becomes `!`
   until the first-boot setup), a 20 GiB image (`IMAGE` and `DISK_MB` are
-  parameters of `mkimage.sh`), and converts it with qemu-img: a compressed
-  qcow2, and a monolithic sparse VMDK zipped with `WormOS.vmx` (from
-  `scripts/wormos.vmx.in`: UEFI, NVMe, vmxnet3, 3D acceleration on, the
-  hardware clock in UTC (`rtc.diffFromUTC = 0`; VMware otherwise keeps
-  it in the host's local time) and the tools' periodic time sync on).
-  `SHA256SUMS` lists both.
+  parameters of `mkimage.sh`) converted to a compressed qcow2 with
+  qemu-img, and the ISO (`mkiso.sh`) from the same root filesystem.
+  `SHA256SUMS` lists both. VMware is not supported for now: there is no
+  VMware bundle and no open-vm-tools (the kernel keeps its VMware
+  drivers).
 - Package repository: `/etc/wh/repo` (set in `recipes/wh/recipe`) is the
   release `core` of the public repository `CrimsonMac/wormos-packages`;
   this repository itself stays private. `scripts/source-archives.sh`
@@ -905,24 +1013,12 @@ in the README.
   (Ctrl+Backspace, a suggestion from the history taken with End) and
   copies text both ways through a second VNC client using the extended
   clipboard.
-- `make test-vmware` (`tests/vmware-test.py`) runs from WSL on a Windows
-  PC with VMware Workstation (`vmrun.exe`, by default in
-  `D:\VMware Workstation Pro`). It builds a VM from `out/wormos.img` and
-  `scripts/wormos.vmx.in` in `D:\wormos-tools\vms\test` and starts it
-  with a window. The serial port is VMware's "network" type in client
-  mode (`tcp://127.0.0.1:PORT`): WSL forwards the Windows side's
-  localhost to the test's listener, while Windows' firewall would block
-  the other direction. VMware cannot send input from the command line, so
-  the test copies `tests/input-tool.c` (a uinput keyboard and absolute
-  pointer driven through a FIFO) into the guest, and captures the VMware
-  window with `tests/vmshot.ps1` (PrintWindow, PNG), which it expects at
-  `D:\wormos-tools\vmshot.ps1` (`WORMOS_VMSHOT`). vmrun's
-  guest operations (and `vmrun stop soft`) need the tools' vix plugin,
-  which is left out, so the test shuts down from inside. Traffic on the
-  network serial port while the input tool types loses keys in the guest
-  (the kernel still gets them all), so the test waits until typing is done
-  before it uses the console again. Options: `--no-3d`,
-  `--firmware bios`, `--disk sata|pvscsi|lsilogic`, `--nic e1000|e1000e`.
+- `make test-iso` (`tests/iso-test.py [ISO]`) boots the ISO
+  (`run-qemu.sh` with `ISO=`, an IDE CD with `bootindex=0`) with a fresh
+  12 GiB qcow2 disk and 3 GiB of memory, logs in as root on the serial
+  console of the live system (root has no password there), checks it,
+  runs `install-system install vda`, then boots the disk without the ISO
+  with UEFI and with BIOS firmware, and the ISO with BIOS firmware.
 - `make test-qemu-windows` (`tests/qemu-windows-test.py`) runs the image in
   QEMU for Windows (`D:\qemu`), with the Windows Hypervisor Platform when
   available, UEFI and then BIOS firmware; serial console, monitor and QMP

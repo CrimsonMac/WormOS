@@ -1,8 +1,8 @@
 name=worm
 version=0.1.0
-release=9
-description="WormOS system features (worm status, panic, fw, unlock, lock, the power button)"
-depends=(glibc snap nftables libxcrypt)
+release=10
+description="WormOS system features (worm status, panic, fw, anon, kit, unlock, lock, the power button)"
+depends=(glibc snap nftables libxcrypt curl tzdata)
 # Builds src/worm, which also uses sources from src/common.
 localsrc=src
 
@@ -13,4 +13,7 @@ build() {
 package() {
 	make -C worm DESTDIR="$pkgdir" install
 	install -Dm644 "$recipedir/files/03-powerkey" "$pkgdir/etc/worm/services/03-powerkey"
+	install -Dm644 -t "$pkgdir/usr/share/worm/kits" "$recipedir"/files/kits/*
+	install -Dm644 "$recipedir/files/35-time" "$pkgdir/etc/worm/services/35-time"
+	install -Dm755 "$recipedir/files/timesync" "$pkgdir/usr/lib/worm/timesync"
 }

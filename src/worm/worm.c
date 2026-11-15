@@ -277,6 +277,9 @@ static void usage(FILE *out)
 {
 	fputs("usage: worm help [COMMAND] | status | panic [off] | anon on|off|status | unlock |\n"
 	      "       worm lock [-c COMMENT]\n"
+	      "       worm kit [list] | show NAME | install NAME | remove NAME\n"
+	      "       worm time [zones [TEXT] | zone NAME | sync]\n"
+	      "       worm passwd           change your own password\n"
 	      "       worm fw status | allow PORT[/tcp|/udp] | deny PORT[/tcp|/udp] | load\n"
 	      "PORT is a number or a range such as 6000-6010; tcp is the default.\n", out);
 }
@@ -315,6 +318,14 @@ static void overview(void)
 	       "  worm unlock / lock       make / writable for a moment, then read-only again\n"
 	       "  worm panic [off]         cut the network, close sandboxes, take a snapshot\n\n",
 	       m, r);
+	printf("%sTool kits%s\n"
+	       "  worm kit list            forensics, network, reverse engineering, web...\n"
+	       "  worm kit show NAME       what a kit contains\n"
+	       "  worm kit install NAME    install its tools from Debian/Kali (root)\n\n", m, r);
+	printf("%sTime%s\n"
+	       "  worm time                the time, the time zone, the last clock check\n"
+	       "  worm time zone NAME      set the time zone (root; worm time zones lists them)\n\n",
+	       m, r);
 	printf("%sSandboxes%s\n"
 	       "  bh open [NAME]           a disposable sandbox (blackhole): no network,\n"
 	       "                           no access to your files or the system\n"
@@ -324,6 +335,7 @@ static void overview(void)
 	       "  tor-browser [URL]        Tor Browser\n"
 	       "  clip copy / clip paste   the clipboard from the terminal (ls | clip copy)\n"
 	       "  welcome [--full]         the greeting of new terminals / the whole guide\n"
+	       "  worm passwd              change your password (also: passwd)\n"
 	       "  su -                     become root for administration\n", m, r);
 }
 
@@ -357,6 +369,25 @@ int main(int argc, char **argv)
 		usage(stdout);
 		return 0;
 	}
+	/* Changing one's own password works for everyone. */
+	if (!strcmp(argv[1], "passwd") && argc == 2)
+		return cmd_passwd();
+	/* Showing the time and zones works for everyone. */
+	if (!strcmp(argv[1], "time")) {
+		int r = cmd_time(argc - 2, argv + 2);
+
+		if (r == 2)
+			usage(stderr);
+		return r;
+	}
+	/* Listing and showing kits works for everyone. */
+	if (!strcmp(argv[1], "kit")) {
+		int r = cmd_kit(argc - 2, argv + 2);
+
+		if (r == 2)
+			usage(stderr);
+		return r;
+	}
 	if (geteuid() != 0)
 		die("this needs root, try again with su%s", "");
 	if (!strcmp(argv[1], "fw")) {
@@ -382,6 +413,8 @@ int main(int argc, char **argv)
 			usage(stderr);
 		return r;
 	}
+	if (!strcmp(argv[1], "passwd-apply") && argc == 3)
+		return cmd_passwd_apply(argv[2]);
 	if (!strcmp(argv[1], "unlock") && argc == 2)
 		return cmd_unlock();
 	if (!strcmp(argv[1], "lock") && argc == 2)

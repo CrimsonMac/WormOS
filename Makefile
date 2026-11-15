@@ -4,14 +4,13 @@
 PACKAGES := base-files busybox worminit wormrd snap \
 	zlib zstd openssl ca-certificates curl monocypher \
 	libgpg-error npth libassuan libksba libgcrypt gnupg wormhole-keyrings \
-	libmnl libnftnl nftables libxcrypt wh worm bh expat unbound libevent tor \
+	libmnl libnftnl nftables libxcrypt tzdata wh worm bh expat unbound libevent tor \
 	libpcap tcpdump dbus \
 	kmod eudev seatd linux-firmware \
 	libffi wayland wayland-protocols libdrm pixman xkeyboard-config \
 	libxkbcommon libevdev mtdev libinput hwdata libdisplay-info mesa \
 	libpng freetype fribidi fontconfig pcre2 glib harfbuzz libxml2 cairo pango \
 	font-inter font-hack wlroots labwc tllist fcft foot grim swaybg wlr-randr xcompose clip \
-	libtirpc open-vm-tools \
 	libjpeg-turbo libtiff shared-mime-info gdk-pixbuf libepoxy graphene gtk4 \
 	gtk4-layer-shell dconf hicolor-icon-theme adwaita-icon-theme wormos-gtk-theme \
 	alsa-lib libsndfile pipewire lua wireplumber worm-shell wormos-snapshots \
@@ -20,8 +19,8 @@ PACKAGES := base-files busybox worminit wormrd snap \
 	ncurses zsh-autosuggestions zsh-syntax-highlighting zsh \
 	xz bzip2 readline bash less nano vim htop tmux file tree ncdu jq lsof strace \
 	wireguard-tools sqlite libarchive git openssh rsync python nmap binutils \
-	tor-browser-bundle \
-	wormos-desktop \
+	tor-browser-bundle licenses \
+	wormos-desktop wormos-installer \
 	wormos-login
 
 all: image
@@ -44,6 +43,10 @@ rootfs: repo
 image: rootfs
 	scripts/mkimage.sh
 
+# The live and installation ISO (out/wormos.iso).
+iso: rootfs
+	scripts/mkiso.sh
+
 run:
 	scripts/run-qemu.sh
 
@@ -64,15 +67,16 @@ test-wormholes:
 test-torbrowser:
 	tests/torbrowser-test.py
 
+# Boots out/wormos.iso, checks the live system, installs it onto a disk and
+# boots that.
+test-iso:
+	tests/iso-test.py
+
 # Upgrades an older release image (FROM=wormos-1.3-x86_64.qcow2) to out/repo.
 test-upgrade:
 	tests/upgrade-test.py $(FROM)
 
-# On a Windows PC, from WSL: VMware Workstation, and QEMU for Windows.
-# VMWARE_ARGS passes options (such as --no-3d or --firmware bios).
-test-vmware:
-	tests/vmware-test.py $(VMWARE_ARGS)
-
+# On a Windows PC, from WSL: QEMU for Windows.
 test-qemu-windows:
 	tests/qemu-windows-test.py
 
@@ -93,4 +97,4 @@ clean:
 distclean:
 	rm -rf build out
 
-.PHONY: all toolchain kernel packages repo rootfs image run run-gui test test-wormholes test-torbrowser test-upgrade test-vmware test-qemu-windows release sources publish-repo clean distclean
+.PHONY: all toolchain kernel packages repo rootfs image iso run run-gui test test-wormholes test-torbrowser test-upgrade test-iso test-qemu-windows release sources publish-repo clean distclean

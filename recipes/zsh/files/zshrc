@@ -100,6 +100,8 @@ alias l='ls -CF'
 alias grep='grep --color=auto'
 alias diff='diff --color=auto'
 alias history='history 0'
+# /etc is read-only: users change their password through worm.
+(( EUID != 0 )) && [[ -x /usr/lib/worm/passwd ]] && alias passwd='worm passwd'
 
 # A missing command may come from a wormhole.
 command_not_found_handler() {
@@ -112,11 +114,14 @@ command_not_found_handler() {
 
 # ---- prompt ----
 #
-#   [bh:test] [snap 14] tester@wormos:~/src$
+#   [bh:test] [snap 14] tester@wormos:~/src (main)$            took 12s
 #
 # [snap N] is the newest snapshot (from /run/snap-status), followed by a
 # pending rewind or package change that takes effect at the next restart.
-# Root's prompt ends in # and says [unlocked] while / is writable.
+# Root's prompt ends in # and says [unlocked] while / is writable. Inside
+# a git repository the branch follows the directory; commands that ran
+# for 5 seconds or more show their time on the right, failed ones their
+# status.
 
 _wormos_prompt_state() {
 	local line last= pending=
@@ -144,6 +149,51 @@ _wormos_prompt_state() {
 	fi
 }
 
+# The git branch, read from .git/HEAD in this directory or above (no git
+# process, so the prompt stays instant). Worktrees and submodules, whose
+# .git is a file, show "git".
+_wormos_git_branch() {
+	local dir=$PWD head
+	_wormos_git=
+	while :; do
+		if [[ -f $dir/.git/HEAD ]]; then
+			head=$(<$dir/.git/HEAD)
+			if [[ $head == 'ref: refs/heads/'* ]]; then
+				_wormos_git=${head#ref: refs/heads/}
+			else
+				_wormos_git=${head[1,7]}
+			fi
+			_wormos_git=" %F{8}(${_wormos_git//\%/%%})%f"
+			return
+		elif [[ -f $dir/.git ]]; then
+			_wormos_git=" %F{8}(git)%f"
+			return
+		fi
+		[[ $dir == / || -z $dir ]] && return
+		dir=${dir:h}
+	done
+}
+
+# How long the last command ran, when it took a while.
+_wormos_timer_start() {
+	_wormos_started=$SECONDS
+}
+_wormos_timer_stop() {
+	local took
+	_wormos_took=
+	if [[ -n $_wormos_started ]]; then
+		took=$(( SECONDS - _wormos_started ))
+		if (( took >= 3600 )); then
+			_wormos_took=" %F{8}took $((took / 3600))h $((took % 3600 / 60))m%f"
+		elif (( took >= 60 )); then
+			_wormos_took=" %F{8}took $((took / 60))m $((took % 60))s%f"
+		elif (( took >= 5 )); then
+			_wormos_took=" %F{8}took ${took}s%f"
+		fi
+	fi
+	_wormos_started=
+}
+
 # The window title: the directory at the prompt, the command while it
 # runs. (V) shows control characters as text, so names cannot inject
 # escape sequences.
@@ -155,7 +205,10 @@ _wormos_title_command() {
 }
 
 autoload -Uz add-zsh-hook
+add-zsh-hook precmd _wormos_timer_stop
 add-zsh-hook precmd _wormos_prompt_state
+add-zsh-hook precmd _wormos_git_branch
+add-zsh-hook preexec _wormos_timer_start
 case $TERM in
 (xterm*|foot*|alacritty|kitty|*-kitty|ghostty|*-ghostty|tmux*|screen*|vte*|wezterm|st-*|konsole*|gnome*)
 	add-zsh-hook precmd _wormos_title_prompt
@@ -166,9 +219,9 @@ esac
 if [[ $TERM == dumb ]]; then
 	PROMPT='%(!..%n@)%m:%~%(!.#.$) '
 else
-	PROMPT='${_wormos_state}%B%F{%(!.red.magenta)}%(!..%n@)%m%f%b:%B%F{blue}%~%f%b%(!.#.$) '
-	# The status of a failed command, on the right.
-	RPROMPT='%(?..%F{red}%? ✘%f)'
+	PROMPT='${_wormos_state}%B%F{%(!.red.magenta)}%(!..%n@)%m%f%b:%B%F{blue}%~%f%b${_wormos_git}%(!.#.$) '
+	# The status of a failed command and the time of a slow one, on the right.
+	RPROMPT='%(?..%F{red}%? ✘%f)${_wormos_took}'
 fi
 
 # ---- suggestions and highlighting ----

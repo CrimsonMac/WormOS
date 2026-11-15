@@ -6,9 +6,9 @@ LDFLAGS += -Wl,-z,relro,-z,now
 PREFIX  ?= /usr
 BINDIR  ?= $(PREFIX)/bin
 
-all: worm power snapshots install-helper powerkey
+all: worm power snapshots install-helper install-system passwd powerkey
 
-OBJS = worm.o fw.o panic.o status.o anon.o
+OBJS = worm.o fw.o panic.o status.o anon.o kit.o time.o account.o
 
 worm: $(OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS)
@@ -29,14 +29,24 @@ powerkey: powerkey.c
 install-helper: install.c admin.c admin.h ../common/password.c
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ install.c admin.c ../common/password.c -lcrypt
 
-install: worm power snapshots install-helper powerkey
+# Users changing their own password (worm passwd).
+passwd: passwd.c ../common/password.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ passwd.c ../common/password.c -lcrypt
+
+# The installer's backend, for the live system.
+install-system: install-system.c admin.c admin.h ../common/password.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ install-system.c admin.c ../common/password.c -lcrypt
+
+install: worm power snapshots install-helper install-system passwd powerkey
 	install -Dm755 worm $(DESTDIR)$(BINDIR)/worm
 	install -Dm4755 power $(DESTDIR)$(PREFIX)/lib/worm/power
 	install -Dm4755 snapshots $(DESTDIR)$(PREFIX)/lib/worm/snapshots
 	install -Dm4755 install-helper $(DESTDIR)$(PREFIX)/lib/worm/install
+	install -Dm4755 install-system $(DESTDIR)$(PREFIX)/lib/worm/install-system
+	install -Dm4755 passwd $(DESTDIR)$(PREFIX)/lib/worm/passwd
 	install -Dm755 powerkey $(DESTDIR)$(PREFIX)/lib/worm/powerkey
 
 clean:
-	rm -f worm power snapshots install-helper powerkey $(OBJS)
+	rm -f worm power snapshots install-helper install-system passwd powerkey $(OBJS)
 
 .PHONY: all install clean

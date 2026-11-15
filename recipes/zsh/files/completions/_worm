@@ -4,7 +4,9 @@ if (( CURRENT == 2 )); then
 	local -a cmds=('help:all WormOS commands' 'status:a summary of the protection'
 		'panic:cut the network, close blackholes and take a snapshot'
 		'anon:send everything through Tor' 'unlock:make / writable'
-		'lock:make / read-only again and take a snapshot' 'fw:the firewall')
+		'lock:make / read-only again and take a snapshot' 'fw:the firewall'
+		'kit:tool kits (forensics, network, reverse engineering...)'
+		'time:the clock and the time zone' 'passwd:change your password')
 	_describe -t commands 'worm command' cmds
 	return
 fi
@@ -13,6 +15,26 @@ help) (( CURRENT == 3 )) && compadd snap wh worm bh clip tor-browser ;;
 panic) (( CURRENT == 3 )) && compadd off ;;
 anon) (( CURRENT == 3 )) && compadd on off status ;;
 lock) _arguments '-c[comment for the snapshot]:comment' ;;
+time)
+	if (( CURRENT == 3 )); then
+		local -a cmds=('zones:list time zones' 'zone:set the time zone (root)'
+			'sync:check the clock over HTTPS now (root)')
+		_describe -t commands 'time command' cmds
+	elif [[ $words[3] == zone ]] && (( CURRENT == 4 )); then
+		local -a zones=(UTC ${(f)"$(awk '!/^#/ { print $3 }' /usr/share/zoneinfo/zone1970.tab 2>/dev/null)"})
+		compadd -a zones
+	fi
+	;;
+kit)
+	if (( CURRENT == 3 )); then
+		local -a cmds=('list:the tool kits' 'show:what a kit contains'
+			'install:install a kit (root)' 'remove:remove a kit (root)')
+		_describe -t commands 'kit command' cmds
+	elif (( CURRENT == 4 )); then
+		local -a kits=(/usr/share/worm/kits/*(N:t))
+		compadd -a kits
+	fi
+	;;
 fw)
 	if (( CURRENT == 3 )); then
 		local -a cmds=('status:show the rules and open ports' 'allow:open a port'

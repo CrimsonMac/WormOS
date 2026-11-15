@@ -1,7 +1,7 @@
 
-   [35m.-~~~-.[0m
-  [35m(  (o)  )[0m   Welcome to WormOS
-   [35m'-~~~-'[0m
+   [35m.-'''-.[0m
+  [35m(  [1;95m(@)[35m  )[0m   Welcome to WormOS
+   [35m'-...-'[0m
 
   The desktop
     The Super key (or the grid at the top left) opens the launcher.
@@ -24,6 +24,8 @@
     worm anon on           send all traffic through Tor
     bh open                a disposable sandbox for untrusted programs
     wh install fastfetch   software from Debian, in a wormhole
+    worm kit install web   a tool kit (worm kit list shows them all)
+    worm panic             cut the network, stop sandboxes, keep a snapshot
 
   The terminal
     Grey text after the cursor is an earlier command: Right or End takes it.
@@ -32,3 +34,8 @@
     Ctrl+Backspace deletes a word.  ls | clip copy  copies to the clipboard,
     clip paste  prints it (shared with the host in QEMU and virt-manager).
 
+  Sandboxes
+    bh put lab sample.bin  copy a file into the blackhole "lab"
+    bh open lab            a shell inside: no network, no access to your
+                           files or the system, its own terminal
+    bh close lab           stop it and delete everything in it
