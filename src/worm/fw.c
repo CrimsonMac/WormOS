@@ -220,11 +220,21 @@ static void write_anon(FILE *f, long tor)
 		"\t}\n", skuid);
 }
 
+/*
+ * /run/worm: others may look up names in it (the panel checks for
+ * network-cut) but not list it.
+ */
+static void run_dir(void)
+{
+	mkdir(FW_RUNDIR, 0711);
+	chmod(FW_RUNDIR, 0711);
+}
+
 static int write_rules(const struct port *ports, int n)
 {
 	FILE *f;
 
-	mkdir(FW_RUNDIR, 0700);
+	run_dir();
 	if (!(f = fopen(FW_RULES, "we"))) {
 		fprintf(stderr, "worm: cannot write %s: %s\n", FW_RULES, strerror(errno));
 		return -1;
@@ -289,7 +299,7 @@ int fw_cut(void)
 	FILE *f;
 	int fd;
 
-	mkdir(FW_RUNDIR, 0700);
+	run_dir();
 	if ((fd = open(FW_CUT, O_WRONLY | O_CREAT | O_CLOEXEC, 0600)) >= 0)
 		close(fd);
 	if (!(f = fopen(FW_RULES, "we")))
