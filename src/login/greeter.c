@@ -321,6 +321,8 @@ static void build_login(void)
 /* ---- first-boot setup ---- */
 
 static GtkWidget *stack, *full_name, *user_name, *pass1, *pass2, *root1, *root2, *layout;
+static GtkWidget *zone;
+static GtkStringList *zones;
 static GtkWidget *account_error, *root_error, *create_button, *progress;
 static gboolean name_edited, suggesting;
 
@@ -335,6 +337,41 @@ static const char *const layouts[][2] = {
 	{ "tr", "Turkish" }, { "ru", "Russian" }, { "ua", "Ukrainian" },
 	{ "jp", "Japanese" }, { "latam", "Spanish (Latin America)" },
 };
+
+static int compare_strings(const void *a, const void *b)
+{
+	return strcmp(*(char *const *)a, *(char *const *)b);
+}
+
+/* Time zones from the tz database's zone1970.tab, UTC first. */
+static GtkStringList *load_zones(void)
+{
+	GtkStringList *list = gtk_string_list_new((const char *[]){ "UTC", NULL });
+	GPtrArray *names = g_ptr_array_new_with_free_func(g_free);
+	char *data = NULL;
+
+	if (g_file_get_contents("/usr/share/zoneinfo/zone1970.tab", &data, NULL, NULL)) {
+		char **lines = g_strsplit(data, "\n", -1);
+
+		for (char **l = lines; *l; l++) {
+			char **f;
+
+			if (**l == '#' || !**l)
+				continue;
+			f = g_strsplit(*l, "\t", 4);
+			if (g_strv_length(f) >= 3)
+				g_ptr_array_add(names, g_strdup(f[2]));
+			g_strfreev(f);
+		}
+		g_strfreev(lines);
+		g_free(data);
+	}
+	qsort(names->pdata, names->len, sizeof(char *), compare_strings);
+	for (guint i = 0; i < names->len; i++)
+		gtk_string_list_append(list, names->pdata[i]);
+	g_ptr_array_free(names, TRUE);
+	return list;
+}
 
 /* A user name from the full name: "Ada Lovelace" becomes "ada". */
 static void name_changed(GtkEditable *e, gpointer data)
@@ -444,6 +481,8 @@ static void create_clicked(GtkWidget *widget, gpointer data)
 {
 	const char *problem = password_problem(root1, root2);
 	guint l = gtk_drop_down_get_selected(GTK_DROP_DOWN(layout));
+	guint z = gtk_drop_down_get_selected(GTK_DROP_DOWN(zone));
+	const char *zone_name = gtk_string_list_get_string(zones, z);
 
 	(void)widget;
 	(void)data;
@@ -462,7 +501,8 @@ static void create_clicked(GtkWidget *widget, gpointer data)
 			     (char *)gtk_editable_get_text(GTK_EDITABLE(full_name)),
 			     (char *)gtk_editable_get_text(GTK_EDITABLE(pass1)),
 			     (char *)gtk_editable_get_text(GTK_EDITABLE(root1)),
-			     (char *)layouts[MIN(l, G_N_ELEMENTS(layouts) - 1)][0], NULL }),
+			     (char *)layouts[MIN(l, G_N_ELEMENTS(layouts) - 1)][0],
+			     (char *)(zone_name ? zone_name : "UTC"), NULL }),
 		     setup_done, NULL);
 }
 
@@ -554,6 +594,12 @@ static void build_setup(void)
 		gtk_string_list_append(names, layouts[i][1]);
 	layout = gtk_drop_down_new(G_LIST_MODEL(names), NULL);
 	gtk_box_append(GTK_BOX(page), layout);
+	label(page, "Time zone");
+	zones = load_zones();
+	zone = gtk_drop_down_new(G_LIST_MODEL(g_object_ref(zones)),
+				 gtk_property_expression_new(GTK_TYPE_STRING_OBJECT, NULL, "string"));
+	gtk_drop_down_set_enable_search(GTK_DROP_DOWN(zone), TRUE);
+	gtk_box_append(GTK_BOX(page), zone);
 	account_error = text("", "error");
 	gtk_box_append(GTK_BOX(page), account_error);
 	button_row(page, "welcome", "Next", G_CALLBACK(account_next));

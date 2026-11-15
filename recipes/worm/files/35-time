@@ -1,0 +1,4 @@
+# Keeps the clock right: checks it over HTTPS every six hours (worm time).
+type = respawn
+exec = /usr/lib/worm/timesync
+safe = no

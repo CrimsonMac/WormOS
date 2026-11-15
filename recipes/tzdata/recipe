@@ -1,0 +1,24 @@
+name=tzdata
+version=2026f
+description="Time zone data (IANA tz database)"
+# Signed by Paul Eggert (7E3792A9D8ACF7D633BC1588ED97E90E62AA7E34).
+source=(https://data.iana.org/time-zones/releases/tzdata$version.tar.gz)
+sha256=(01b4a91cec5167ed48c11e8ab78f2048cead78ce94b0cafcad0ae8c5a3044d3d)
+# The archive has no top directory: build() unpacks it.
+noextract=1
+
+ZONES="africa antarctica asia australasia europe northamerica southamerica etcetera backward"
+
+build() {
+	rm -rf "$srcdir"/*
+	tar -xf "$SOURCES/tzdata$version.tar.gz"
+}
+
+package() {
+	# The build machine's zic compiles the zones (its output is portable).
+	# slim: the files carry no pre-1970 tables beyond what glibc reads.
+	zic -b slim -d "$pkgdir/usr/share/zoneinfo" $ZONES
+	install -Dm644 -t "$pkgdir/usr/share/zoneinfo" zone1970.tab zone.tab iso3166.tab tzdata.zi
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/tzdata/LICENSE"
+	find "$pkgdir/usr/share/zoneinfo" -type f -exec chmod 644 {} +
+}

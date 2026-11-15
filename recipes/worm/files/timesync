@@ -1,0 +1,12 @@
+#!/bin/sh
+# The clock check (worm time sync, over HTTPS): once the network is up,
+# then every six hours; after a failure (no network yet, network cut, Tor
+# still connecting) again two minutes later.
+sleep 20
+while :; do
+	if worm time sync > /dev/null 2>&1; then
+		sleep 21600
+	else
+		sleep 120
+	fi
+done
