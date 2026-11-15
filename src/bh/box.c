@@ -368,6 +368,9 @@ int box_run(const struct box *b, char *const argv[])
 	io.null_in = !io.pty && isatty(0);
 	if (io.pty) {
 		ioctl(0, TIOCGWINSZ, &io.size);
+		/* Output to a file or pipe keeps plain newlines. */
+		if (!isatty(1))
+			io.termios.c_oflag &= ~OPOST;
 		if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, io.sock) < 0)
 			die("cannot create a socket: %s", strerror(errno));
 	} else if ((isatty(1) && pipe2(io.out, O_CLOEXEC) < 0) ||

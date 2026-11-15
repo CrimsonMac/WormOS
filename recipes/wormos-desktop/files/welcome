@@ -50,5 +50,16 @@ printf "  ${b}snap list${r}    snapshots, ${b}rewind${r}        ${b}bh open${r} 
 printf "  ${b}worm status${r}  protections              ${b}worm kit${r}     tool kits\n"
 printf "  ${b}worm help${r}    every WormOS command     ${b}su -${r}         administration\n"
 printf "\n"
-[ -n "$tip" ] && printf "  ${m}Tip:${r} %s\n" "$tip"
+# The tip, wrapped at word boundaries to the terminal's width.
+if [ -n "$tip" ]; then
+	cols=$(stty size 2>/dev/null | cut -d' ' -f2)
+	[ "${cols:-0}" -ge 40 ] 2>/dev/null || cols=80
+	printf '%s\n' "$tip" | fold -s -w $((cols - 9)) | {
+		read -r line
+		printf "  ${m}Tip:${r} %s\n" "$line"
+		while read -r line; do
+			printf '       %s\n' "$line"
+		done
+	}
+fi
 printf "  ${d}welcome --full shows the guide; touch ~/.hushlogin hides this.${r}\n\n"

@@ -574,6 +574,37 @@ in the README.
   `system_powerdown`, virt-manager's and VMware's "Shut Down" (without
   the tools) and a PC's power button send. The devices are not grabbed.
 
+## Time and passwords
+
+- `worm time` (`src/worm/time.c`). The time zone is the symlink
+  `/etc/localtime` into `/usr/share/zoneinfo` (tzdata, compiled with the
+  build machine's `zic -b slim`); no link means UTC. `worm time zone NAME`
+  checks the name (no `..`, a regular file under zoneinfo) and swaps the
+  link while `/` is writable for the moment. The first-boot setup passes
+  the zone the greeter's searchable list (from `zone1970.tab`) chose as a
+  seventh field of the `setup` request; `first-boot --create` makes the
+  link.
+- `worm time sync` sends a HEAD request over HTTPS (curl, TLS 1.2+, https
+  only) to www.quad9.net, then www.torproject.org, then www.debian.org,
+  parses the `Date` header, compares it with the middle of the request and
+  sets the clock (and the hardware clock, in UTC) when it is off by more
+  than 2 s. The result goes to `/run/wormos/time` for `worm time`. The
+  service `35-time` (`/usr/lib/worm/timesync`, `safe = no`) runs it 20 s
+  after boot and every six hours, two minutes after a failure. It works in
+  anonymous mode through the TransPort.
+- `worm passwd` (`account.c`) reads the current and new password (twice)
+  with echo off and feeds them to the setuid `/usr/lib/worm/passwd`
+  (`passwd.c`), which takes the caller's account from the real UID, checks
+  the current password (`password_ok`, a delay after a wrong one; root is
+  not asked), refuses an empty password or one with `:`, becomes root and
+  feeds the new one to `worm passwd-apply USER`, which runs `chpasswd -c
+  sha512` while `/` is writable for the moment. zsh aliases `passwd` to it
+  for users.
+- The power helper also takes `panic` (wheel only, no password: it only
+  protects) and runs `worm panic` as root; the panel's power menu has the
+  entry with a second click to confirm. `/run/worm` is 0711 so the panel
+  can see `network-cut` without listing the directory.
+
 ## Tool kits
 
 - `worm kit` (`src/worm/kit.c`). Kits are files in `/usr/share/worm/kits`

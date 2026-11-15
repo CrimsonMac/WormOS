@@ -87,7 +87,16 @@ CHECKS = [
      r"hashid -> .* \(kali\)"),
     ("kali tool runs", "hashid --version 2>&1", r"^(?i:hashid) v\d"),
     ("kali wormhole", "cat /var/lib/wormholes/kali/etc/os-release", r"Kali GNU/Linux"),
+    # A tool kit: a small one made for the test, with a tool no source has.
+    ("test kit", "worm unlock > /dev/null && printf 'title = Test\\ndescription = A test kit\\n"
+     "tool = toilet\\ntool = no-such-tool-wormos\\n' > /usr/share/worm/kits/test && "
+     "worm lock > /dev/null && worm kit show test", r"toilet no-such-tool-wormos"),
+    ("kit installed, missing tool skipped", "worm kit install test 2>&1 | tail -2",
+     r"1 of 2 tools installed(.|\n)*no-such-tool-wormos"),
+    ("kit tool runs", "ls /usr/local/bin/toilet && worm kit list | grep '^test'", r"installed"),
+    ("kit removed", "worm kit remove test && ls /usr/local/bin/toilet 2>&1", r"No such file"),
     ("system still read-only", "touch /usr/x 2>&1", r"Read-only file system"),
+    ("clock checked over HTTPS", "worm time sync", r"(right|corrected)"),
     ("anonymous mode on", "worm anon on", r"^Anonymous mode is on"),
     ("tor connects",
      "i=0; until worm anon status | grep -q connected || [ $i -ge 300 ]; do sleep 2; i=$((i+1)); done; "
@@ -95,6 +104,7 @@ CHECKS = [
     ("traffic goes through Tor",
      "curl -s -m 60 https://check.torproject.org/api/ip", r'"IsTor":\s*true'),
     ("names resolve through Tor", "nslookup deb.debian.org 2>&1 | tail -2", r"Address"),
+    ("clock checked through Tor", "worm time sync", r"(right|corrected)"),
     ("anonymous mode off", "worm anon off", r"^Anonymous mode is off"),
     # The resolver reconnects first, which can take a while.
     ("direct again", "for i in 1 2 3; do curl -s -m 60 https://check.torproject.org/api/ip "

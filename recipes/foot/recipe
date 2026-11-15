@@ -1,6 +1,6 @@
 name=foot
 version=1.28.0
-release=2
+release=3
 description="Fast, lightweight Wayland terminal"
 depends=(glibc fcft pixman wayland libxkbcommon fontconfig)
 # Upstream publishes no signature: checksum pinned from the release download.
@@ -22,4 +22,7 @@ package() {
 	rm -rf "$pkgdir/etc/xdg/foot"
 	# No foot server runs, so its client and server entries would not work.
 	rm -f "$pkgdir"/usr/share/applications/{footclient,foot-server}.desktop
+	# The launcher shows the terminal as what it is.
+	sed -i 's/^Name=Foot$/Name=Terminal/; s/^GenericName=Terminal$/GenericName=Foot terminal/' \
+		"$pkgdir/usr/share/applications/foot.desktop"
 }

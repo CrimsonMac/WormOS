@@ -8,7 +8,11 @@ with the installer's backend (/usr/lib/worm/install-system). The disk then
 boots without the ISO, with UEFI and with BIOS firmware, and the ISO also
 boots with BIOS firmware. The console output is written to build/iso.log.
 
-Usage: tests/iso-test.py [ISO] [--timeout SECONDS]
+With --live-only it checks the live system and the installation, but not
+the installed disk: for a release ISO, whose installed system starts with
+the first-boot setup and has no root login before it.
+
+Usage: tests/iso-test.py [ISO] [--live-only] [--timeout SECONDS]
 """
 
 import argparse
@@ -49,6 +53,12 @@ LIVE_CHECKS = [
      r"^0$"),
     ("firewall active", "worm fw status", r"^Firewall: active"),
     ("snapshots work", "snap now -c 'live check' && snap list", r"live check"),
+    ("root without a password", "grep -c '^root::' /etc/shadow", r"^1$"),
+    ("desktop started for the live user",
+     "for i in $(seq 30); do pidof labwc > /dev/null && break; sleep 2; done; "
+     "stat -c %U /proc/$(pidof labwc | cut -d' ' -f1)", r"^live$"),
+    ("installer opened", "for i in $(seq 30); do pidof wormos-installer && break; sleep 2; done",
+     r"^\d+"),
     ("the disk is offered", "/usr/lib/worm/install-system list", r"^vda 12884901888 0 "),
     ("refuses a missing disk", "/usr/lib/worm/install-system install vdz 2>&1", r"not a disk"),
 ]
@@ -76,13 +86,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("iso", nargs="?", default=os.path.join(ROOT, "out", "wormos.iso"))
     parser.add_argument("--timeout", type=int, default=600)
+    parser.add_argument("--live-only", action="store_true")
     args = parser.parse_args()
 
     tmp = tempfile.mkdtemp(prefix="wormos-iso-")
     disk = os.path.join(tmp, "disk.qcow2")
     subprocess.run(["qemu-img", "create", "-q", "-f", "qcow2", disk, "12G"], check=True)
     passed = failures = 0
-    total = len(LIVE_CHECKS) + 1 + len(INSTALL_CHECKS) + 2 * len(INSTALLED_CHECKS) + 2
+    total = len(LIVE_CHECKS) + 1 + len(INSTALL_CHECKS) + 1
+    if not args.live_only:
+        total += 2 * len(INSTALLED_CHECKS) + 1
 
     def check(name, ok, out=""):
         nonlocal passed, failures
@@ -97,6 +110,9 @@ def main():
         env = dict(os.environ, IMAGE=disk, QEMU_MEM="3072")
         if iso:
             env["ISO"] = os.path.abspath(iso)
+            # A GPU, so the live user's desktop starts (with no display).
+            env["QEMU_EXTRA"] = "-vga none -device virtio-gpu-pci"
+
         cmd = [os.path.join(ROOT, "scripts", "run-qemu.sh")] + (["--bios"] if bios else [])
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, env=env)
@@ -113,6 +129,10 @@ def main():
             out = con.run(cmd, timeout)
             check(name, re.search(pattern, out, re.M) is not None, out)
 
+    def finish():
+        print(f"{passed}/{total} checks passed")
+        return 1 if failures else 0
+
     def power_off(proc, con):
         con.send("poweroff\n")
         con.expect("Power down", 120)
@@ -127,6 +147,9 @@ def main():
             check("installed onto the disk", re.search(r"^done$", out, re.M), out)
             run(con, INSTALL_CHECKS)
             power_off(proc, con)
+            if args.live_only:
+                check("powered off cleanly", True)
+                return finish()
 
             proc, con = boot(log, None, label="installed disk, UEFI")
             run(con, INSTALLED_CHECKS)
@@ -142,6 +165,7 @@ def main():
                   "wormos.live" in out and "/dev/loop" in out, out)
             power_off(proc, con)
             check("powered off cleanly", True)
+            return finish()
         except (TimeoutError, RuntimeError, OSError, subprocess.TimeoutExpired) as e:
             print(f"FAIL  {e} (see {LOG})")
             failures += 1
@@ -149,9 +173,7 @@ def main():
             if proc and proc.poll() is None:
                 proc.kill()
             subprocess.run(["rm", "-rf", tmp])
-
-    print(f"{passed}/{total} checks passed")
-    return 1 if failures else 0
+    return finish()
 
 
 if __name__ == "__main__":
