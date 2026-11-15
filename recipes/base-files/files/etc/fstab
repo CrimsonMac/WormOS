@@ -1,9 +1,12 @@
 # <device>      <mount point>  <type>  <options>                        <dump> <pass>
-# The root (subvolume @) is mounted read-only by the initramfs.
-LABEL=WORMOS    /var           btrfs   subvol=@var,noatime,compress=zstd,nosuid,nodev 0 0
-LABEL=WORMOS    /home          btrfs   subvol=@home,noatime,compress=zstd,nosuid,nodev 0 0
+# The root (subvolume @) is mounted read-only by the initramfs. The other
+# subvolumes come from the same device: /dev/wormos-root points at it
+# (/usr/lib/worm/mount-filesystems), so a second disk labelled WORMOS, such
+# as an installed WormOS seen from the live ISO, is never mounted instead.
+/dev/wormos-root /var          btrfs   subvol=@var,noatime,compress=zstd,nosuid,nodev 0 0
+/dev/wormos-root /home         btrfs   subvol=@home,noatime,compress=zstd,nosuid,nodev 0 0
 # The root is read-only, so root's home lives on the writable /var.
 /var/roothome   /root          none    bind                             0 0
 # Containers of other distributions. nosuid: nothing in them can become
 # root on the host.
-LABEL=WORMOS    /var/lib/wormholes btrfs subvol=@wormholes,noatime,compress=zstd,nosuid,nodev 0 0
+/dev/wormos-root /var/lib/wormholes btrfs subvol=@wormholes,noatime,compress=zstd,nosuid,nodev 0 0

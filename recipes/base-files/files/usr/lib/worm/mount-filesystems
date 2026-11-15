@@ -1,0 +1,11 @@
+#!/bin/sh
+# Mount everything in /etc/fstab. Its btrfs entries name /dev/wormos-root,
+# the device the system root was mounted from, rather than a label: other
+# disks can carry the same label (a second WormOS disk, or the installed
+# system while running from the ISO).
+if [ ! -e /dev/wormos-root ]; then
+	dev=$(awk '$5 == "/" { for (i = 7; $i != "-"; i++); print $(i + 2); exit }' \
+		/proc/self/mountinfo)
+	[ -b "$dev" ] && ln -sf "$dev" /dev/wormos-root
+fi
+exec mount -a

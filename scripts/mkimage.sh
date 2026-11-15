@@ -17,7 +17,10 @@
 # to a temporary copy of the tree first.
 #
 # IMAGE (default out/wormos.img) and DISK_MB (default 8192) choose the
-# output file and the disk size.
+# output file and the disk size. For the ISO (scripts/mkiso.sh), PARTS_DIR
+# keeps the pieces there as well: system.img (the btrfs filesystem, shrunk
+# to its contents, with SHRINK=1), esp.img and head.img (the disk's first
+# MiB: protective MBR with GRUB's boot code, GPT, GRUB's core.img).
 
 . "$(dirname "$0")/env.sh"
 
@@ -64,7 +67,7 @@ sudo python3 -I "$WORMOS_ROOT/scripts/apply-ownership.py" "$TMP/owners" "$TMP/fs
 
 msg "Creating btrfs root filesystem"
 truncate -s $((root_size * SECTOR)) "$TMP/root.img"
-sudo mkfs.btrfs -q \
+sudo mkfs.btrfs -q ${SHRINK:+--shrink} \
 	-L WORMOS \
 	-U "$FS_UUID" \
 	--compress zstd \
@@ -76,6 +79,7 @@ sudo mkfs.btrfs -q \
 	--subvol rw:@wormholes \
 	"$TMP/root.img"
 sudo rm -rf "$TMP/fsroot"
+sudo chown "$(id -u):$(id -g)" "$TMP/root.img"
 
 msg "Creating the boot loaders and the EFI system partition"
 grub-mkimage -O x86_64-efi -p /EFI/BOOT -o "$TMP/BOOTX64.EFI" \
@@ -143,6 +147,14 @@ EOF
 "$WORMOS_ROOT/scripts/sparse-copy.py" "$TMP/root.img" "$IMAGE" $((root_start * SECTOR))
 "$WORMOS_ROOT/scripts/bios-boot.py" "$IMAGE" /usr/lib/grub/i386-pc/boot.img \
 	"$TMP/core.img" $bios_start $bios_size > /dev/null
+if [ -n "${PARTS_DIR:-}" ]; then
+	mkdir -p "$PARTS_DIR"
+	cp --sparse=always "$TMP/root.img" "$PARTS_DIR/system.img"
+	cp --sparse=always "$TMP/esp.img" "$PARTS_DIR/esp.img"
+	head -c $((MB * SECTOR)) "$IMAGE" > "$PARTS_DIR/head.img"
+	echo "$FS_UUID" > "$PARTS_DIR/fs-uuid"
+	echo "$KERNEL_CMDLINE" > "$PARTS_DIR/cmdline"
+fi
 rm -rf "$TMP"
 
 msg "Image ready: $IMAGE ($(du -h "$IMAGE" | cut -f1) used of ${DISK_MB} MiB)"

@@ -19,6 +19,16 @@
  *     wormos.rescue                       open a shell before mounting the root
  *     wormos.rewind=ID                    rewind the system to snapshot ID first
  *                                         (used by the boot menu entries)
+ *     wormos.live                         live system: the system image on the
+ *                                         WormOS ISO, copied into memory
+ *
+ * Live mode needs no root=: wormrd finds the ISO by its volume ID, unpacks
+ * wormos/system.img.zst (a btrfs image with no free space) into a tmpfs file
+ * as large as three quarters of the memory, attaches it to a loop device
+ * and grows the filesystem to the file's size. Everything then works as on
+ * a disk, in memory, and the boot medium can be removed. The device the
+ * root came from is linked as /dev/wormos-root (fstab mounts the other
+ * subvolumes from it, and a soft reboot finds the root there again).
  */
 
 #define _GNU_SOURCE
@@ -38,6 +48,7 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
+#include <linux/loop.h>
 #include <time.h>
 #include <unistd.h>
 #include <linux/btrfs.h>
@@ -66,7 +77,16 @@ static char opt_init[PATH_MAX] = "/sbin/init";
 static char opt_rewind[16];
 static int opt_rw;
 static int opt_rescue;
+static int opt_live;
 static int soft_reboot;
+
+#define ROOT_LINK     "/dev/wormos-root"
+#define LIVE_VOLUME   "WORMOS_LIVE"
+#define LIVE_ISO      "/iso"
+#define LIVE_RAM      "/live"
+#define LIVE_IMAGE    LIVE_ISO "/wormos/system.img.zst"
+#define ZSTD          "/usr/bin/zstd"
+#define LIVE_WAIT_MS  30000
 
 static void log_msg(const char *fmt, ...)
 {
@@ -149,13 +169,15 @@ static void parse_cmdline(void)
 			opt_rw = 1;
 		else if (strcmp(tok, "ro") == 0)
 			opt_rw = 0;
+		else if (strcmp(tok, "wormos.live") == 0)
+			opt_live = 1;
 		else if (strcmp(tok, "wormos.rescue") == 0)
 			opt_rescue = !soft_reboot;
 		else if (strncmp(tok, "wormos.rewind=", 14) == 0 && !soft_reboot &&
 			 strspn(tok + 14, "0123456789") == strlen(tok + 14))
 			snprintf(opt_rewind, sizeof(opt_rewind), "%s", tok + 14);
 	}
-	if (!opt_root[0])
+	if (!opt_root[0] && !opt_live)
 		fatal("no root= on the kernel command line");
 }
 
@@ -303,6 +325,157 @@ static void run_snapshot_hooks(const char *dev)
 		fatal("cannot unmount %s: %s", topdir, strerror(errno));
 }
 
+/* ---- live mode ---- */
+
+/* Is dev an ISO 9660 filesystem with the WormOS live volume ID? */
+static int is_live_iso(const char *dev)
+{
+	char pvd[2048], want[32];
+	int fd = open(dev, O_RDONLY | O_CLOEXEC), ok;
+
+	if (fd < 0)
+		return 0;
+	ok = pread(fd, pvd, sizeof(pvd), 16 * 2048) == (ssize_t)sizeof(pvd);
+	close(fd);
+	/* The volume ID is padded with spaces to 32 characters. */
+	memset(want, ' ', sizeof(want));
+	memcpy(want, LIVE_VOLUME, strlen(LIVE_VOLUME));
+	return ok && pvd[0] == 1 && !memcmp(pvd + 1, "CD001", 5) &&
+	       !memcmp(pvd + 40, want, sizeof(want));
+}
+
+static int find_live_iso(char *out, size_t len)
+{
+	struct timespec delay = { 0, 200 * 1000000L };
+
+	for (int waited = 0; waited < LIVE_WAIT_MS; waited += 200) {
+		DIR *d = opendir("/sys/class/block");
+		struct dirent *e;
+
+		while (d && (e = readdir(d))) {
+			if (e->d_name[0] == '.' || !strncmp(e->d_name, "loop", 4) ||
+			    !strncmp(e->d_name, "ram", 3))
+				continue;
+			snprintf(out, len, "/dev/%s", e->d_name);
+			if (is_live_iso(out)) {
+				closedir(d);
+				return 0;
+			}
+		}
+		if (d)
+			closedir(d);
+		nanosleep(&delay, NULL);
+	}
+	return -1;
+}
+
+static unsigned long long memory_bytes(void)
+{
+	unsigned long long kb = 0;
+	char line[128];
+	FILE *f = fopen("/proc/meminfo", "re");
+
+	while (f && fgets(line, sizeof(line), f))
+		if (sscanf(line, "MemTotal: %llu kB", &kb) == 1)
+			break;
+	if (f)
+		fclose(f);
+	return kb * 1024;
+}
+
+/* Copy in to out, leaving holes where the image is all zeros. */
+static void copy_sparse(int in, int out)
+{
+	static char buf[1 << 20];
+	off_t pos = 0;
+	ssize_t r;
+
+	while ((r = read(in, buf, sizeof(buf))) > 0) {
+		for (ssize_t off = 0; off < r; off += 65536) {
+			ssize_t n = r - off < 65536 ? r - off : 65536, i;
+
+			for (i = 0; i < n && !buf[off + i]; i++)
+				;
+			if (i < n && pwrite(out, buf + off, n, pos + off) != n)
+				fatal("cannot copy the system into memory: %s", strerror(errno));
+		}
+		pos += r;
+	}
+	if (r < 0 || ftruncate(out, pos) < 0)
+		fatal("cannot read the system image: %s", strerror(errno));
+}
+
+/* A pipe with the decompressed contents of a zstd file. */
+static int unpack(const char *path, pid_t *pid)
+{
+	int p[2];
+
+	if (pipe2(p, O_CLOEXEC) < 0 || (*pid = fork()) < 0)
+		fatal("cannot run zstd: %s", strerror(errno));
+	if (*pid == 0) {
+		dup2(p[1], 1);
+		execl(ZSTD, "zstd", "-dqc", path, (char *)NULL);
+		_exit(127);
+	}
+	close(p[1]);
+	return p[0];
+}
+
+static void live_setup(char *dev, size_t len)
+{
+	char iso[PATH_MAX], opts[64];
+	struct loop_config cfg = { 0 };
+	struct btrfs_ioctl_vol_args grow = { 0 };
+	unsigned long long size = memory_bytes() / 4 * 3;
+	int in, img, ctl, loop, n, top, status;
+	pid_t zstd;
+
+	if (find_live_iso(iso, sizeof(iso)) < 0)
+		fatal("the WormOS ISO (volume %s) was not found", LIVE_VOLUME);
+	mount_fs(iso, LIVE_ISO, "iso9660", MS_RDONLY | MS_NOSUID | MS_NODEV, NULL);
+	snprintf(opts, sizeof(opts), "size=%llu,mode=0700", size);
+	mount_fs("tmpfs", LIVE_RAM, "tmpfs", MS_NOSUID | MS_NODEV, opts);
+
+	log_msg("copying the system into memory");
+	if ((img = open(LIVE_RAM "/system.img", O_RDWR | O_CREAT | O_CLOEXEC, 0600)) < 0)
+		fatal("cannot create the system in memory: %s", strerror(errno));
+	in = unpack(LIVE_IMAGE, &zstd);
+	copy_sparse(in, img);
+	close(in);
+	if (waitpid(zstd, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
+		fatal("the system image on the ISO is damaged");
+	umount2(LIVE_ISO, MNT_DETACH);
+	/* Room to grow: the rest is a hole until written. */
+	if (ftruncate(img, size) < 0)
+		fatal("cannot size the system in memory: %s", strerror(errno));
+
+	if ((ctl = open("/dev/loop-control", O_RDWR | O_CLOEXEC)) < 0 ||
+	    (n = ioctl(ctl, LOOP_CTL_GET_FREE)) < 0)
+		fatal("no loop device: %s", strerror(errno));
+	close(ctl);
+	snprintf(dev, len, "/dev/loop%d", n);
+	for (int i = 0; i < 50 && access(dev, F_OK) < 0; i++)
+		usleep(20000);
+	cfg.fd = img;
+	if ((loop = open(dev, O_RDWR | O_CLOEXEC)) < 0 || ioctl(loop, LOOP_CONFIGURE, &cfg) < 0)
+		fatal("cannot set up %s: %s", dev, strerror(errno));
+	close(loop);
+	close(img);
+	/* The loop device keeps the file. */
+	umount2(LIVE_RAM, MNT_DETACH);
+	btrfs_scan(dev);
+
+	mount_fs(dev, topdir, "btrfs", MS_NOSUID | MS_NODEV, "subvolid=5,compress=zstd");
+	snprintf(grow.name, sizeof(grow.name), "max");
+	if ((top = open(topdir, O_RDONLY | O_DIRECTORY | O_CLOEXEC)) < 0 ||
+	    ioctl(top, BTRFS_IOC_RESIZE, &grow) < 0)
+		log_msg("cannot grow the filesystem: %s", strerror(errno));
+	if (top >= 0)
+		close(top);
+	if (umount(topdir) < 0)
+		fatal("cannot unmount %s: %s", topdir, strerror(errno));
+}
+
 /* Delete everything on the initramfs to free its memory. */
 static void remove_tree(int dfd, dev_t rootdev)
 {
@@ -406,7 +579,22 @@ int main(int argc, char **argv)
 	if (opt_rescue)
 		run_shell();
 
-	find_root(dev, sizeof(dev));
+	if (opt_live && soft_reboot) {
+		/* The system in memory, which the first boot linked. */
+		ssize_t n = readlink(ROOT_LINK, dev, sizeof(dev) - 1);
+
+		if (n <= 0)
+			fatal("cannot find the live system: %s", strerror(errno));
+		dev[n] = '\0';
+	} else if (opt_live) {
+		live_setup(dev, sizeof(dev));
+	} else {
+		find_root(dev, sizeof(dev));
+	}
+	/* fstab mounts the other subvolumes from the same device. */
+	unlink(ROOT_LINK);
+	if (symlink(dev, ROOT_LINK) < 0)
+		log_msg("cannot link %s: %s", ROOT_LINK, strerror(errno));
 	run_snapshot_hooks(dev);
 
 	mount_fs(dev, sysroot, "btrfs",

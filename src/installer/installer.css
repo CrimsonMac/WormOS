@@ -1,0 +1,32 @@
+/* The WormOS installer. */
+
+.page {
+	margin: 32px 40px;
+}
+
+.title-1 {
+	font-size: 22px;
+	font-weight: 800;
+	margin-top: 4px;
+}
+
+.heading {
+	font-weight: 700;
+}
+
+.dim-label {
+	opacity: 0.7;
+}
+
+.disk {
+	padding: 10px 14px;
+}
+
+.error {
+	color: #e5534b;
+}
+
+.page button {
+	margin-top: 8px;
+	padding: 6px 22px;
+}

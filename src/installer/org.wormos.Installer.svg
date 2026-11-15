@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- Installer: an arrow out of a wormhole, onto a disk. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#3b1d7a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fdf4ff" stop-opacity="0.95"/>
+      <stop offset="0.4" stop-color="#e9d5ff" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#a855f7" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#bg)"/>
+  <rect x="8.5" y="8.5" width="111" height="111" rx="25.5" fill="none"
+        stroke="#ffffff" stroke-opacity="0.18"/>
+  <g fill="none" stroke="#ffffff">
+    <ellipse cx="64" cy="34" rx="30" ry="9" stroke-opacity="0.25" stroke-width="2"/>
+    <ellipse cx="64" cy="34" rx="20" ry="6" stroke-opacity="0.45" stroke-width="2.5"/>
+  </g>
+  <ellipse cx="64" cy="34" rx="12" ry="5" fill="url(#glow)"/>
+  <!-- The arrow. -->
+  <path d="M 64 36 L 64 70" stroke="#ffffff" stroke-width="7" stroke-linecap="round"/>
+  <path d="M 51 62 L 64 76 L 77 62 Z" fill="#ffffff" stroke="#ffffff"
+        stroke-width="3" stroke-linejoin="round"/>
+  <!-- The disk. -->
+  <rect x="30" y="82" width="68" height="22" rx="6" fill="#ffffff" fill-opacity="0.92"/>
+  <circle cx="86" cy="93" r="3.5" fill="#6d28d9"/>
+  <rect x="38" y="91" width="30" height="4" rx="2" fill="#6d28d9" fill-opacity="0.5"/>
+</svg>

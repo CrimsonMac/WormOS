@@ -12,6 +12,8 @@
 # QEMU_HOSTFWD forwards host ports to the VM, e.g. tcp:127.0.0.1:2222-:22
 # (several separated by spaces). QEMU_EXTRA adds options (split on spaces).
 # IMAGE boots another image (raw, or qcow2 such as a release image).
+# ISO adds that ISO as a CD drive and boots from it (with IMAGE as the
+# disk to install onto).
 
 . "$(dirname "$0")/env.sh"
 
@@ -42,6 +44,15 @@ for fwd in ${QEMU_HOSTFWD:-}; do
 	netdev+=,hostfwd=$fwd
 done
 
+cdrom=()
+disk_boot=0
+if [ -n "${ISO:-}" ]; then
+	[ -f "$ISO" ] || die "no such ISO: $ISO"
+	cdrom=(-drive file="$ISO",format=raw,if=none,id=cd0,media=cdrom,readonly=on
+		-device ide-cd,drive=cd0,bus=ide.1,bootindex=0)
+	disk_boot=1
+fi
+
 accel=(-accel tcg)
 [ -w /dev/kvm ] && accel=(-accel kvm -cpu host)
 
@@ -52,7 +63,8 @@ exec qemu-system-x86_64 \
 	-m "${QEMU_MEM:-1024}" \
 	"${firmware[@]}" \
 	-drive file="$IMAGE",format=$format,if=none,id=disk0 \
-	-device virtio-blk-pci,drive=disk0,bootindex=0 \
+	-device virtio-blk-pci,drive=disk0,bootindex=$disk_boot \
+	"${cdrom[@]}" \
 	-netdev "$netdev" \
 	-device virtio-net-pci,netdev=net0 \
 	-device virtio-rng-pci \

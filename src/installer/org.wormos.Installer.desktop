@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Install WormOS
+Comment=Install WormOS from the live system onto a disk
+Exec=wormos-installer
+Icon=org.wormos.Installer
+Categories=System;
+Keywords=install;installer;disk;setup;
+StartupNotify=true
+# Shown only in the live system: /usr/lib/worm/live-setup gives the live
+# user a copy without this line.
+NoDisplay=true

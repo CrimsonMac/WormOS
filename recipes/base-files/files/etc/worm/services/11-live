@@ -1,0 +1,3 @@
+# The live system's user, when started from the ISO.
+type = oneshot
+exec = /usr/lib/worm/live-setup

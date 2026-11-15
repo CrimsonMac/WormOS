@@ -17,7 +17,7 @@ OUTPUT=$ROOTFS/boot/initramfs.img
 LIST=$BUILD/initramfs.list
 
 # Programs copied into the initramfs, and BusyBox applets for the rescue shell.
-PROGRAMS=(/usr/bin/busybox /usr/bin/snap)
+PROGRAMS=(/usr/bin/busybox /usr/bin/snap /usr/bin/zstd)
 APPLETS=(sh ash cat ls mkdir mount umount ln cp mv rm dmesg less vi reboot poweroff)
 
 declare -A seen=()

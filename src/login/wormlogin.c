@@ -15,10 +15,13 @@
  * Messages are SOCK_SEQPACKET datagrams of NUL-separated fields:
  *
  *     login USER PASSWORD
- *     setup NAME FULL-NAME PASSWORD ROOT-PASSWORD LAYOUT
+ *     setup NAME FULL-NAME PASSWORD ROOT-PASSWORD LAYOUT ZONE
  *     power off|reboot
  *
  * answered by "ok" or "fail" and a message.
+ *
+ * In the live system (/run/wormos/live, made by /usr/lib/worm/live-setup
+ * when the ISO started), the user "live" is logged in at once, every time.
  *
  * If the login screen cannot run (no graphics device, no greeter user, or
  * it ends three times in a row without a login), the console login takes
@@ -225,7 +228,7 @@ static int create_account(char **f, char *msg, size_t len)
 		dup2(in[0], 0);
 		dup2(err[1], 2);
 		dup2(err[1], 1);
-		execl(FIRST_BOOT, FIRST_BOOT, "--create", f[1], f[2], f[5], (char *)NULL);
+		execl(FIRST_BOOT, FIRST_BOOT, "--create", f[1], f[2], f[5], f[6], (char *)NULL);
 		_exit(127);
 	}
 	close(in[0]);
@@ -278,7 +281,7 @@ static void handle(int fd, char *buf, size_t len)
 			say("failed login for %s", f[1]);
 			reply(fd, "fail", "Wrong user name or password.");
 		}
-	} else if (n == 6 && !strcmp(f[0], "setup")) {
+	} else if (n == 7 && !strcmp(f[0], "setup")) {
 		char msg[256] = "";
 
 		if (users_exist())
@@ -431,6 +434,13 @@ int main(void)
 		console("cannot create the greeter's folder");
 	if (chown(GREETER_HOME, greeter->pw_uid, greeter->pw_gid) < 0)
 		console("cannot prepare the greeter's folder");
+
+	/* The live system needs no login: its user has no password. */
+	if (access("/run/wormos/live", F_OK) == 0 && getpwnam("live"))
+		for (;;) {
+			run_session("live");
+			sleep(1);
+		}
 
 	for (;;) {
 		int status = run_greeter(greeter, !users_exist());

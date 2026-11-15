@@ -1,0 +1,13 @@
+name=wormos-installer
+version=0.1.0
+description="Installer: puts WormOS from the live ISO onto a disk"
+depends=(glibc gtk4 worm zstd hicolor-icon-theme)
+localsrc=src/installer
+
+build() {
+	make CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}

@@ -1,0 +1,31 @@
+#!/bin/sh
+# The live system (wormos.live on the kernel command line, from the ISO):
+# a user "live" without a password, whom the login screen logs in at once,
+# and root without a password. The whole system runs from memory, so none
+# of this ever reaches a disk; an installed system starts with the usual
+# first-boot setup instead.
+
+grep -qw wormos.live /proc/cmdline || exit 0
+mkdir -p /run/wormos
+touch /run/wormos/live
+grep -q '^live:' /etc/passwd && exit 0
+
+mount -o remount,bind,rw / || exit 1
+shell=/bin/sh
+[ -x /usr/bin/zsh ] && shell=/usr/bin/zsh
+adduser -D -s "$shell" -g "Live user" live
+for group in wheel video input audio render kvm; do
+	addgroup live "$group"
+done
+passwd -d live > /dev/null
+passwd -d root > /dev/null
+mount -o remount,bind,ro /
+/usr/lib/worm/runtime-dirs
+
+# The installer, in the live user's launcher.
+entry=/usr/share/applications/org.wormos.Installer.desktop
+if [ -f "$entry" ]; then
+	mkdir -p /home/live/.local/share/applications
+	grep -v -e '^NoDisplay=' -e '^# ' "$entry" > /home/live/.local/share/applications/org.wormos.Installer.desktop
+	chown -R live:live /home/live/.local
+fi
