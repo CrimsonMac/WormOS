@@ -1,0 +1,22 @@
+#!/bin/sh
+# The network service: DHCP on the first wired interface, started only
+# behind the firewall. If its rules are not loaded (and cannot be), the
+# network stays down: the service fails and worminit tries again later.
+
+if ! nft list chain inet worm input > /dev/null 2>&1 && ! worm fw load; then
+	echo "network: the firewall is not active; not starting the network" >&2
+	sleep 10
+	exit 1
+fi
+
+iface=eth0
+if [ ! -e /sys/class/net/$iface ]; then
+	for dev in /sys/class/net/*; do
+		[ -e "$dev/device" ] && [ ! -e "$dev/wireless" ] || continue
+		iface=${dev##*/}
+		break
+	done
+fi
+
+# -V '': no vendor class naming the DHCP client to the network.
+exec udhcpc -f -S -i "$iface" -V '' -s /usr/lib/worm/dhcp-event > /dev/null

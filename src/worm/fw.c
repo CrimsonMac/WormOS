@@ -7,8 +7,10 @@
  *     worm fw load            load the rules (at boot, before networking)
  *
  * Inbound traffic is dropped unless it belongs to a connection this machine
- * started, comes from loopback, is essential ICMP, or targets an open port.
- * Forwarding is dropped. Outbound traffic is not filtered.
+ * started, comes from loopback, is essential ICMP (errors and neighbour
+ * discovery; pings get no answer), or targets an open port. Forwarding is
+ * dropped. Outbound traffic is not filtered. The network service starts
+ * only once these rules are loaded.
  *
  * Open ports are kept in /etc/worm/firewall, one "tcp 22" or "udp
  * 6000-6010" per line, so they are part of system snapshots and a rewind
@@ -17,9 +19,10 @@
  * replaces the whole "inet worm" table at once.
  *
  * In anonymous mode (anon.c) the table also filters output: only Tor's
- * user may reach the network, other TCP connections are redirected to
- * Tor's TransPort and DNS queries to its DNSPort, and everything else is
- * rejected. Without a tor user, nothing but loopback gets out.
+ * user may reach the network (with TCP), other TCP connections are
+ * redirected to Tor's TransPort and DNS queries to its DNSPort, and
+ * everything else is rejected. Root's DHCP renewals are the one exception.
+ * Without a tor user, nothing but loopback gets out.
  *
  * The network can also be cut (worm panic, and safe mode from boot): a
  * table that drops everything but loopback, in and out, until 'worm panic
@@ -190,7 +193,7 @@ static void write_anon(FILE *f, long tor)
 	char skuid[64] = "";
 
 	if (tor >= 0)
-		snprintf(skuid, sizeof(skuid), "\t\tmeta skuid %ld accept\n", tor);
+		snprintf(skuid, sizeof(skuid), "\t\tmeta skuid %ld meta l4proto tcp accept\n", tor);
 	fprintf(f, "\tchain output {\n"
 		"\t\ttype filter hook output priority filter; policy drop;\n"
 		"\t\toif lo accept\n"
@@ -198,11 +201,11 @@ static void write_anon(FILE *f, long tor)
 		 * What the NAT chain sent to Tor: the packet now goes to
 		 * loopback, but oif still names the original device.
 		 */
-		"\t\tip daddr 127.0.0.0/8 accept\n"
-		"\t\tip6 daddr ::1 accept\n"
+		"\t\tct status dnat ip daddr 127.0.0.1 accept\n"
+		"\t\tct status dnat ip6 daddr ::1 accept\n"
 		"%s"
-		/* DHCP renewals; the first lease uses a raw socket anyway. */
-		"\t\tudp sport 68 udp dport 67 accept\n"
+		/* Root's DHCP renewals; the first lease uses a raw socket anyway. */
+		"\t\tmeta skuid 0 udp sport 68 udp dport 67 accept\n"
 		"\t\tmeta l4proto tcp reject with tcp reset\n"
 		"\t\treject with icmpx admin-prohibited\n"
 		"\t}\n", skuid);
@@ -236,9 +239,7 @@ static int write_rules(const struct port *ports, int n)
 	      "\t\ttype filter hook input priority filter; policy drop;\n"
 	      "\t\tct state vmap { established : accept, related : accept, invalid : drop }\n"
 	      "\t\tiif lo accept\n"
-	      "\t\ticmp type echo-request limit rate 5/second burst 10 packets accept\n"
 	      "\t\ticmp type { destination-unreachable, time-exceeded, parameter-problem } accept\n"
-	      "\t\ticmpv6 type echo-request limit rate 5/second burst 10 packets accept\n"
 	      "\t\ticmpv6 type { destination-unreachable, packet-too-big, time-exceeded,"
 	      " parameter-problem } accept\n"
 	      /* Neighbour discovery only from the local link. */

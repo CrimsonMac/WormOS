@@ -67,12 +67,60 @@ static long process_uid(pid_t pid)
 	return uid;
 }
 
+/* Does pid have a descriptor open on the file st describes? */
+static int has_open(long pid, const struct stat *st)
+{
+	char dir[64], path[384];
+	struct dirent *e;
+	struct stat fst;
+	int found = 0;
+	DIR *d;
+
+	snprintf(dir, sizeof(dir), "/proc/%ld/fd", pid);
+	if (!(d = opendir(dir)))
+		return 0;
+	while (!found && (e = readdir(d))) {
+		snprintf(path, sizeof(path), "%s/%s", dir, e->d_name);
+		found = e->d_name[0] != '.' && stat(path, &fst) == 0 &&
+			fst.st_dev == st->st_dev && fst.st_ino == st->st_ino;
+	}
+	closedir(d);
+	return found;
+}
+
+/*
+ * The process holding the flock on lock, from the kernel's lock table:
+ * the pid file is written by the blackhole's owner and could name anything.
+ * /proc/locks gives the inode; btrfs reports another device number there,
+ * so the holder is confirmed through its open descriptors.
+ */
+static long lock_holder(int lock)
+{
+	char line[256];
+	struct stat st;
+	long holder = 0;
+	FILE *f;
+
+	if (fstat(lock, &st) < 0 || !(f = fopen("/proc/locks", "re")))
+		return 0;
+	while (!holder && fgets(line, sizeof(line), f)) {
+		unsigned long ino;
+		long pid;
+
+		if (sscanf(line, "%*d: FLOCK %*s %*s %ld %*x:%*x:%lu", &pid, &ino) == 2 &&
+		    ino == (unsigned long)st.st_ino && pid > 1 && has_open(pid, &st))
+			holder = pid;
+	}
+	fclose(f);
+	return holder;
+}
+
 /*
  * Visit every blackhole of every user. With stop, kill the bh running each
  * one that is running: its init dies with it, and with init everything
- * inside. Users control their own pid files, so the PID is only trusted
- * for a process of the same user. Returns the number running; *total
- * gets the number of blackholes.
+ * inside. The bh is found through the lock it holds, and only killed when
+ * it belongs to the owner of the blackhole. Returns the number running;
+ * *total gets the number of blackholes.
  */
 int blackholes_each(int stop, int *total)
 {
@@ -96,10 +144,9 @@ int blackholes_each(int stop, int *total)
 			continue;
 		}
 		while ((b = readdir(boxes))) {
-			char path[300], buf[32] = "";
-			int lock, pfd;
+			char path[300];
+			int lock;
 			long pid;
-			ssize_t r;
 
 			if (b->d_name[0] == '.')
 				continue;
@@ -113,13 +160,7 @@ int blackholes_each(int stop, int *total)
 				continue;
 			}
 			running++;
-			snprintf(path, sizeof(path), "%s/pid", b->d_name);
-			pfd = openat(dirfd(boxes), path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
-			r = pfd >= 0 ? read(pfd, buf, sizeof(buf) - 1) : -1;
-			if (pfd >= 0)
-				close(pfd);
-			buf[r > 0 ? r : 0] = '\0';
-			pid = strtol(buf, NULL, 10);
+			pid = stop ? lock_holder(lock) : 0;
 			if (stop && pid > 1 && process_uid(pid) == (long)st.st_uid &&
 			    kill(pid, SIGKILL) == 0)
 				/* Released when it is gone; never wait long on a user's lock. */
@@ -197,7 +238,7 @@ static int panic_on(void)
 	return ret;
 }
 
-/* Send sig to every process running the program name. */
+/* Send sig to every process of root running the program name. */
 static void signal_program(const char *name, int sig)
 {
 	struct dirent *e;
@@ -215,7 +256,7 @@ static void signal_program(const char *name, int sig)
 		if (fgets(comm, sizeof(comm), f))
 			comm[strcspn(comm, "\n")] = '\0';
 		fclose(f);
-		if (!strcmp(comm, name))
+		if (!strcmp(comm, name) && process_uid(atoi(e->d_name)) == 0)
 			kill(atoi(e->d_name), sig);
 	}
 	if (d)

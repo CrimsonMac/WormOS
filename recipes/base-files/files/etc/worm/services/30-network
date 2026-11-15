@@ -1,4 +1,4 @@
-# DHCP on the first ethernet interface.
+# DHCP on the first wired interface, only once the firewall is loaded.
 type = respawn
-exec = udhcpc -f -S -i eth0 -s /usr/lib/worm/dhcp-event > /dev/null
+exec = /usr/lib/worm/network
 safe = no
