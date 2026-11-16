@@ -4,16 +4,41 @@
 # hardware address (locally administered unicast, new at every boot), and
 # temporary IPv6 addresses for outgoing connections. The sysctl defaults
 # only reach devices created after they were set.
+#
+# VMware and Hyper-V virtual switches deliver frames only to the address
+# they gave the virtual card (Hyper-V also drops frames sent from any
+# other), so a random address there means no network at all, in NAT and
+# bridged mode alike. Those guests keep the address of the virtual machine,
+# which the hypervisor generated and which the real network does not see
+# in NAT mode anyway.
+keep_address=
+read -r vendor 2>/dev/null < /sys/class/dmi/id/sys_vendor
+read -r product 2>/dev/null < /sys/class/dmi/id/product_name
+case $vendor in
+"VMware, Inc.") keep_address="VMware" ;;
+"Microsoft Corporation") [ "$product" = "Virtual Machine" ] && keep_address="Hyper-V" ;;
+esac
+[ -n "$keep_address" ] &&
+	echo "net-privacy: $keep_address guest, keeping the virtual card's MAC address" >&2
+
 for dev in /sys/class/net/*; do
 	name=${dev##*/}
 	# Hardware only: not loopback, bridges or virtual pairs.
 	[ -e "$dev/device" ] || continue
+	[ -w "/proc/sys/net/ipv6/conf/$name/use_tempaddr" ] &&
+		echo 2 > "/proc/sys/net/ipv6/conf/$name/use_tempaddr"
+	[ -n "$keep_address" ] && continue
+	# vmxnet3 cards keep receiving only for their original address, in
+	# QEMU as well as in VMware.
+	case $(readlink "$dev/device/driver") in
+	*/vmxnet3)
+		echo "net-privacy: $name is a vmxnet3 card, keeping its MAC address" >&2
+		continue ;;
+	esac
 	set -- $(od -An -N6 -tx1 /dev/urandom)
 	first=$(printf '%02x' $(( (0x$1 & 0xfc) | 0x02 )))
 	ip link set dev "$name" down
 	ip link set dev "$name" address "$first:$2:$3:$4:$5:$6" ||
 		echo "net-privacy: cannot change the address of $name" >&2
-	[ -w "/proc/sys/net/ipv6/conf/$name/use_tempaddr" ] &&
-		echo 2 > "/proc/sys/net/ipv6/conf/$name/use_tempaddr"
 done
 exit 0

@@ -386,7 +386,9 @@ normally to leave safe mode.
   announces are not used. To use other resolvers, put a `forward-zone` in
   `/etc/unbound/unbound.conf.d/` (after `worm unlock`).
 - Network devices get a random MAC address at every boot, and IPv6 uses
-  temporary addresses for outgoing connections.
+  temporary addresses for outgoing connections. VMware and Hyper-V guests
+  keep the virtual card's address: their virtual switches drop traffic for
+  any other. So do vmxnet3 cards, which ignore a new address.
 - The kernel is locked down (no unsigned modules, no access to kernel
   memory), io_uring is off, and kernel pointers and logs are hidden.
   Settings are in `/usr/lib/sysctl.d/50-wormos.conf`; override them in

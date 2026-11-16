@@ -14,6 +14,8 @@
 # IMAGE boots another image (raw, or qcow2 such as a release image).
 # ISO adds that ISO as a CD drive and boots from it (with IMAGE as the
 # disk to install onto).
+# QEMU_NIC picks the network card model (default virtio-net-pci; e.g. e1000,
+# e1000e or vmxnet3, the cards VMware offers).
 
 . "$(dirname "$0")/env.sh"
 
@@ -66,7 +68,7 @@ exec qemu-system-x86_64 \
 	-device virtio-blk-pci,drive=disk0,bootindex=$disk_boot \
 	"${cdrom[@]}" \
 	-netdev "$netdev" \
-	-device virtio-net-pci,netdev=net0 \
+	-device "${QEMU_NIC:-virtio-net-pci}",netdev=net0 \
 	-device virtio-rng-pci \
 	-device virtio-serial-pci,id=vserial0 \
 	-chardev qemu-vdagent,id=vdagent0,name=vdagent,clipboard=on,mouse=off \

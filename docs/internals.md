@@ -312,7 +312,11 @@ in the README.
 - `/usr/lib/worm/net-privacy` gives every device with a `device` link in
   `/sys/class/net` a random locally administered unicast MAC and sets its
   `use_tempaddr` to 2 (the sysctl defaults only reach devices created
-  later).
+  later). On VMware and Hyper-V guests (DMI `sys_vendor` `VMware, Inc.`,
+  or `Microsoft Corporation` with product `Virtual Machine`) it keeps the
+  MAC: their virtual switches deliver frames only to the address they
+  assigned, so a random one leaves the guest without a network. vmxnet3
+  cards keep their MAC everywhere (they ignore a new one, also in QEMU).
 - `/usr/lib/worm/dhcp-event` replaces busybox's udhcpc script. It records
   the announced DNS servers in `/run/worm/dhcp-dns` and, when unbound is
   installed, keeps `/run/resolv.conf` at 127.0.0.1 and ::1. Renewals use
