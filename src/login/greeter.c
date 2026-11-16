@@ -343,14 +343,13 @@ static int compare_strings(const void *a, const void *b)
 	return strcmp(*(char *const *)a, *(char *const *)b);
 }
 
-/* Time zones from the tz database's zone1970.tab, UTC first. */
-static GtkStringList *load_zones(void)
+/* Country names by ISO 3166 code, from the tz database's iso3166.tab. */
+static GHashTable *load_countries(void)
 {
-	GtkStringList *list = gtk_string_list_new((const char *[]){ "UTC", NULL });
-	GPtrArray *names = g_ptr_array_new_with_free_func(g_free);
+	GHashTable *countries = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	char *data = NULL;
 
-	if (g_file_get_contents("/usr/share/zoneinfo/zone1970.tab", &data, NULL, NULL)) {
+	if (g_file_get_contents("/usr/share/zoneinfo/iso3166.tab", &data, NULL, NULL)) {
 		char **lines = g_strsplit(data, "\n", -1);
 
 		for (char **l = lines; *l; l++) {
@@ -358,9 +357,57 @@ static GtkStringList *load_zones(void)
 
 			if (**l == '#' || !**l)
 				continue;
+			f = g_strsplit(*l, "\t", 2);
+			if (g_strv_length(f) == 2)
+				g_hash_table_insert(countries, g_strdup(f[0]), g_strdup(f[1]));
+			g_strfreev(f);
+		}
+		g_strfreev(lines);
+		g_free(data);
+	}
+	return countries;
+}
+
+/* Time zones from the tz database's zone1970.tab, UTC first. Each one is
+ * found by its name, its city alone ("new york" for America/New_York) and
+ * the names of its countries: search texts go into *search. */
+static GtkStringList *load_zones(GHashTable *search)
+{
+	GtkStringList *list = gtk_string_list_new((const char *[]){ "UTC", NULL });
+	GPtrArray *names = g_ptr_array_new();
+	GHashTable *countries = load_countries();
+	char *data = NULL;
+
+	g_hash_table_insert(search, g_strdup("UTC"), g_strdup("UTC GMT Coordinated Universal Time"));
+	if (g_file_get_contents("/usr/share/zoneinfo/zone1970.tab", &data, NULL, NULL)) {
+		char **lines = g_strsplit(data, "\n", -1);
+
+		for (char **l = lines; *l; l++) {
+			char **f, **codes, *words;
+			GString *text;
+
+			if (**l == '#' || !**l)
+				continue;
 			f = g_strsplit(*l, "\t", 4);
-			if (g_strv_length(f) >= 3)
-				g_ptr_array_add(names, g_strdup(f[2]));
+			if (g_strv_length(f) < 3 || g_hash_table_contains(search, f[2])) {
+				g_strfreev(f);
+				continue;
+			}
+			words = g_strdup(f[2]);
+			g_strdelimit(words, "/_-", ' ');
+			text = g_string_new(f[2]);
+			g_string_append_printf(text, " %s", words);
+			codes = g_strsplit(f[0], ",", -1);
+			for (char **c = codes; *c; c++) {
+				const char *country = g_hash_table_lookup(countries, *c);
+
+				if (country)
+					g_string_append_printf(text, " %s", country);
+			}
+			g_strfreev(codes);
+			g_free(words);
+			g_ptr_array_add(names, g_strdup(f[2]));
+			g_hash_table_insert(search, g_strdup(f[2]), g_string_free(text, FALSE));
 			g_strfreev(f);
 		}
 		g_strfreev(lines);
@@ -370,7 +417,125 @@ static GtkStringList *load_zones(void)
 	for (guint i = 0; i < names->len; i++)
 		gtk_string_list_append(list, names->pdata[i]);
 	g_ptr_array_free(names, TRUE);
+	g_hash_table_unref(countries);
 	return list;
+}
+
+/* ---- drop-downs with a search that finds words anywhere ---- */
+
+/* The text a drop-down's search looks in: the item's search text, or its
+ * label when it has none. */
+static char *search_text(GtkStringObject *item, GHashTable *search)
+{
+	const char *label = gtk_string_object_get_string(item);
+	const char *text = g_hash_table_lookup(search, label);
+
+	return g_strdup(text ? text : label);
+}
+
+static char *fold(const char *s)
+{
+	char *normal = g_utf8_normalize(s, -1, G_NORMALIZE_ALL);
+	char *folded = g_utf8_casefold(normal ? normal : s, -1);
+
+	g_free(normal);
+	return folded;
+}
+
+/* Items show their label, with spaces for underscores (America/New York). */
+static void item_setup(GtkSignalListItemFactory *f, GtkListItem *li, gpointer data)
+{
+	GtkWidget *l = gtk_label_new(NULL);
+
+	(void)f;
+	(void)data;
+	gtk_label_set_xalign(GTK_LABEL(l), 0);
+	gtk_label_set_ellipsize(GTK_LABEL(l), PANGO_ELLIPSIZE_END);
+	gtk_list_item_set_child(li, l);
+}
+
+static void item_bind(GtkSignalListItemFactory *f, GtkListItem *li, gpointer data)
+{
+	char *s = g_strdup(gtk_string_object_get_string(gtk_list_item_get_item(li)));
+
+	(void)f;
+	(void)data;
+	g_strdelimit(s, "_", ' ');
+	gtk_label_set_text(GTK_LABEL(gtk_list_item_get_child(li)), s);
+	g_free(s);
+}
+
+static GtkWidget *find_search_entry(GtkWidget *w)
+{
+	if (GTK_IS_SEARCH_ENTRY(w))
+		return w;
+	for (GtkWidget *c = gtk_widget_get_first_child(w); c; c = gtk_widget_get_next_sibling(c)) {
+		GtkWidget *found = find_search_entry(c);
+
+		if (found)
+			return found;
+	}
+	return NULL;
+}
+
+/* Enter in the search field picks the first match, as the list shows it. */
+static void search_activated(GtkSearchEntry *entry, GtkDropDown *dd)
+{
+	GHashTable *search = g_object_get_data(G_OBJECT(dd), "search");
+	GListModel *model = gtk_drop_down_get_model(dd);
+	char *query = fold(gtk_editable_get_text(GTK_EDITABLE(entry)));
+	guint n = g_list_model_get_n_items(model);
+
+	for (guint i = 0; *query && i < n; i++) {
+		GtkStringObject *item = g_list_model_get_item(model, i);
+		char *text = search_text(item, search), *folded = fold(text);
+		gboolean match = strstr(folded, query) != NULL;
+
+		g_free(folded);
+		g_free(text);
+		g_object_unref(item);
+		if (match) {
+			gtk_drop_down_set_selected(dd, i);
+			break;
+		}
+	}
+	g_free(query);
+	for (GtkWidget *c = gtk_widget_get_first_child(GTK_WIDGET(dd)); c;
+	     c = gtk_widget_get_next_sibling(c))
+		if (GTK_IS_POPOVER(c))
+			gtk_popover_popdown(GTK_POPOVER(c));
+}
+
+static void unref_table(gpointer table, GClosure *closure)
+{
+	(void)closure;
+	g_hash_table_unref(table);
+}
+
+/* A drop-down over labels whose search matches any part of the label or of
+ * its search text (from the table, which it takes over), ignoring case. */
+static GtkWidget *search_drop_down(GtkStringList *labels, GHashTable *search)
+{
+	GtkExpression *expr = gtk_cclosure_expression_new(
+		G_TYPE_STRING, NULL, 0, NULL, G_CALLBACK(search_text),
+		g_hash_table_ref(search), unref_table);
+	GtkWidget *dd = gtk_drop_down_new(G_LIST_MODEL(labels), expr);
+	GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
+	GtkWidget *entry;
+
+	g_signal_connect(factory, "setup", G_CALLBACK(item_setup), NULL);
+	g_signal_connect(factory, "bind", G_CALLBACK(item_bind), NULL);
+	gtk_drop_down_set_factory(GTK_DROP_DOWN(dd), factory);
+	g_object_unref(factory);
+	gtk_drop_down_set_enable_search(GTK_DROP_DOWN(dd), TRUE);
+	gtk_drop_down_set_search_match_mode(GTK_DROP_DOWN(dd),
+					    GTK_STRING_FILTER_MATCH_MODE_SUBSTRING);
+	g_object_set_data_full(G_OBJECT(dd), "search", search,
+			       (GDestroyNotify)g_hash_table_unref);
+	entry = find_search_entry(dd);
+	if (entry)
+		g_signal_connect(entry, "activate", G_CALLBACK(search_activated), dd);
+	return dd;
 }
 
 /* A user name from the full name: "Ada Lovelace" becomes "ada". */
@@ -412,6 +577,17 @@ static void next_field(GtkWidget *widget, gpointer data)
 	gtk_widget_grab_focus(data);
 	if (data == user_name)
 		gtk_editable_select_region(GTK_EDITABLE(user_name), 0, -1);
+}
+
+/* A field that loses the focus drops its selection, so a suggestion that
+ * was selected on the way through does not stay highlighted. */
+static void field_left(GtkEventControllerFocus *c, gpointer data)
+{
+	GtkEditable *e = GTK_EDITABLE(gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(c)));
+	int pos = gtk_editable_get_position(e);
+
+	(void)data;
+	gtk_editable_select_region(e, pos, pos);
 }
 
 static gboolean valid_user_name(const char *s)
@@ -517,10 +693,13 @@ static void show_page(GtkButton *button, gpointer data)
 static GtkWidget *entry(GtkWidget *box, const char *placeholder, gboolean secret)
 {
 	GtkWidget *e = secret ? gtk_password_entry_new() : gtk_entry_new();
+	GtkEventController *focus = gtk_event_controller_focus_new();
 
 	if (secret)
 		gtk_password_entry_set_show_peek_icon(GTK_PASSWORD_ENTRY(e), TRUE);
 	g_object_set(e, "placeholder-text", placeholder, NULL);
+	g_signal_connect(focus, "leave", G_CALLBACK(field_left), NULL);
+	gtk_widget_add_controller(e, focus);
 	gtk_box_append(GTK_BOX(box), e);
 	return e;
 }
@@ -559,6 +738,7 @@ static void build_setup(void)
 {
 	GtkWidget *card = card_box(), *page, *start;
 	GtkStringList *names = gtk_string_list_new(NULL);
+	GHashTable *search;
 
 	stack = gtk_stack_new();
 	gtk_stack_set_transition_type(GTK_STACK(stack), GTK_STACK_TRANSITION_TYPE_SLIDE_LEFT_RIGHT);
@@ -590,15 +770,18 @@ static void build_setup(void)
 	pass1 = entry(page, "Password", TRUE);
 	pass2 = entry(page, "The same password again", TRUE);
 	label(page, "Keyboard layout");
-	for (guint i = 0; i < G_N_ELEMENTS(layouts); i++)
+	search = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+	for (guint i = 0; i < G_N_ELEMENTS(layouts); i++) {
 		gtk_string_list_append(names, layouts[i][1]);
-	layout = gtk_drop_down_new(G_LIST_MODEL(names), NULL);
+		g_hash_table_insert(search, g_strdup(layouts[i][1]),
+				    g_strdup_printf("%s %s", layouts[i][1], layouts[i][0]));
+	}
+	layout = search_drop_down(names, search);
 	gtk_box_append(GTK_BOX(page), layout);
 	label(page, "Time zone");
-	zones = load_zones();
-	zone = gtk_drop_down_new(G_LIST_MODEL(g_object_ref(zones)),
-				 gtk_property_expression_new(GTK_TYPE_STRING_OBJECT, NULL, "string"));
-	gtk_drop_down_set_enable_search(GTK_DROP_DOWN(zone), TRUE);
+	search = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+	zones = load_zones(search);
+	zone = search_drop_down(g_object_ref(zones), search);
 	gtk_box_append(GTK_BOX(page), zone);
 	account_error = text("", "error");
 	gtk_box_append(GTK_BOX(page), account_error);
