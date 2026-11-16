@@ -1,6 +1,6 @@
 name=clip
 version=0.1.0
-release=3
+release=4
 description="The clipboard from the command line, shared with the VM's host"
 depends=(glibc wayland)
 localsrc=src/clipboard

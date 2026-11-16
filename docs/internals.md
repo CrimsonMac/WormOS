@@ -901,7 +901,8 @@ in the README.
   the host over the SPICE agent port `/dev/virtio-ports/com.redhat.spice.0`
   (group `video`, mode 0660, from `70-spice-agent.rules`). It speaks the
   vdagent protocol (spice-protocol's `vd_agent.h`): chunks of at most
-  2048 bytes carrying messages, capabilities `CLIPBOARD_BY_DEMAND`,
+  2048 bytes carrying messages, capabilities `MOUSE_STATE`,
+  `MONITORS_CONFIG`, `REPLY`, `CLIPBOARD_BY_DEMAND`,
   `CLIPBOARD_SELECTION` and `GUEST_LINEEND_LF`. Each side announces a copy
   (grab) and sends the text when asked (request), so nothing crosses until
   someone pastes. The host's text is cached until its next grab. Sources
@@ -914,6 +915,26 @@ in the README.
   through `-chardev qemu-vdagent,clipboard=on`, which `run-qemu.sh`
   always adds. QEMU's VNC server passes plain ClientCutText to the guest
   and the guest's copies to clients using the extended clipboard.
+- The pointer: once any agent has the port open, the SPICE server sends
+  every pointer event of a client in client mouse mode to the agent as
+  `MOUSE_STATE` (position on display `display_id` in its pixels, buttons;
+  the wheel as buttons 4 and 5), not to the USB tablet. The agent replays
+  them through wlr-virtual-pointer-unstable-v1 (one pointer per output,
+  created with that output, absolute motion against the output's current
+  mode size); each wheel press is one discrete step. All buttons are
+  released when the client disconnects or the port closes. QEMU's
+  qemu-vdagent sends the same messages with `mouse=on`, but only to an
+  agent that announces `MOUSE_STATE`; the desktop test runs that way
+  (`QEMU_VDAGENT_MOUSE=on`) and checks QEMU's `info mice`.
+- Display size: SPICE clients send the window size ("Auto resize VM with
+  window") only to an agent that announces `MONITORS_CONFIG`. The SPICE
+  server hands it to QEMU's graphics device (virtio-gpu's EDID, QXL's
+  client monitors config), whose new preferred mode wlroots follows (see
+  Graphics); it reaches the agent only when the device cannot take it, and
+  the agent then just replies.
+- The login screen runs `clip agent --no-clipboard` from the greeter's
+  labwc `autostart` (pointer and display size, no clipboard); the user's
+  agent opens the port once it is free.
 ## Sound
 
 - Kernel: the HD Audio controller driver, codec drivers (generic,

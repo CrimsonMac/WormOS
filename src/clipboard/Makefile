@@ -9,7 +9,7 @@ LIBS      = $(shell $(PKG_CONFIG) --libs wayland-client)
 PREFIX   ?= /usr
 BINDIR   ?= $(PREFIX)/bin
 
-PROTOCOLS = ext-data-control-v1
+PROTOCOLS = ext-data-control-v1 wlr-virtual-pointer-unstable-v1
 HEADERS   = $(PROTOCOLS:%=%-client-protocol.h)
 PROTO_SRC = $(PROTOCOLS:%=%-protocol.c)
 SRCS      = clip.c agent.c

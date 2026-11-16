@@ -8,6 +8,7 @@
 #include <wayland-client.h>
 
 #include "ext-data-control-v1-client-protocol.h"
+#include "wlr-virtual-pointer-unstable-v1-client-protocol.h"
 
 /* Offered by every source of ours, so the agent can tell its own copies. */
 #define MARKER_MIME "application/x-wormos-clip"
@@ -24,11 +25,24 @@ struct offer {
 	size_t nmimes;
 };
 
+/* An output and the size of its current mode, in pixels. */
+struct output {
+	struct wl_output *obj;
+	int32_t width, height;
+};
+
+#define MAX_OUTPUTS 8
+
 struct clip {
 	struct wl_display *display;
 	struct wl_seat *seat;
 	struct ext_data_control_manager_v1 *manager;
 	struct ext_data_control_device_v1 *device;
+	/* For the agent's pointer: NULL when the compositor has none. */
+	struct zwlr_virtual_pointer_manager_v1 *pointer_manager;
+	uint32_t pointer_manager_version;
+	struct output outputs[MAX_OUTPUTS];	/* in the order they were announced */
+	size_t noutputs;
 	struct offer *selection;	/* the clipboard, NULL when empty */
 	struct offer *primary;
 	/* Called whenever the clipboard changes; NULL until set. */
@@ -62,7 +76,8 @@ size_t writers_pending(void);
 /* Reads fd to the end in the background, then calls fn (data NULL on error). */
 void reader_add(int fd, void (*fn)(char *data, size_t len, void *arg), void *arg);
 
-int agent_main(const char *port);
+/* clipboard false: only the pointer and display sizes (the login screen). */
+int agent_main(const char *port, bool clipboard);
 
 
 #endif

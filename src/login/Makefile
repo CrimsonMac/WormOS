@@ -25,7 +25,7 @@ install: all
 	install -Dm755 wormos-greeter $(DESTDIR)$(BINDIR)/wormos-greeter
 	install -Dm644 greeter.css $(DESTDIR)$(DATADIR)/wormos/greeter/greeter.css
 	install -Dm644 -t $(DESTDIR)$(DATADIR)/wormos/greeter/labwc \
-		labwc/rc.xml labwc/menu.xml labwc/environment
+		labwc/rc.xml labwc/menu.xml labwc/environment labwc/autostart
 
 clean:
 	rm -f wormlogin wormos-greeter

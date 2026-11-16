@@ -14,6 +14,8 @@
 # IMAGE boots another image (raw, or qcow2 such as a release image).
 # ISO adds that ISO as a CD drive and boots from it (with IMAGE as the
 # disk to install onto).
+# QEMU_VDAGENT_MOUSE=on sends the pointer through the guest's agent, as
+# SPICE clients do (the agent replays it as a virtual pointer).
 # QEMU_NIC picks the network card model (default virtio-net-pci; e.g. e1000,
 # e1000e or vmxnet3, the cards VMware offers).
 
@@ -71,6 +73,6 @@ exec qemu-system-x86_64 \
 	-device "${QEMU_NIC:-virtio-net-pci}",netdev=net0 \
 	-device virtio-rng-pci \
 	-device virtio-serial-pci,id=vserial0 \
-	-chardev qemu-vdagent,id=vdagent0,name=vdagent,clipboard=on,mouse=off \
+	-chardev qemu-vdagent,id=vdagent0,name=vdagent,clipboard=on,mouse=${QEMU_VDAGENT_MOUSE:-off} \
 	-device virtserialport,bus=vserial0.0,chardev=vdagent0,name=com.redhat.spice.0 \
 	"${display[@]}" "${extra[@]}" ${QEMU_EXTRA:-}

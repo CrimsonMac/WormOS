@@ -1,0 +1,5 @@
+# The SPICE agent without the clipboard: in virt-manager and other SPICE
+# clients the pointer goes through it, and the login screen follows the
+# window size. It ends with labwc.
+command -v clip > /dev/null &&
+	clip agent --no-clipboard > "$XDG_RUNTIME_DIR/clip.log" 2>&1 &

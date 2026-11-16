@@ -5,6 +5,15 @@
  * server, and QEMU's own windows and VNC server through its qemu-vdagent
  * device.
  *
+ * It is also the guest's pointer and display size for SPICE clients. Once
+ * an agent has the port open, the SPICE server sends every pointer event
+ * to it (as mouse state messages) instead of to the USB tablet, so the
+ * agent replays them through the compositor's virtual pointer protocol.
+ * It announces monitor configs, so the client sends its window size when
+ * "Auto resize VM with window" is on; the SPICE server hands that to QEMU's
+ * graphics device, whose preferred mode the compositor follows. With
+ * --no-clipboard (the login screen) it does only those two.
+ *
  * Only text, and only the clipboard (not the primary selection). Both
  * sides announce what they hold (grab) and send it when asked (request),
  * so nothing crosses until someone pastes. Copies made by the agent itself
@@ -37,6 +46,9 @@
 #define MSG_HEADER 20
 
 enum {
+	MSG_MOUSE_STATE = 1,
+	MSG_MONITORS_CONFIG = 2,
+	MSG_REPLY = 5,
 	MSG_CLIPBOARD = 4,
 	MSG_ANNOUNCE_CAPABILITIES = 6,
 	MSG_CLIPBOARD_GRAB = 7,
@@ -46,6 +58,9 @@ enum {
 };
 
 enum {
+	CAP_MOUSE_STATE = 0,
+	CAP_MONITORS_CONFIG = 1,
+	CAP_REPLY = 3,
 	CAP_CLIPBOARD_BY_DEMAND = 5,
 	CAP_CLIPBOARD_SELECTION = 6,
 	CAP_GUEST_LINEEND_LF = 8,
@@ -55,11 +70,31 @@ enum {
 #define TYPE_UTF8_TEXT 1
 #define SELECTION_CLIPBOARD 0
 
+/* Mouse state buttons (vd_agent.h) and their Linux codes. */
+#define BTN_LEFT 0x110
+#define BTN_RIGHT 0x111
+#define BTN_MIDDLE 0x112
+#define BTN_SIDE 0x113
+#define BTN_EXTRA 0x114
+static const struct {
+	uint32_t mask, code;
+} buttons[] = {
+	{ 1u << 1, BTN_LEFT }, { 1u << 2, BTN_MIDDLE }, { 1u << 3, BTN_RIGHT },
+	{ 1u << 6, BTN_SIDE }, { 1u << 7, BTN_EXTRA },
+};
+#define WHEEL_UP (1u << 4)
+#define WHEEL_DOWN (1u << 5)
+
 /* A host waiting this long for its own text gets nothing. */
 #define REQUEST_TIMEOUT 5
 
 static int port = -1;
 static const char *port_path;
+static bool share_clipboard = true;
+
+/* One virtual pointer per output (the host's display_id). */
+static struct zwlr_virtual_pointer_v1 *pointers[MAX_OUTPUTS];
+static uint32_t pointer_buttons;
 
 static struct {
 	char *data;
@@ -183,9 +218,15 @@ static void send_caps(bool request)
 {
 	char data[8];
 
+	uint32_t caps = (1u << CAP_MONITORS_CONFIG) | (1u << CAP_REPLY);
+
+	if (clip.pointer_manager)
+		caps |= 1u << CAP_MOUSE_STATE;
+	if (share_clipboard)
+		caps |= (1u << CAP_CLIPBOARD_BY_DEMAND) | (1u << CAP_CLIPBOARD_SELECTION) |
+			(1u << CAP_GUEST_LINEEND_LF);
 	put32(data, request);
-	put32(data + 4, (1u << CAP_CLIPBOARD_BY_DEMAND) | (1u << CAP_CLIPBOARD_SELECTION) |
-			 (1u << CAP_GUEST_LINEEND_LF));
+	put32(data + 4, caps);
 	send_msg(MSG_ANNOUNCE_CAPABILITIES, false, data, sizeof(data));
 }
 
@@ -334,9 +375,104 @@ static void host_release(void)
 	ext_data_control_device_v1_set_selection(clip.device, NULL);
 }
 
+static uint32_t now_ms(void)
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ts.tv_sec * 1000u + ts.tv_nsec / 1000000;
+}
+
+/* The host's pointer: a position on display display_id, in that display's
+ * pixels, and the buttons held. The wheel comes as buttons pressed and
+ * released again; each press is one step. */
+static void mouse_state(const char *data, size_t len)
+{
+	uint32_t x, y, held, changed, time = now_ms();
+	unsigned display;
+	struct zwlr_virtual_pointer_v1 *p;
+	struct output *out;
+
+	if (len < 13 || !clip.pointer_manager)
+		return;
+	x = get32(data);
+	y = get32(data + 4);
+	held = get32(data + 8);
+	display = (unsigned char)data[12];
+	if (display >= clip.noutputs)
+		display = 0;
+	if (clip.noutputs == 0)
+		return;
+	out = &clip.outputs[display];
+	if (out->width <= 0 || out->height <= 0)
+		return;
+	if (!(p = pointers[display])) {
+		p = clip.pointer_manager_version >= 2 ?
+			zwlr_virtual_pointer_manager_v1_create_virtual_pointer_with_output(
+				clip.pointer_manager, clip.seat, out->obj) :
+			zwlr_virtual_pointer_manager_v1_create_virtual_pointer(
+				clip.pointer_manager, clip.seat);
+		pointers[display] = p;
+	}
+	if (x >= (uint32_t)out->width)
+		x = out->width - 1;
+	if (y >= (uint32_t)out->height)
+		y = out->height - 1;
+	zwlr_virtual_pointer_v1_motion_absolute(p, time, x, y, out->width, out->height);
+	changed = held ^ pointer_buttons;
+	for (size_t i = 0; i < sizeof(buttons) / sizeof(buttons[0]); i++)
+		if (changed & buttons[i].mask)
+			zwlr_virtual_pointer_v1_button(p, time, buttons[i].code,
+						       held & buttons[i].mask ?
+						       WL_POINTER_BUTTON_STATE_PRESSED :
+						       WL_POINTER_BUTTON_STATE_RELEASED);
+	if (changed & held & (WHEEL_UP | WHEEL_DOWN)) {
+		int step = held & WHEEL_UP ? -1 : 1;
+
+		zwlr_virtual_pointer_v1_axis_source(p, WL_POINTER_AXIS_SOURCE_WHEEL);
+		zwlr_virtual_pointer_v1_axis_discrete(p, time, WL_POINTER_AXIS_VERTICAL_SCROLL,
+						      wl_fixed_from_int(15 * step), step);
+	}
+	zwlr_virtual_pointer_v1_frame(p);
+	pointer_buttons = held;
+	wl_display_flush(clip.display);
+}
+
+/* Lets go of every button, so none stays held when the host goes away. */
+static void mouse_release(void)
+{
+	for (size_t d = 0; d < MAX_OUTPUTS; d++) {
+		if (!pointers[d])
+			continue;
+		for (size_t i = 0; i < sizeof(buttons) / sizeof(buttons[0]); i++)
+			if (pointer_buttons & buttons[i].mask)
+				zwlr_virtual_pointer_v1_button(pointers[d], now_ms(), buttons[i].code,
+							       WL_POINTER_BUTTON_STATE_RELEASED);
+		zwlr_virtual_pointer_v1_frame(pointers[d]);
+	}
+	pointer_buttons = 0;
+	wl_display_flush(clip.display);
+}
+
 static void handle_msg(uint32_t type, const char *data, size_t len)
 {
 	bool sel = host_has(CAP_CLIPBOARD_SELECTION);
+
+	if (type == MSG_MOUSE_STATE) {
+		mouse_state(data, len);
+		return;
+	}
+	if (type == MSG_MONITORS_CONFIG) {
+		/* Only when the graphics device cannot take it: nothing to
+		 * change here, the compositor follows the device. */
+		char reply[8];
+
+		put32(reply, MSG_MONITORS_CONFIG);
+		put32(reply + 4, 0);
+		if (host_has(CAP_REPLY))
+			send_msg(MSG_REPLY, false, reply, sizeof(reply));
+		return;
+	}
 
 	if (type == MSG_ANNOUNCE_CAPABILITIES) {
 		if (len < 8)
@@ -345,14 +481,19 @@ static void handle_msg(uint32_t type, const char *data, size_t len)
 		have_caps = true;
 		if (get32(data))
 			send_caps(false);
+		if (!share_clipboard)
+			return;
 		/* A new client knows nothing about the guest's clipboard. */
 		guest_grabbed = false;
 		guest_announce();
 		return;
 	}
+	if (!share_clipboard)
+		return;
 	if (type != MSG_CLIPBOARD && type != MSG_CLIPBOARD_GRAB &&
 	    type != MSG_CLIPBOARD_REQUEST && type != MSG_CLIPBOARD_RELEASE) {
 		if (type == MSG_CLIENT_DISCONNECTED) {
+			mouse_release();
 			host_release();
 			guest_grabbed = false;
 		}
@@ -524,6 +665,7 @@ static void port_close(void)
 	have_caps = false;
 	host_requests = 0;
 	waiting_close();
+	mouse_release();
 }
 
 static void agent_tick(void)
@@ -536,15 +678,20 @@ static void agent_tick(void)
 		waiting_close();
 }
 
-int agent_main(const char *path)
+int agent_main(const char *path, bool clipboard)
 {
 	port_path = path ? path : DEFAULT_PORT;
+	share_clipboard = clipboard;
 	if (access(port_path, F_OK) < 0)
 		return 0;	/* not in a VM with an agent channel: nothing to do */
 	if (clip_connect() < 0)
 		die("no Wayland display");
-	clip.on_selection = guest_selection;
-	guest_selection(clip.selection);
+	if (!clip.pointer_manager)
+		warn("the compositor offers no virtual pointer: a SPICE client's pointer will not work");
+	if (share_clipboard) {
+		clip.on_selection = guest_selection;
+		guest_selection(clip.selection);
+	}
 	port_open();
 	if (port < 0)
 		die("%s: %s", port_path, strerror(errno));

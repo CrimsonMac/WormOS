@@ -127,7 +127,9 @@ idles at well under 100 MB of memory.
   answer, which unlike plain NTP cannot be forged on the way, and which
   also works through Tor).
 - Copy and paste between WormOS and the machine it runs on works with
-  virt-manager (SPICE) and QEMU (see above). In a terminal, `clip copy`
+  virt-manager (SPICE) and QEMU (see above). In virt-manager the screen
+  follows the window when View, Scale Display, "Auto resize VM with
+  window" is on (the default), from the login screen on. In a terminal, `clip copy`
   copies its arguments or standard input and `clip paste` prints the
   clipboard (`ls | clip copy`).
 - Settings: `/etc/xdg/labwc` (copy files to `~/.config/labwc` to change

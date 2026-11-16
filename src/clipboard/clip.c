@@ -171,15 +171,68 @@ static const struct ext_data_control_device_v1_listener device_listener = {
 	.primary_selection = device_primary,
 };
 
+static void output_geometry(void *data, struct wl_output *o, int32_t x, int32_t y,
+			    int32_t pw, int32_t ph, int32_t subpixel, const char *make,
+			    const char *model, int32_t transform)
+{
+	(void)data; (void)o; (void)x; (void)y; (void)pw; (void)ph;
+	(void)subpixel; (void)make; (void)model; (void)transform;
+}
+
+static void output_mode(void *data, struct wl_output *o, uint32_t flags, int32_t width,
+			int32_t height, int32_t refresh)
+{
+	struct output *out = data;
+
+	(void)o;
+	(void)refresh;
+	if (flags & WL_OUTPUT_MODE_CURRENT) {
+		out->width = width;
+		out->height = height;
+	}
+}
+
+static void output_done(void *data, struct wl_output *o)
+{
+	(void)data;
+	(void)o;
+}
+
+static void output_scale(void *data, struct wl_output *o, int32_t factor)
+{
+	(void)data;
+	(void)o;
+	(void)factor;
+}
+
+static const struct wl_output_listener output_listener = {
+	.geometry = output_geometry,
+	.mode = output_mode,
+	.done = output_done,
+	.scale = output_scale,
+};
+
 static void registry_global(void *data, struct wl_registry *registry, uint32_t name,
 			    const char *interface, uint32_t version)
 {
 	(void)data;
-	(void)version;
-	if (strcmp(interface, ext_data_control_manager_v1_interface.name) == 0 && !clip.manager)
+	if (strcmp(interface, zwlr_virtual_pointer_manager_v1_interface.name) == 0 &&
+	    !clip.pointer_manager) {
+		clip.pointer_manager_version = version < 2 ? version : 2;
+		clip.pointer_manager = wl_registry_bind(registry, name,
+							&zwlr_virtual_pointer_manager_v1_interface,
+							clip.pointer_manager_version);
+	} else if (strcmp(interface, wl_output_interface.name) == 0 &&
+		   clip.noutputs < MAX_OUTPUTS && version >= 2) {
+		struct output *out = &clip.outputs[clip.noutputs++];
+
+		out->obj = wl_registry_bind(registry, name, &wl_output_interface, 2);
+		wl_output_add_listener(out->obj, &output_listener, out);
+	} else if (strcmp(interface, ext_data_control_manager_v1_interface.name) == 0 &&
+		   !clip.manager) {
 		clip.manager = wl_registry_bind(registry, name,
 						&ext_data_control_manager_v1_interface, 1);
-	else if (strcmp(interface, wl_seat_interface.name) == 0 && !clip.seat)
+	} else if (strcmp(interface, wl_seat_interface.name) == 0 && !clip.seat)
 		clip.seat = wl_registry_bind(registry, name, &wl_seat_interface, 1);
 }
 
@@ -578,7 +631,9 @@ static void usage(FILE *out)
 {
 	fputs("usage: clip copy [TEXT...]   copy TEXT, or standard input\n"
 	      "       clip paste            print the clipboard\n"
-	      "       clip agent [PORT]     share the clipboard with the VM's host\n", out);
+	      "       clip agent [--no-clipboard] [PORT]\n"
+	      "                             share the clipboard, pointer and display size\n"
+	      "                             with the VM's host (SPICE agent)\n", out);
 }
 
 int main(int argc, char **argv)
@@ -592,8 +647,13 @@ int main(int argc, char **argv)
 		return cmd_copy(argc - 2, argv + 2);
 	if (strcmp(argv[1], "paste") == 0 && argc == 2)
 		return cmd_paste();
-	if (strcmp(argv[1], "agent") == 0 && argc <= 3)
-		return agent_main(argc == 3 ? argv[2] : NULL);
+	if (strcmp(argv[1], "agent") == 0) {
+		bool clipboard = !(argc > 2 && strcmp(argv[2], "--no-clipboard") == 0);
+		int rest = clipboard ? 2 : 3;
+
+		if (argc <= rest + 1)
+			return agent_main(argc == rest + 1 ? argv[rest] : NULL, clipboard);
+	}
 	if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
 		usage(stdout);
 		return 0;

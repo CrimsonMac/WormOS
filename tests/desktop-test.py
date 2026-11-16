@@ -77,6 +77,8 @@ AFTER_SETUP_CHECKS = [
      f"id -Gn {USER} | tr ' ' '\\n' | grep -cxE 'wheel|video|input|render'", r"^4$"),
     ("user has a password", f"grep '^{USER}:' /etc/shadow | cut -d: -f2", r"^\$6\$"),
     ("root has a password", "grep '^root:' /etc/shadow | cut -d: -f2", r"^\$6\$"),
+    ("time zone chosen by searching for a city", "readlink /etc/localtime",
+     r"^/usr/share/zoneinfo/Europe/Bucharest$"),
     ("root is read-only again", "touch /probe 2>&1", r"Read-only file system"),
     ("setup snapshot taken", "snap list", r"First boot: created " + USER),
     ("runtime directory", "stat -c '%U %a' /run/user/1000", rf"^{USER} 700$"),
@@ -499,7 +501,9 @@ def main():
              f"-qmp unix:{qmp_path},server,nowait "
              f"-audiodev wav,id=snd0,path={wav_path} -device ich9-intel-hda,addr=0x13 "
              f"-device hda-duplex,audiodev=snd0")
-    env = dict(os.environ, QEMU_EXTRA=extra, QEMU_MEM="1024")
+    # The pointer goes through the guest's SPICE agent once it says it can
+    # take it, as with virt-manager: the click tests then test the agent.
+    env = dict(os.environ, QEMU_EXTRA=extra, QEMU_MEM="1024", QEMU_VDAGENT_MOUSE="on")
     if args.release:
         env["IMAGE"] = os.path.abspath(args.release)
     proc = subprocess.Popen([os.path.join(ROOT, "scripts", "run-qemu.sh"), "--snapshot"],
@@ -561,9 +565,25 @@ def main():
                 mon.type("Tester\n")            # the user name is suggested from it
                 time.sleep(1)
                 mon.type(USER + "\n")
-                for secret in (USER_PASSWORD, USER_PASSWORD):
-                    time.sleep(1)
-                    mon.type(secret + "\n")
+                time.sleep(1)
+                mon.type(USER_PASSWORD + "\n")
+                time.sleep(1)
+                mon.type(USER_PASSWORD)
+                # The time zone list: its search finds a city anywhere in
+                # the name, and Enter takes the first match.
+                mon.key("tab")                  # keyboard layout
+                mon.key("tab")                  # time zone
+                time.sleep(1)
+                mon.key("spc")
+                time.sleep(2)
+                mon.type("buch")
+                time.sleep(2)
+                mon.key("ret")
+                time.sleep(2)
+                mon.key("shift-tab")
+                mon.key("shift-tab")            # back to the password
+                time.sleep(1)
+                mon.key("ret")
                 time.sleep(2)                   # the root password page
                 for secret in (ROOT_PASSWORD, ROOT_PASSWORD):
                     time.sleep(1)
@@ -618,6 +638,16 @@ def main():
                   con.run("tail -n 20 /run/user/1000/desktop.log"))
             time.sleep(5)
             run_checks(con, SESSION_CHECKS)
+
+            # The session's agent took the pointer over (QEMU marks the
+            # mouse in use with a star).
+            for _ in range(30):
+                mice = mon.cmd("info mice")
+                if re.search(r"^\s*\*.*vdagent", mice, re.M | re.I):
+                    break
+                time.sleep(1)
+            check("pointer goes through the SPICE agent",
+                  re.search(r"^\s*\*.*vdagent", mice, re.M | re.I), mice)
 
             # The welcome terminal has the focus.
             mon.type("echo $(id -un) typed > /tmp/typed\n")
