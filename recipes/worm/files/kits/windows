@@ -1,0 +1,17 @@
+# The Windows malware analysis tool kit (worm kit show windows).
+title = Windows malware
+description = Inspect Windows programs; run samples under Wine in a blackhole: bh open --vm --from debian
+included = bh open --vm (own kernel), file, strings, objdump, python3
+tool = wine
+tool = wine64
+tool = wine32:i386
+tool = python3-pefile
+tool = python3-lief
+tool = yara
+tool = oletools
+tool = detect-it-easy
+tool = osslsigncode
+tool = upx-ucl
+tool = rizin
+tool = libimage-exiftool-perl
+tool = ssdeep

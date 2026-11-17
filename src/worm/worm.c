@@ -328,7 +328,10 @@ static void overview(void)
 	       m, r);
 	printf("%sSandboxes%s\n"
 	       "  bh open [NAME]           a disposable sandbox (blackhole): no network,\n"
-	       "                           no access to your files or the system\n"
+	       "                           no access to your files or the system;\n"
+	       "                           again in another terminal: a second session\n"
+	       "  bh open --net            with a network (not your local one)\n"
+	       "  bh open --vm             a virtual machine with its own kernel\n"
 	       "  bh put NAME FILE...      copy files into it\n"
 	       "  bh list / bh close NAME  list / throw away\n\n", m, r);
 	printf("%sDesktop and terminal%s\n"

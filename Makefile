@@ -4,7 +4,7 @@
 PACKAGES := base-files busybox worminit wormrd snap \
 	zlib zstd openssl ca-certificates curl monocypher \
 	libgpg-error npth libassuan libksba libgcrypt gnupg wormhole-keyrings \
-	libmnl libnftnl nftables libxcrypt tzdata wh worm bh expat unbound libevent tor \
+	libmnl libnftnl nftables libxcrypt tzdata wh worm passt kvmtool bh expat unbound libevent tor \
 	libpcap tcpdump dbus \
 	kmod eudev seatd linux-firmware \
 	libffi wayland wayland-protocols libdrm pixman xkeyboard-config \

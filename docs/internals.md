@@ -266,6 +266,11 @@ in the README.
   excluded, dpkg runs with `force-unsafe-io` (no fsync per file; a broken
   wormhole is set up again rather than repaired) and `policy-rc.d` exits
   101.
+- `NAME:i386` packages (32-bit, such as `wine32:i386`): `foreign_find`
+  picks the first source without looking (its lists are amd64 only), and
+  `foreign_install` runs `dpkg --add-architecture i386` and `apt-get
+  update` in the wormhole once, when `dpkg --print-foreign-architectures`
+  does not list i386 yet.
 - `wh search` asks apt in an existing wormhole (`apt-cache search
   --names-only`). For a source without one it reads the checked
   `Packages` list in `/var/cache/wh/sources/NAME` (name matches only, like
@@ -470,50 +475,64 @@ in the README.
 
 ## Blackholes
 
-- `src/bh/`: `bh.c` (commands, state), `box.c` (namespaces, init),
-  `sandbox.c` (Landlock, seccomp). `src/common/ns.c` holds the namespace
-  helpers shared with `whc` (ID maps, binds that keep locked mount flags,
-  pivot_root).
+- `src/bh/`: `bh.c` (commands, options, state), `box.c` (namespaces,
+  init, sessions), `session.c` (bh's side of a session), `relay.c`
+  (terminal and output relay), `sandbox.c` (Landlock, seccomp,
+  capabilities), `limits.c` + `limits-helper.c` (cgroups), `net.c`
+  (pasta, routes), `vm.c` + `vm-init.c` (virtual machines).
+  `src/common/ns.c` holds the namespace helpers shared with `whc` (ID maps,
+  binds that keep locked mount flags, pivot_root).
 - State: `/var/lib/blackholes` is sticky and world-writable like `/tmp`;
   each user has `UID/` (0700, 0711 for root, refused unless owned by the
-  caller) holding `NAME/` with `lock` (flocked by the running bh), `pid`,
-  `info` (outside ID, creation time), `rootfs/` and `inbox/`. Root's
-  `NAME/` is `root:ID 0710`: the blackhole's ID reaches its root through
-  the group, other users get nothing.
+  caller) holding `NAME/` with `lock` (flocked by the bh that opened it),
+  `pid`, `info` (outside ID, creation time), `mode` (what it was opened
+  with, for `bh list`), `control` (the session socket, 0600), `rootfs/`
+  and `inbox/`. Root's `NAME/` is `root:ID 0710`: the blackhole's ID
+  reaches its root through the group, other users get nothing.
 - IDs: root inside maps to one ID outside: the caller's own for a user,
   `0x40000000 + n` (allocated per blackhole, under a lock on `UID/`) for
   root. Root's supplementary groups are dropped first.
-- Start: `clone` with new user, mount, PID, network, IPC and UTS
-  namespaces; the parent writes the ID maps and, for root, moves the child
-  into `/sys/fs/cgroup/blackholes/NAME` (pids.max 1024, memory.max half of
-  RAM), then releases it through a pipe. The child becomes root inside,
-  re-arms `PR_SET_PDEATHSIG` (credential changes clear it), binds
-  `rootfs` onto itself, binds the host's `/usr` and `/etc` read-only, mounts
+- Start: bh binds and listens on `control`, then `clone`s with new user,
+  mount, PID, network, IPC and UTS namespaces; the parent writes the ID
+  maps, puts the child in its cgroup (below), starts pasta with `--net`,
+  then releases the child through a pipe. The child becomes root inside,
+  re-arms `PR_SET_PDEATHSIG` (credential changes clear it), binds `rootfs`
+  onto itself, binds `/usr` and `/etc` read-only (the host's, or
+  `/var/lib/wormholes/SOURCE/usr` and `etc` with `--from`), writes the
+  name server into its own `/run/resolv.conf` (base-files' `/etc/resolv.conf`
+  points there; a wormhole's regular file gets it bound over), mounts
   `/proc`, a tmpfs `/dev` with nodes bound from the host, a devpts instance
   and `/dev/shm`, binds the inbox, pivots, unshares a cgroup namespace,
-  brings up `lo`, applies the sandbox, closes all descriptors above 2 and
-  forks the program with a clean environment. It stays as init and exits
-  with the program, which kills the rest of the PID namespace. Before the
-  mounts, each mount point in the blackhole's root (`usr`, `etc`, `proc`,
-  `dev`, `inbox`) is made a real directory again, so no mount follows a
-  symlink left by an earlier session. Init sets `RLIMIT_NPROC` to 1024
-  (counted per user namespace, and only `CAP_SYS_RESOURCE` in the initial
-  namespace could raise it, so it limits users' blackholes too) and makes
-  itself non-dumpable.
-- Terminal (`relay.c`): when bh runs in the foreground of a terminal, init
-  opens a pseudo-terminal from the blackhole's own devpts, sets the host
-  terminal's modes and size on it and sends the master to bh over a
-  socketpair (`SCM_RIGHTS`); the program gets the slave as its controlling
-  terminal in a new session, init's own stdio become `/dev/null`. bh puts
-  the host terminal in raw mode, relays both ways (non-blocking master,
-  input buffered so a large paste cannot deadlock) and passes `SIGWINCH`
-  on, until the master reads EIO. Without a terminal as input (pipes, or a
-  background job, which may not set raw mode or flush without SIGTTOU),
-  input comes from `/dev/null` if it was a terminal, and output to a
-  terminal goes through pipes that bh relays. Output is filtered on the
-  way: OSC 52 sequences (clipboard) are dropped, everything else passes.
-  At the end, input the terminal sent meanwhile (answers to queries from
-  inside) is flushed so the host shell never reads it.
+  brings up `lo`, adds the `--net` routes, sets `RLIMIT_NPROC`, makes
+  itself non-dumpable, applies the sandbox, points its stdio at
+  `/dev/null` and keeps only its two session sockets. Before the mounts,
+  each mount point in the blackhole's root (`usr`, `etc`, `proc`, `dev`,
+  `inbox`, `run`) is made a real directory again, so no mount follows a
+  symlink left by an earlier session.
+- Sessions: init serves requests (`struct request` in `bh.h`) on the
+  socketpair with the bh that opened it and on `control`, where a later
+  `bh open NAME` connects (`box_join`; options are refused then). A
+  request carries the command, the terminal type and, for a terminal, its
+  modes and size; without one, the program's three descriptors come along
+  (`SCM_RIGHTS`). For a terminal, init opens a pseudo-terminal from the
+  blackhole's devpts, forks the program as leader of a new session with
+  the slave as its controlling terminal and sends the master back; bh
+  relays (`relay.c`). Each program gets a clean environment, `/root` as
+  its directory and the reduced capabilities. When a program exits, init
+  sends its exit code; a connection that closes takes its program's
+  process group with it. When the first session's program exits, init
+  exits and the kernel kills everything in the PID namespace, joined
+  sessions included. Up to 64 sessions at a time.
+- Terminal (`relay.c`): bh puts the host terminal in raw mode, relays both
+  ways (non-blocking master, input buffered so a large paste cannot
+  deadlock) and passes `SIGWINCH` on, until the master reads EIO. Without
+  a terminal as input (pipes, or a background job, which may not set raw
+  mode or flush without SIGTTOU), input comes from `/dev/null` if it was a
+  terminal, and output to a terminal goes through pipes that bh relays.
+  Output is filtered on the way: OSC 52 sequences (clipboard) are dropped,
+  everything else passes. At the end, input the terminal sent meanwhile
+  (answers to queries from inside) is flushed so the host shell never
+  reads it.
 - Why no overlay of `/`: overlayfs clones its lower layer, and the kernel
   refuses to clone `/` from a user namespace because its submounts are
   locked. `/usr` and `/etc` have no submounts and can be bound alone. Host
@@ -536,12 +555,82 @@ in the README.
   bounding set, effective and permitted sets keep `CHOWN`, `DAC_OVERRIDE`,
   `FOWNER`, `FSETID`, `KILL`, `SETUID`, `SETGID` and `NET_BIND_SERVICE`
   (`CapBnd` 0x4fb); ambient ones are cleared. Root inside therefore lacks
-  `CAP_NET_ADMIN` (tc, nf_tables, interface changes in its namespace),
+  `CAP_NET_ADMIN` (tc, nf_tables, routes and interfaces in its namespace),
   `CAP_NET_RAW`, `CAP_SYS_ADMIN` and `CAP_SYS_PTRACE` (init is
   non-dumpable).
+- Limits (`limits.c`): a cgroup `/sys/fs/cgroup/blackholes/UID-NAME` with
+  `pids.max` 4096 (`--pids`; tasks, so threads count), `memory.max` half
+  of the memory (`--memory`; with `--vm` the guest's memory plus 256 MiB),
+  `memory.swap.max` 0 and `cpu.weight` 50 (half of everything else's;
+  needs `CONFIG_CGROUP_SCHED`). Root writes it itself. A user cannot move
+  a process between cgroups they do not own, so bh runs the setuid helper
+  `/usr/lib/bh/limits create NAME PID MEMORY PIDS`, which only names
+  cgroups after the caller's real UID, only moves a direct child of its
+  caller that belongs to the caller (the child is waiting on bh, so its
+  PID cannot be reused), clamps the values (64 MiB to all memory, 16 to
+  65536 tasks) and ignores the environment; `remove NAME` deletes it
+  (`cgroup.kill` first if something is left). `RLIMIT_NPROC` (same value)
+  is the fallback; it is counted per user namespace and only
+  `CAP_SYS_RESOURCE` in the initial namespace could raise it. Measured
+  before 1.6: 1024 tasks capped one program at 1022 threads, too few for
+  browsers, JVMs and parallel builds; 4096 still stops a fork bomb (4093
+  `sleep`s in the test) well before the system notices.
+- Network (`net.c`, `--net`): bh runs `pasta --config-net --ipv4-only
+  --address 100.96.0.2 --netmask 29 --gateway 100.96.0.1 --dns-forward
+  100.96.0.3 --no-map-gw --no-dhcp`, no port forwards either way,
+  `--ns-ifname eth0`, with the child's PID: pasta joins its user and
+  network namespaces, sets up the tap interface, goes to the background
+  (as nobody when started by root) and exits when the child does. Traffic
+  leaves as pasta's own sockets, so the host firewall, `worm anon` and
+  `worm panic` apply as to any program. DNS to 100.96.0.3 goes to the
+  host's first name server (unbound). Init adds `prohibit` routes
+  (rtnetlink) for 0/8, 10/8, 100.64/10, 169.254/16, 172.16/12,
+  192.0.0/24, 192.0.2/24, 192.168/16, 198.18/15, 198.51.100/24,
+  203.0.113/24, 224/4 and 240/4 (the connected /29 is more specific) and
+  for each of the host's IPv4 addresses, collected before the clone;
+  `--lan` leaves out the ranges, never the host. Without `CAP_NET_ADMIN`
+  nothing inside can change them. No IPv6.
+- Virtual machines (`vm.c`, `--vm`): the first session's program is
+  kvmtool's `lkvm` (static, `recipes/kvmtool`; its own embedded guest init
+  is stripped before embedding, or it carries build paths). Init builds a
+  jail instead of pivoting into the blackhole's root: a 16 MiB tmpfs
+  mounted on `/tmp` in its private mount namespace with `share/` (the
+  blackhole's root, binds included), `dev/` (the usual nodes, `kvm` and a
+  devpts instance), `kernel` (`/boot/vmlinuz`, read-only), `lkvm`
+  (read-only), `etc/resolv.conf` (for lkvm's user-mode network) and
+  `tmp/` (lkvm's `$HOME`), then pivots there. No `/proc`: a symlink the
+  guest makes in the share and opens over 9p would be followed by the
+  monitor (kvmtool only refuses `/../` and a final symlink), and
+  `/proc/self/mem` would be the monitor's memory. The rest of the
+  sandbox (cgroup, seccomp, Landlock, capabilities, `--net` routes)
+  applies to lkvm unchanged. lkvm runs with `--nodefaults`, the given
+  memory and CPUs (default a quarter of the memory up to 4 GiB, 2 CPUs),
+  a virtio console on the session's terminal, virtio-rng, `--9p
+  /share,bhroot` and `--network mode=user` with `--net` (its user-mode
+  stack turns the guest's connections into sockets in the blackhole's
+  namespace, so pasta and the routes apply) or `mode=none`. The guest
+  kernel is the host's (it has 9p built in for this) with `root=bhroot
+  rootfstype=9p ... cache=loose`, `8250.nr_uarts=0` (probing kvmtool's emulated UART echoes bytes to
+  the terminal), `pci=conf1` (kvmtool has no PCI host
+  bridge, so the kernel's direct probe gives up without it) and
+  `init=/run/bh-init`: init binds
+  `/usr/lib/bh/vm-init` (static, so it runs with any `/usr`) there.
+  `bh.name`, `bh.net`, `bh.rows`, `bh.cols`, `bh.term` and `bh.cmd` (the
+  last two hex-encoded, arguments NUL-separated) pass the session on.
+  vm-init mounts `/proc`, `/sys`, devtmpfs, devpts and `/dev/shm`,
+  configures 192.168.33.15/24 via 192.168.33.1 with `--net`, runs the
+  command on `hvc0` as root with the usual environment, writes its exit
+  code to `/run/bh-status` and resets the machine (kvmtool has no ACPI, so
+  a power-off would only halt it; it exits on a reset); init passes that code on
+  (removing a stale one before the start). One console only: joins are
+  refused. Ctrl+A X stops the machine (kvmtool). The terminal size is
+  set once at the start. Inside the guest nothing is filtered (its own
+  kernel), so 32-bit programs and `modify_ldt` work there, unlike in a
+  namespace blackhole: that is where Wine runs Windows programs.
 - `bh put` opens the sources first, then (as the blackhole's ID for root)
   creates each file in the inbox with `O_CREAT|O_EXCL|O_NOFOLLOW`: the
-  blackhole may be running and controls what is in there.
+  blackhole may be running and controls what is in there. A running VM's
+  guest may not see a new file at once (9p `cache=loose`).
 - `bh close` sends SIGTERM to the bh holding the lock, which kills the
   blackhole's init; it then waits for the lock and deletes the tree with
   `*at` calls that never follow symlinks.
@@ -885,8 +974,13 @@ in the README.
   deletes a word in zsh, busybox sh, readline, Python and vim. zsh binds
   both.
 - The first-boot setup gives the new user `/usr/bin/zsh` (listed in
-  `/etc/shells`). Root keeps busybox `sh`: the tests drive root's shell on
-  the serial console. The root terminal runs `su -s /usr/bin/zsh -`.
+  `/etc/shells`), and root has it too (base-files' `/etc/passwd`), so `su`,
+  `su -`, the root terminal (`su -`) and console logins all get the same
+  shell with history, completion and highlighting. Root's shell was busybox
+  `sh` before 1.6; the keep-accounts hook moves a running system's root from
+  `/bin/sh` to base-files' shell when base-files is upgraded (only if that
+  shell exists). The tests run `exec /bin/sh` after logging in on the serial
+  console, where zsh's line editor would get in the way.
   wormlogin starts the session with `argv[0]` `-sh`, so zsh runs it in sh
   emulation (it only runs the session script).
 

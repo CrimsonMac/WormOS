@@ -1,0 +1,18 @@
+name=passt
+version=2026_10_02.cba3570
+description="User-mode networking for namespaces and virtual machines (pasta, passt)"
+depends=(glibc)
+source=(https://passt.top/passt/snapshot/passt-$version.tar.xz)
+sha256=(aa75616cc43925f0bd6c05bcfbbaecd77397c03d7bd23591b34ef535be5dfcdc)
+
+build() {
+	# passt starts passt.avx2 on CPUs that have AVX2, and warns without it.
+	make -j"$JOBS" CC="$CC" VERSION="$version" prefix=/usr passt passt.avx2
+}
+
+package() {
+	install -Dm755 passt "$pkgdir/usr/bin/passt"
+	install -Dm755 passt.avx2 "$pkgdir/usr/bin/passt.avx2"
+	ln -s passt "$pkgdir/usr/bin/pasta"
+	ln -s passt.avx2 "$pkgdir/usr/bin/pasta.avx2"
+}

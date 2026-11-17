@@ -1,8 +1,8 @@
 /*
  * bh's side of a blackhole's input and output (see box.c).
  *
- * relay_terminal() receives the master of the pseudo-terminal init opened
- * inside the blackhole, puts the host terminal in raw mode and copies keys
+ * relay_terminal() takes the master of the pseudo-terminal init opened
+ * inside the blackhole for a session, puts the host terminal in raw mode and copies keys
  * in and output out until the blackhole is gone. Window size changes are
  * passed on. relay_output() copies output pipes to a terminal.
  *
@@ -139,40 +139,15 @@ again:
 		write_all(fd, out, o);
 }
 
-static int receive_fd(int sock)
-{
-	char ctl[CMSG_SPACE(sizeof(int))], byte;
-	struct iovec iov = { .iov_base = &byte, .iov_len = 1 };
-	struct msghdr msg = { .msg_iov = &iov, .msg_iovlen = 1,
-			      .msg_control = ctl, .msg_controllen = sizeof(ctl) };
-	struct cmsghdr *cm;
-	int fd = -1;
-	ssize_t r;
-
-	while ((r = recvmsg(sock, &msg, MSG_CMSG_CLOEXEC)) < 0 && errno == EINTR)
-		;
-	if (r != 1)
-		return -1;
-	for (cm = CMSG_FIRSTHDR(&msg); cm; cm = CMSG_NXTHDR(&msg, cm))
-		if (cm->cmsg_level == SOL_SOCKET && cm->cmsg_type == SCM_RIGHTS)
-			memcpy(&fd, CMSG_DATA(cm), sizeof(int));
-	return fd;
-}
-
-void relay_terminal(int sock, pid_t child)
+void relay_terminal(int master)
 {
 	struct sigaction sa = { .sa_handler = on_winch };
 	struct termios saved, raw;
 	struct filter f = { 0 };
 	char in[4096], buf[8192];
 	size_t in_len = 0, in_off = 0;
-	int master, input_open = 1;
+	int input_open = 1;
 
-	(void)child;
-	master = receive_fd(sock);
-	close(sock);
-	if (master < 0)
-		return;         /* init failed and said why */
 	fcntl(master, F_SETFL, O_NONBLOCK);
 	if (pipe2(wake, O_CLOEXEC | O_NONBLOCK) < 0)
 		wake[0] = wake[1] = -1;

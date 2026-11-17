@@ -200,7 +200,15 @@ BLACKHOLE_CHECKS = [
     ("no netfilter",
      "bh open t1 -- python3 -c 'import socket; socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, 12)' 2>&1",
      r"Protocol not supported"),
-    ("process limit", "bh open t1 -- grep 'Max processes' /proc/self/limits", r"\s1024\s+1024\s"),
+    ("process limit", "bh open t1 -- grep 'Max processes' /proc/self/limits", r"\s4096\s+4096\s"),
+    ("thousands of threads",
+     "bh open t1 -- python3 -c 'import threading as t; e=t.Event(); "
+     "[t.Thread(target=e.wait, daemon=True).start() for i in range(2000)]; print(\"n=\", t.active_count())'",
+     r"^n= 2001$"),
+    ("fork bomb stays inside",
+     "bh open t1 -- sh -c 'i=0; while [ $i -lt 4500 ]; do sleep 100 & i=$((i+1)); done "
+     "2>/dev/null; echo n=$(pgrep sleep | wc -l)'",
+     r"^n=40[0-9][0-9]$"),
     ("clipboard sequences dropped",
      "bh open t1 -- printf 'a\\033]52;c;ZXZpbA==\\007b\\n' | od -An -c | tr -s ' '",
      r"^\s*a b \\n\s*$"),
@@ -212,9 +220,17 @@ BLACKHOLE_CHECKS = [
     ("files kept between sessions",
      "bh open t1 -- sh -c 'echo kept > /root/note'; bh open t1 -- cat /root/note", r"^kept$"),
     ("running with limits",
-     "bh open t1 -- sleep 60 & sleep 5; cat /sys/fs/cgroup/blackholes/t1/pids.max; bh list",
-     r"^1024$(.|\n)*^t1\s+running"),
-    ("one session at a time", "bh open t1 -- true 2>&1", r"already open"),
+     "bh open t1 -- sleep 60 & sleep 5; cd /sys/fs/cgroup/blackholes/0-t1 && "
+     "cat pids.max cpu.weight && echo m=$(( $(cat memory.max) * 2 / 1024 / $(sed -n 's/MemTotal: *//p' /proc/meminfo | cut -d' ' -f1) )); cd; bh list",
+     r"^4096\n50\nm=1$(.|\n)*^t1\s+running"),
+    ("a second session joins it",
+     "bh open t1 -- sh -c 'echo n=$(pgrep sleep | wc -l) $(hostname) $(cat /root/note)'",
+     r"^n=1 t1 kept$"),
+    ("a joined session gets its own terminal", "bh open t1 -- tty", r"^/dev/pts/[1-9]\s*$"),
+    ("options only when it starts", "bh open --net t1 -- true 2>&1", r"already running"),
+    ("joined sessions end with the first",
+     "bh open t1 -- sleep 600 & sleep 2; kill %1; wait; bh list | grep -c 't1.*running'",
+     r"^0$"),
     ("root's blackholes closed to users", "stat -c '%a %U' /var/lib/blackholes/0/t1",
      r"^710 root$"),
     ("bh close", "bh close t1", r"^Closed blackhole t1\.$"),
@@ -234,6 +250,14 @@ BLACKHOLE_CHECKS = [
     ("user's blackhole cannot reach root's",
      "bh open t9 -- true; su tester -c 'ls /var/lib/blackholes/0/t9' 2>&1; bh close t9",
      r"Permission denied"),
+    ("user's blackhole has limits too",
+     "su tester -c 'bh open u1 -- sleep 30' & sleep 4; "
+     "cat /sys/fs/cgroup/blackholes/$(id -u tester)-u1/pids.max", r"^4096$"),
+    ("limits helper is setuid root", "stat -c '%U %a' /usr/lib/bh/limits", r"^root 4755$"),
+    ("limits helper refuses others' processes",
+     "su tester -c '/usr/lib/bh/limits create x 1 100000000 10' 2>&1", r"not yours"),
+    ("user's limits removed",
+     "wait; sleep 1; ls /sys/fs/cgroup/blackholes | grep -c -- '-u1$'", r"^0$"),
     ("user closes it", "su tester -c 'bh close u1'", r"^Closed blackhole u1\.$"),
     ("power helper is setuid root", "stat -c '%U %a' /usr/lib/worm/power", r"^root 4755$"),
     ("power helper only for administrators",
@@ -243,6 +267,43 @@ BLACKHOLE_CHECKS = [
 
 # whc without network access: a tiny wormhole made of busybox and its
 # libraries. make test-wormholes covers real Debian and Kali ones.
+# Blackholes with a network (pasta) and virtual machine blackholes (KVM,
+# nested in the test VM). {repo} is this machine's web server at 10.0.2.2,
+# a private address: reachable only with --lan.
+BH_NET_CHECKS = [
+    ("network interface with --net", "bh open --net -- ip -4 -o addr show eth0",
+     r"inet 100\.96\.0\.2/29"),
+    ("names through the host's resolver",
+     "bh open --net -- nslookup localhost 2>&1 | tail -2", r"127\.0\.0\.1"),
+    ("local network kept out", "bh open --net -- wget -q -T 5 -O- {repo}index 2>&1; echo rc=$?",
+     r"rc=[1-9]"),
+    ("local network with --lan",
+     "bh open --net --lan -- wget -q -T 10 -O- {repo}index | head -c 0; echo rc=$?", r"^rc=0$"),
+    ("host kept out even with --lan",
+     "bh open --net --lan -- wget -q -T 5 -O- http://10.0.2.15:9/ 2>&1; echo rc=$?",
+     r"rc=[1-9]"),
+    ("network still cannot be reconfigured", "bh open --net -- ip route del default 2>&1",
+     r"not permitted"),
+    ("pasta gone afterwards", "sleep 1; pidof passt pasta passt.avx2; echo rc=$?", r"^rc=1$"),
+    ("virtual machine boots its own kernel",
+     "bh open --vm v1 -- sh -c 'grep -o bh.name=v1 /proc/cmdline; echo n=$(ls /proc | grep -c \"^[0-9]\")'",
+     r"bh\.name=v1(.|\n)*n=\d+"),
+    ("guest sees the blackhole's files",
+     "bh put v1 /root/sample >/dev/null; bh open --vm v1 -- sh -c 'cat /inbox/sample; echo vm > /root/from-vm'; "
+     "bh open v1 -- cat /root/from-vm", r"^sample\s*$(.|\n)*^vm$"),
+    ("guest cannot write the system", "bh open --vm v1 -- touch /usr/bin/x 2>&1",
+     r"Read-only|Permission denied"),
+    ("exit code comes back", "bh open --vm v1 -- sh -c 'exit 7'; echo rc=$?", r"rc=7"),
+    ("guest network with --net --lan",
+     "bh open --vm --net --lan v1 -- wget -q -T 20 -O- {repo}index | head -c 0; echo rc=$?",
+     r"rc=0"),
+    ("monitor jailed and limited",
+     "bh open --vm v1 -- sleep 20 & sleep 8; p=$(pidof lkvm); grep -E '^(NoNewPrivs|Seccomp):' /proc/$p/status; "
+     "cat /proc/$p/uid_map; cat /sys/fs/cgroup/blackholes/0-v1/memory.max; wait",
+     r"NoNewPrivs:\s+1(.|\n)*Seccomp:\s+2(.|\n)*0\s+1073741\d+\s+1(.|\n)*^\d+$"),
+    ("virtual machine closed", "bh close v1", r"^Closed blackhole v1\.$"),
+]
+
 WHC_CHECKS = [
     ("small wormhole",
      "W=/var/lib/wormholes/mini && mkdir -p $W/usr/bin $W/usr/lib $W/etc $W/tmp && "
@@ -294,7 +355,8 @@ PASSWD_CHECKS = [
 ]
 
 KIT_CHECKS = [
-    ("tool kits listed", "worm kit list", r"^forensics(.|\n)*^pentest(.|\n)*^web"),
+    ("tool kits listed", "worm kit list", r"^forensics(.|\n)*^pentest(.|\n)*^web(.|\n)*^windows"),
+    ("windows kit points at VM blackholes", "worm kit show windows", r"bh open --vm(.|\n)*wine"),
     ("kit contents", "worm kit show forensics", r"sleuthkit(.|\n)*Not installed"),
     ("unknown kit refused", "worm kit show nothing 2>&1; echo rc=$?", r"no kit(.|\n)*rc=1"),
     ("users cannot install kits", "su tester -c 'worm kit install web' 2>&1", r"needs root"),
@@ -675,12 +737,13 @@ def main():
     worm_checks = [(n, c.format(repo=repo), p) for n, c, p in WORM_CHECKS]
     panic_checks = [(n, c.format(repo=repo), p) for n, c, p in PANIC_CHECKS]
     anon_checks = [(n, c.format(repo=repo), p) for n, c, p in ANON_CHECKS]
+    bh_net_checks = [(n, c.format(repo=repo), p) for n, c, p in BH_NET_CHECKS]
     total = (len(CHECKS) + len(KERNEL_CHECKS) + len(DNS_CHECKS) + len(FIREWALL_CHECKS) +
              len(STATUS_CHECKS) + len(panic_checks) + len(SAFE_CHECKS) + 2 +
              len(HELPER_CHECKS) + len(TOOL_CHECKS) + 3 +
              len(anon_checks) + 2 +
              len(FIREWALL_OPEN_CHECKS) + len(FIREWALL_CLOSE_CHECKS) +
-             len(FIREWALL_AFTER_CHECKS) + 3 + len(BLACKHOLE_CHECKS) + len(WHC_CHECKS) + len(KIT_CHECKS) + len(TIME_CHECKS) + len(PASSWD_CHECKS) +
+             len(FIREWALL_AFTER_CHECKS) + 3 + len(BLACKHOLE_CHECKS) + len(bh_net_checks) + len(WHC_CHECKS) + len(KIT_CHECKS) + len(TIME_CHECKS) + len(PASSWD_CHECKS) +
              len(SNAPSHOT_CHECKS) +
              len(BROWSE_CHECKS) + len(REWIND_CHECKS) + len(HOME_CHECKS) + len(MENU_CHECKS) +
              len(worm_checks) + len(FIRST_REMOVE_CHECKS) + 1 + len(AFTER_INSTALL_CHECKS) +
@@ -708,11 +771,13 @@ def main():
         check(name, expect in out, out[-500:])
         con.send("root\n")
         con.expect("# ", 60)
+        con.send("exec /bin/sh\n")  # root logs in to zsh; tests drive plain sh
 
     def login(con, timeout):
         con.expect("login:", timeout)
         con.send("root\n")
         con.expect("# ", 60)
+        con.send("exec /bin/sh\n")  # root logs in to zsh; tests drive plain sh
 
     with open(LOG, "wb") as log:
         con = Console(proc, log)
@@ -730,6 +795,7 @@ def main():
             check("port unreachable again after deny", not fetch(web_port))
             run_checks(con, FIREWALL_AFTER_CHECKS)
             run_checks(con, BLACKHOLE_CHECKS)
+            run_checks(con, bh_net_checks)
             run_checks(con, WHC_CHECKS)
             run_checks(con, KIT_CHECKS)
             run_checks(con, PASSWD_CHECKS)
@@ -755,6 +821,7 @@ def main():
                   out[-500:])
             con.send("root\n")
             con.expect("# ", 60)
+            con.send("exec /bin/sh\n")  # root logs in to zsh; tests drive plain sh
             out = con.run("cat /proc/sys/kernel/random/boot_id")
             check("kernel kept running", boot_id.splitlines()[-1] in out, out)
             run_checks(con, REWIND_CHECKS)
@@ -764,6 +831,7 @@ def main():
             check("home rewind applied", "rewound home to snapshot" in out, out[-500:])
             con.send("root\n")
             con.expect("# ", 60)
+            con.send("exec /bin/sh\n")  # root logs in to zsh; tests drive plain sh
             run_checks(con, HOME_CHECKS)
 
             # Reboot and pick the newest snapshot from the boot menu: down to
@@ -783,6 +851,7 @@ def main():
                   out[-500:])
             con.send("root\n")
             con.expect("# ", 60)
+            con.send("exec /bin/sh\n")  # root logs in to zsh; tests drive plain sh
             run_checks(con, MENU_CHECKS)
 
             run_checks(con, worm_checks)
@@ -822,6 +891,7 @@ def main():
                   "safe mode: not starting 30-network" in out, out[-500:])
             con.send("root\n")
             con.expect("# ", 60)
+            con.send("exec /bin/sh\n")  # root logs in to zsh; tests drive plain sh
             run_checks(con, SAFE_CHECKS)
             run_checks(con, HELPER_CHECKS)
             run_checks(con, TOOL_CHECKS)
@@ -847,6 +917,7 @@ def main():
             con.expect("login:", args.timeout)
             con.send("root\n")
             con.expect("# ", 60)
+            con.send("exec /bin/sh\n")  # root logs in to zsh; tests drive plain sh
             out = con.run("test -d /sys/firmware/efi && echo efi || echo bios")
             check("boots with BIOS firmware", out == "bios", out)
             con.send("poweroff\n")

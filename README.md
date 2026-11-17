@@ -26,7 +26,7 @@ A lightweight, security-focused Linux operating system built around instant, tam
   ```
 - Separate system and home snapshots, built on Btrfs, with fast rewinds.
 - Snapshots protected from the running system, verified at boot, and restorable from the boot menu.
-- Blackholes: disposable sandboxes for untrusted software and malware analysis (`bh` / `blackhole`); a virtual machine mode for stronger isolation is planned.
+- Blackholes: disposable sandboxes for untrusted software and malware analysis (`bh` / `blackhole`), with several sessions each, an optional network, and a virtual machine mode with its own kernel.
 - An nftables firewall that denies inbound traffic by default (`worm fw`).
 - Tor built in, Tor Browser with signature-verified installation, and an optional system-wide anonymous mode.
 - Hardened defaults: MAC address randomization, encrypted DNS, a hardened kernel and no telemetry (full-disk encryption in the installer is planned).
@@ -165,8 +165,9 @@ Terminals run [zsh](https://www.zsh.org) with a configuration in
   commands that ran for 5 seconds or more appear on the right.
 - A missing command suggests `wh search`.
 
-Root's own login on the consoles uses the plain `sh`; the menu's root
-terminal opens zsh.
+Root gets the same shell everywhere: the menu's root terminal, `su`,
+`su -` and logins on the consoles. Systems upgraded from 1.5 or older,
+where root still had the plain `sh`, move to zsh with the upgrade.
 
 Graphics: Intel GPUs (with the i915/xe firmware) use OpenGL ES through Mesa; other virtual GPUs (virtio, QXL, bochs) use a
 fast software renderer, and so does any GPU on which OpenGL ES fails to
@@ -271,6 +272,7 @@ Kali, and installs it into a container for that distribution, a
 ```
 wh install fastfetch          # not in core: found in Debian, installed there
 wh install --from kali hashid # pick the source
+wh install wine32:i386        # a 32-bit package (Debian, with i386 added)
 wh remove fastfetch
 ```
 
@@ -407,21 +409,26 @@ go in, nothing escapes.
 bh open                   # a temporary blackhole, deleted when you leave
 bh put lab sample.bin     # copy a file into the blackhole "lab" (/inbox)
 bh open lab               # a shell inside it; its files stay between sessions
+bh open lab               # again, in another terminal: a second session in it
 bh open lab -- ./x        # run one command inside
-bh list                   # your blackholes
+bh open --net test        # with a network, for trying out a program
+bh open --vm lab          # a virtual machine: its own kernel
+bh list                   # your blackholes, running or not, and how
 bh close lab              # stop it and delete everything in it
 ```
 
 Inside, programs run as root of the blackhole only: outside, they are an
 unprivileged user. They see the system's programs read-only, but not
 `/home`, `/root`, `/var`, the disks or the snapshots, nor the host's
-processes. There is no network except loopback. The layers:
+processes. There is no network except loopback unless you ask for one.
+Any number of blackholes can run at once, each with as many sessions as
+you open; a blackhole closes when its first session ends. The layers:
 
 - **Namespaces:** own users, mounts, processes, network, IPC and host name.
 - **Capabilities:** root inside keeps only those that act on the
   blackhole's own files and processes; it cannot configure its network
-  (no packet filters or traffic control), use raw sockets or ptrace the
-  blackhole's init, kernel code that has often been exploited.
+  (no packet filters, routes or traffic control), use raw sockets or
+  ptrace the blackhole's init, kernel code that has often been exploited.
 - **seccomp:** refuses mounts, new namespaces, kernel keyrings, BPF,
   io_uring, modules, terminal injection and line disciplines, 32-bit
   system calls, and every socket family but UNIX, IPv4, IPv6 and routing
@@ -432,14 +439,68 @@ processes. There is no network except loopback. The layers:
   `bh` relays keys and output, so nothing inside can type into your shell
   or use the terminal's ioctls, and output cannot set your clipboard
   (OSC 52 is removed).
-- **Limits:** at most 1024 processes; blackholes opened by root also get
-  at most half the memory.
+- **Limits** (each blackhole, also those of normal users): at most 4096
+  processes and threads (`--pids N`), half the memory (`--memory 2G`),
+  no swap, and half the CPU weight of everything else, so a busy
+  blackhole cannot make the desktop sluggish.
 - Root's blackholes keep their files where other users cannot reach them.
 
-Limits: a blackhole shares the kernel with the host, so a kernel exploit
-can still escape it (a virtual machine mode is planned). Blackholes have
-no network access yet, only one session per blackhole runs at a time, and
-blackholes of users have no memory limit.
+**Network** (`--net`): for a blackhole used as a throwaway test
+environment, not for malware. The blackhole gets an address of its own
+and reaches the internet through [pasta](https://passt.top), which sends
+its traffic as ordinary connections of yours: the firewall, anonymous
+mode and `worm panic` cover it. Name lookups go through the system's
+encrypted resolver. Nothing can connect in, and the local network and
+this computer stay out of reach (`--lan` lets the local network in, never
+this computer).
+
+**Virtual machines** (`--vm`): a namespace blackhole shares the kernel with
+the host, so a kernel exploit can escape it. With `--vm`, programs run in
+a small virtual machine ([kvmtool](https://git.kernel.org/pub/scm/linux/kernel/git/will/kvmtool.git))
+on a kernel of their own, seeing the same files as before (the
+blackhole's own, the system read-only). The virtual machine monitor itself
+runs inside a locked-down blackhole, so even escaping the guest lands in
+the sandbox. It needs hardware virtualisation (KVM); inside a virtual
+machine, turn on nested virtualisation. Defaults: a quarter of the memory
+(at most 4 GiB, `--memory`), 2 CPUs (`--cpus`). One console per virtual
+machine; Ctrl+A X stops it. `--net` works here too.
+
+**Other systems** (`--from debian`, `--from kali`): the blackhole gets the
+programs of a wormhole instead of WormOS's, for tools that only exist
+there; set the wormhole up first with `wh install`.
+
+### Windows malware
+
+Most malware targets Windows. WormOS can take it apart and run much of it
+without Windows:
+
+- `worm kit install windows` installs inspection tools (pefile, LIEF,
+  YARA, oletools, Detect It Easy, osslsigncode, UPX, rizin, exiftool,
+  ssdeep) and Wine with its 32-bit part, all in the Debian or Kali
+  wormhole. The inspection tools read the files; nothing runs.
+- Run samples in a virtual machine blackhole with Debian's system:
+
+  ```
+  bh put lab sample.exe
+  bh open --vm --from debian lab -- wine /inbox/sample.exe
+  ```
+
+  32-bit Windows programs (still most malware) need 32-bit system calls,
+  which a namespace blackhole refuses outright ("Bad system call"); in a
+  virtual machine nothing is filtered, and whatever breaks out of Wine
+  still only has the guest's kernel. 64-bit programs also run in a plain
+  namespace blackhole (`bh open --from debian`), which starts faster but
+  shares the kernel with the host. Add `--net` only to watch a sample
+  talk; it never reaches your local network.
+- Measured in a nested test VM: Wine's `cmd.exe` answers in about 3 s in
+  a namespace blackhole and 20 to 30 s in a virtual machine the first
+  time (creating Wine's prefix over 9p).
+- Not yet: blackholes have no graphical display, so only console output
+  is visible (graphical programs still run; `WINEDEBUG=+relay` and friends
+  show what they do). Malware that looks for Wine or a virtual machine may
+  behave differently, and for full behaviour (Windows services, drivers,
+  the real registry) a real Windows virtual machine is still the
+  reference.
 
 ## Tool kits
 
@@ -462,6 +523,7 @@ worm kit remove forensics     # remove it again
 | `web` | web application scanners and fuzzers (sqlmap, gobuster, ffuf, feroxbuster...) |
 | `passwords` | crackers and hash tools (john, hashcat, hydra, medusa...) |
 | `pentest` | from Kali: Metasploit, exploit-db, NetExec, Impacket, Responder... |
+| `windows` | Windows programs: pefile, LIEF, YARA, oletools, Detect It Easy, rizin, Wine (run samples with `bh open --vm --from debian`) |
 
 Each tool comes from the first source that has it (Debian, then Kali) and
 runs in that distribution's wormhole, which shares your home folder: your

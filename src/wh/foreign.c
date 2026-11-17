@@ -1162,6 +1162,20 @@ int foreign_install(const char *source, const char *pkg)
 		die("%s is already installed from %s", pkg, existing);
 	if (!wormhole_exists(source))
 		wormhole_setup(source);
+	/* 32-bit packages: the wormhole's dpkg and apt learn about i386 once. */
+	if (strstr(pkg, ":i386")) {
+		char archs[256] = "";
+
+		in_wormhole(source, (char *[]){ "dpkg", "--print-foreign-architectures", NULL },
+			    archs, sizeof(archs));
+		if (!strstr(archs, "i386")) {
+			info("Adding 32-bit (i386) packages to the %s wormhole", source);
+			if (in_wormhole(source, (char *[]){ "dpkg", "--add-architecture", "i386", NULL },
+					NULL, 0) != 0 ||
+			    in_wormhole(source, (char *[]){ "apt-get", "-q", "update", NULL }, NULL, 0) != 0)
+				die("could not add i386 packages to the %s wormhole", source);
+		}
+	}
 	info("Installing %s from %s", pkg, source);
 	if (in_wormhole(source, (char *[]){ "apt-get", "-q", "-y", "install", (char *)pkg, NULL },
 			NULL, 0) != 0)
@@ -1340,6 +1354,12 @@ int foreign_search(const char *term, const char *only)
 const char *foreign_find(const char *pkg)
 {
 	load_sources();
+	/*
+	 * NAME:i386 (32-bit libraries, wine32): the lists are of amd64
+	 * packages, so the first source is used and its apt decides.
+	 */
+	if (strstr(pkg, ":i386"))
+		return nsources ? sources[0].name : NULL;
 	for (int i = 0; i < nsources; i++) {
 		info("Looking for %s in %s...", pkg, sources[i].name);
 		if (foreign_has(sources[i].name, pkg))

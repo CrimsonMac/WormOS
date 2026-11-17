@@ -19,7 +19,18 @@ open)
 		words=("${(@)words[dd+1,-1]}")
 		(( CURRENT -= dd ))
 		_normal
-	elif (( CURRENT == 3 )); then
+	elif [[ $words[CURRENT-1] == --from ]]; then
+		local -a srcs=(/var/lib/wormholes/*(N/:t))
+		_wanted sources expl 'wormhole' compadd -a srcs
+	elif [[ $words[CURRENT-1] == --(memory|pids|cpus) ]]; then
+		_message 'value'
+	elif [[ $PREFIX == -* ]]; then
+		local -a opts=('--net:a network (not the local one)' '--lan:with --net, the local network too'
+			'--vm:a virtual machine with its own kernel' '--from:the system of a wormhole'
+			'--memory:memory limit (512M, 2G)' '--pids:most processes and threads'
+			'--cpus:virtual CPUs (--vm)')
+		_describe -t options 'option' opts
+	else
 		_bh_names
 	fi
 	;;

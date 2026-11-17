@@ -1,23 +1,36 @@
 /*
  * bh - blackholes: disposable sandboxes for untrusted programs.
  *
- *     bh open [NAME] [-- COMMAND...]   enter a blackhole (a shell by default)
+ *     bh open [OPTIONS] [NAME] [-- COMMAND...]
+ *                                      enter a blackhole (a shell by default);
+ *                                      if NAME is running, another session in it
  *     bh put NAME FILE...              copy files into its /inbox
  *     bh list                          your blackholes
  *     bh close NAME                    stop it and delete everything in it
  *
+ * Options for open (when the blackhole starts):
+ *     --net            a network through pasta (not the local network)
+ *     --lan            with --net, the local network too
+ *     --vm             a virtual machine with its own kernel (KVM)
+ *     --from SOURCE    the system of a wormhole (debian, kali) instead of
+ *                      the host's
+ *     --memory SIZE    memory limit (K, M, G); with --vm the guest's memory
+ *     --pids N         most processes and threads
+ *     --cpus N         with --vm, virtual CPUs
+ *
  * Without a NAME, open makes a temporary blackhole that is deleted when the
  * program exits. A named one keeps its files until it is closed.
  *
- * Things go in, nothing escapes: inside, programs see the host's system
- * read-only and nothing of /home, /root, /var or the snapshots; they have
- * no network but loopback, and run as root of the blackhole only (see
- * box.c and sandbox.c).
+ * Things go in, nothing escapes: inside, programs see the system read-only
+ * and nothing of /home, /root, /var or the snapshots; they have no network
+ * but loopback unless opened with --net, and run as root of the blackhole
+ * only (see box.c and sandbox.c).
  *
  * State lives in BH_DIR/UID/NAME, owned by the caller:
- *     lock    held by the bh running it     info    its ID and creation time
- *     pid     that bh's PID                 rootfs  its root directory
- *     inbox   shared with /inbox inside
+ *     lock     held by the bh running it     info    its ID and creation time
+ *     pid      that bh's PID                 rootfs  its root directory
+ *     inbox    shared with /inbox inside     mode    how it runs (net, vm, from)
+ *     control  where other sessions connect
  */
 
 #define _GNU_SOURCE
@@ -61,7 +74,7 @@ void warn(const char *fmt, ...)
 	fputc('\n', stderr);
 }
 
-static int valid_name(const char *s)
+int valid_name(const char *s)
 {
 	size_t len = strlen(s);
 
@@ -300,7 +313,41 @@ static void box_delete(const struct box *b)
 	close(fd);
 }
 
-static int cmd_open(const char *name, char *const argv[])
+/* What a running blackhole was opened with, for bh list. */
+static void write_mode(const struct box *b, const struct opts *o)
+{
+	char path[PATH_MAX];
+	FILE *f;
+
+	snprintf(path, sizeof(path), "%s/mode", b->dir);
+	unlink(path);
+	if (!(f = fopen(path, "wxe")))
+		return;
+	fprintf(f, "%s%s%s%s%s\n", o->vm ? "vm " : "", o->net ? (o->lan ? "net+lan " : "net ") : "",
+		o->from[0] ? "from=" : "", o->from, "");
+	fclose(f);
+}
+
+static void read_mode(const struct box *b, char *out, size_t len)
+{
+	char path[PATH_MAX];
+	FILE *f;
+
+	snprintf(out, len, "-");
+	snprintf(path, sizeof(path), "%s/mode", b->dir);
+	if (!(f = fopen(path, "re")))
+		return;
+	if (fgets(out, len, f)) {
+		out[strcspn(out, "\n")] = '\0';
+		while (*out && out[strlen(out) - 1] == ' ')
+			out[strlen(out) - 1] = '\0';
+		if (!*out)
+			snprintf(out, len, "-");
+	}
+	fclose(f);
+}
+
+static int cmd_open(const char *name, const struct opts *o, int given, char *const argv[])
 {
 	char path[PATH_MAX], tmp[NAME_MAX_BH + 1];
 	struct box b;
@@ -314,19 +361,35 @@ static int cmd_open(const char *name, char *const argv[])
 	box_path(&b, name);
 	box_create(&b);
 	fd = box_lock(&b, 1, &running);
-	if (running)
-		die("'%s' is already open in another session", b.name);
+	if (running) {
+		close(fd);
+		if (given)
+			die("'%s' is already running; options only apply when a blackhole starts",
+			    b.name);
+		if (!argv)
+			fprintf(stderr, "Joining blackhole %s (a new session; it closes when its "
+				"first session ends).\n", b.name);
+		return box_join(&b, argv);
+	}
 	snprintf(path, sizeof(path), "%s/pid", b.dir);
 	if ((f = fopen(path, "we"))) {
 		fprintf(f, "%d\n", (int)getpid());
 		fclose(f);
 	}
+	write_mode(&b, o);
 	if (!argv)
-		fprintf(stderr, "Entering blackhole %s: no network, the system is read-only, "
-			"files from 'bh put' are in /inbox.\nExit the shell to leave.\n", b.name);
+		fprintf(stderr, "Entering blackhole %s%s: %s, the system is read-only, "
+			"files from 'bh put' are in /inbox.\n%s\n", b.name,
+			o->vm ? " (virtual machine)" : "",
+			!o->net ? "no network" : o->lan ? "network including the local one" :
+			"network (not the local one)",
+			o->vm ? "Exit the shell to leave; Ctrl+A X stops the machine." :
+			"Exit the shell to leave. 'bh open NAME' in another terminal joins it.");
 
-	code = box_run(&b, argv);
+	code = box_run(&b, o, argv);
 
+	unlink(path);
+	snprintf(path, sizeof(path), "%s/mode", b.dir);
 	unlink(path);
 	if (name == tmp)
 		box_delete(&b);
@@ -407,7 +470,7 @@ static int cmd_list(void)
 	if (!(d = opendir(dir)))
 		die("cannot read %s: %s", dir, strerror(errno));
 	while ((e = readdir(d))) {
-		char created[32] = "?";
+		char created[32] = "?", mode[64];
 		struct box b;
 		time_t t = 0;
 		int fd, running;
@@ -421,9 +484,13 @@ static int cmd_list(void)
 		fd = box_lock(&b, 0, &running);
 		close(fd);
 		strftime(created, sizeof(created), "%Y-%m-%d %H:%M", localtime(&t));
+		if (running)
+			read_mode(&b, mode, sizeof(mode));
+		else
+			snprintf(mode, sizeof(mode), "-");
 		if (!shown++)
-			printf("%-20s %-8s %s\n", "NAME", "STATE", "CREATED");
-		printf("%-20s %-8s %s\n", b.name, running ? "running" : "idle", created);
+			printf("%-20s %-8s %-17s %s\n", "NAME", "STATE", "CREATED", "MODE");
+		printf("%-20s %-8s %-17s %s\n", b.name, running ? "running" : "idle", created, mode);
 	}
 	closedir(d);
 	if (!shown)
@@ -465,10 +532,88 @@ static int cmd_close(const char *name)
 
 static void usage(FILE *out)
 {
-	fputs("usage: bh open [NAME] [-- COMMAND [ARGS...]]\n"
+	fputs("usage: bh open [--net [--lan]] [--vm] [--from SOURCE] [--memory SIZE]\n"
+	      "               [--pids N] [--cpus N] [NAME] [-- COMMAND [ARGS...]]\n"
 	      "       bh put NAME FILE...\n"
 	      "       bh list\n"
 	      "       bh close NAME\n", out);
+}
+
+static unsigned long long parse_size(const char *s)
+{
+	char *end;
+	unsigned long long v;
+
+	errno = 0;
+	v = strtoull(s, &end, 10);
+	if (errno || end == s || s[0] == '-')
+		die("bad size '%s' (e.g. 512M or 2G)", s);
+	switch (*end) {
+	case 'k': case 'K': v <<= 10; end++; break;
+	case 'm': case 'M': v <<= 20; end++; break;
+	case 'g': case 'G': v <<= 30; end++; break;
+	case '\0': break;
+	default: die("bad size '%s' (e.g. 512M or 2G)", s);
+	}
+	if (*end && strcmp(end, "B") && strcmp(end, "iB"))
+		die("bad size '%s' (e.g. 512M or 2G)", s);
+	return v;
+}
+
+static unsigned parse_count(const char *s, unsigned max)
+{
+	char *end;
+	unsigned long v;
+
+	errno = 0;
+	v = strtoul(s, &end, 10);
+	if (errno || end == s || *end || s[0] == '-' || v == 0 || v > max)
+		die("bad number '%s' (1 to %u)", s, max);
+	return v;
+}
+
+/* Fill in the defaults that depend on the machine. */
+static void finish_opts(struct opts *o)
+{
+	unsigned long long total = memory_total(), guest;
+	long cpus = sysconf(_SC_NPROCESSORS_ONLN);
+	struct stat st;
+
+	if (o->lan && !o->net)
+		die("--lan goes with --net");
+	if (o->from[0]) {
+		char path[PATH_MAX];
+
+		if (!valid_name(o->from))
+			die("invalid source '%s'", o->from);
+		snprintf(path, sizeof(path), "%s/%s/usr/bin", WORMHOLES, o->from);
+		if (stat(path, &st) < 0)
+			die("there is no %s wormhole yet: 'wh install --from %s PACKAGE' sets it up",
+			    o->from, o->from);
+	}
+	if (!o->pids)
+		o->pids = BH_PIDS_DEFAULT;
+	if (o->vm) {
+		/* The guest's memory, and the cgroup's room for it and the monitor. */
+		guest = o->memory ? o->memory : total / 4;
+		if (guest > 4ull << 30 && !o->memory)
+			guest = 4ull << 30;
+		if (guest < 256ull << 20)
+			guest = 256ull << 20;
+		o->vm_mb = guest >> 20;
+		o->memory = guest + (256ull << 20);
+		if (!o->cpus)
+			o->cpus = cpus > 2 ? 2 : (cpus > 0 ? cpus : 1);
+	} else {
+		if (o->cpus)
+			die("--cpus goes with --vm");
+		if (!o->memory)
+			o->memory = total / 2;
+	}
+	if (o->memory < 64ull << 20)
+		die("at least 64M of memory");
+	if (total && o->memory > total)
+		o->memory = total;
 }
 
 int main(int argc, char **argv)
@@ -483,9 +628,32 @@ int main(int argc, char **argv)
 		return 0;
 	}
 	if (!strcmp(argv[1], "open")) {
+		struct opts o = { 0 };
 		const char *name = NULL;
-		int i = 2;
+		int i = 2, given = 0;
 
+		for (; i < argc && !strncmp(argv[i], "--", 2) && argv[i][2]; i++, given = 1) {
+			const char *opt = argv[i] + 2;
+
+			if (!strcmp(opt, "net"))
+				o.net = 1;
+			else if (!strcmp(opt, "lan"))
+				o.lan = 1;
+			else if (!strcmp(opt, "vm"))
+				o.vm = 1;
+			else if (i + 1 < argc && !strcmp(opt, "from"))
+				snprintf(o.from, sizeof(o.from), "%s", argv[++i]);
+			else if (i + 1 < argc && !strcmp(opt, "memory"))
+				o.memory = parse_size(argv[++i]);
+			else if (i + 1 < argc && !strcmp(opt, "pids"))
+				o.pids = parse_count(argv[++i], BH_PIDS_MAX);
+			else if (i + 1 < argc && !strcmp(opt, "cpus"))
+				o.cpus = parse_count(argv[++i], 64);
+			else {
+				usage(stderr);
+				return 2;
+			}
+		}
 		if (i < argc && strcmp(argv[i], "--"))
 			name = argv[i++];
 		if (i < argc && strcmp(argv[i], "--")) {
@@ -496,7 +664,8 @@ int main(int argc, char **argv)
 			usage(stderr);
 			return 2;
 		}
-		return cmd_open(name, i < argc ? argv + i : NULL);
+		finish_opts(&o);
+		return cmd_open(name, &o, given, i < argc ? argv + i : NULL);
 	}
 	if (!strcmp(argv[1], "put") && argc >= 4)
 		return cmd_put(argv[2], argv + 3, argc - 3);

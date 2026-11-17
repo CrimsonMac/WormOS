@@ -83,6 +83,24 @@ CHECKS = [
     ("desktop entry and icons removed",
      "ls /usr/local/share/applications/btop.desktop /usr/local/share/icons/hicolor/scalable/apps/btop.svg 2>&1 | grep -c 'No such file'",
      r"^2$"),
+    # Blackholes with a wormhole's system, and Windows programs under Wine.
+    ("blackhole with debian's system", "bh open --from debian -- cat /etc/debian_version",
+     r"^1\d\.\d+"),
+    ("blackhole keeps its own /lib64 for debian's loader",
+     "bh open --from debian -- readlink /lib64", r"^usr/lib64$"),
+    ("wine installed", "wh -y install wine wine64 wine32:i386 2>&1 | tail -2; "
+     "ls /var/lib/wormholes/debian/usr/lib/i386-linux-gnu/wine/i386-windows/cmd.exe", r"cmd\.exe$"),
+    ("i386 added once", "whc debian dpkg --print-foreign-architectures", r"^i386$"),
+    ("64-bit windows program in a blackhole",
+     "bh open --from debian -- sh -c 'WINEDEBUG=-all wine cmd /c echo win64 ok' 2>/dev/null",
+     r"^win64 ok\s*$"),
+    ("32-bit system calls refused in a namespace blackhole",
+     "bh open --from debian -- sh -c 'WINEDEBUG=-all wine C:\\\\windows\\\\syswow64\\\\cmd.exe "
+     "/c echo x' 2>&1 | tail -1", r"Bad system call"),
+    ("32-bit windows program in a virtual machine",
+     "bh open --vm --from debian --memory 1G -- sh -c 'WINEDEBUG=-all wine "
+     "C:\\\\windows\\\\syswow64\\\\cmd.exe /c echo win32 ok' 2>/dev/null",
+     r"^win32 ok\s*$"),
     ("kali fallback", "wh -y install --from kali hashid 2>&1 | tail -3",
      r"hashid -> .* \(kali\)"),
     ("kali tool runs", "hashid --version 2>&1", r"^(?i:hashid) v\d"),
@@ -131,6 +149,7 @@ def main():
             con.expect("login:", 600)
             con.send("root\n")
             con.expect("# ", 60)
+            con.send("exec /bin/sh\n")  # root logs in to zsh; tests drive plain sh
             con.run("dmesg -n 1")
             if args.dns:
                 # After DHCP has written its own (the lease outlasts the test).
