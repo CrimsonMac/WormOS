@@ -130,6 +130,7 @@ def main():
         con.expect("login:", timeout)
         con.send("root\n")
         con.expect("# ", 60)
+        con.send("exec /bin/sh\n")  # root logs in to zsh; tests drive plain sh
         desktop.put_file(con, desktop.IN_SESSION.encode(), "/tmp/in-session")
 
     def browser_started(con, label):

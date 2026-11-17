@@ -121,6 +121,7 @@ def main():
         con.expect("login:", args.timeout)
         con.send("root\n")
         con.expect("# ", 60)
+        con.send("exec /bin/sh\n")  # root logs in to zsh; tests drive plain sh
         print(f"{label}: logged in after {time.time() - start:.0f}s")
         return proc, con
 

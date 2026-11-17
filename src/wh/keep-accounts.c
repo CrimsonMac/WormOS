@@ -61,6 +61,55 @@ static int has_name(const char *text, const char *name, size_t n)
 	return 0;
 }
 
+/*
+ * Root's shell was /bin/sh (busybox) until 1.6. A running system that still
+ * has that default gets the shell the new base-files gives root, as long as
+ * it exists in ROOT. Returns live, changed in place or reallocated.
+ */
+static char *root_shell(const char *root, char *live, const char *staged)
+{
+	static const char old[] = ":/bin/sh";
+	const char *new_line = NULL, *shell;
+	char *line = NULL, *end, path[PATH_MAX + 64], *out;
+	struct stat st;
+	size_t n;
+
+	for (char *p = live; p && *p; p = strchr(p, '\n') ? strchr(p, '\n') + 1 : NULL)
+		if (!strncmp(p, "root:", 5)) {
+			line = p;
+			break;
+		}
+	for (const char *p = staged; p && *p; p = strchr(p, '\n') ? strchr(p, '\n') + 1 : NULL)
+		if (!strncmp(p, "root:", 5)) {
+			new_line = p;
+			break;
+		}
+	if (!line || !new_line)
+		return live;
+	end = line + strcspn(line, "\n");
+	if ((size_t)(end - line) < sizeof(old) - 1 ||
+	    strncmp(end - (sizeof(old) - 1), old, sizeof(old) - 1))
+		return live;
+	n = strcspn(new_line, "\n");
+	shell = memrchr(new_line, ':', n);
+	if (!shell || shell[1] != '/')
+		return live;
+	shell++;
+	n -= shell - new_line;
+	snprintf(path, sizeof(path), "%s/%.*s", root, (int)n, shell);
+	if (stat(path, &st) < 0 || !S_ISREG(st.st_mode) || !(st.st_mode & 0111) ||
+	    !strncmp(shell, "/bin/sh", n))
+		return live;
+	/* Swap "/bin/sh" at the end of root's line for the new shell. */
+	if (!(out = malloc(strlen(live) + n + 1)))
+		return live;
+	memcpy(out, live, end - live - 7);
+	memcpy(out + (end - live - 7), shell, n);
+	strcpy(out + (end - live - 7) + n, end);
+	free(live);
+	return out;
+}
+
 static int merge(const char *root, const char *rel)
 {
 	char live_path[PATH_MAX], path[PATH_MAX + 16], tmp[PATH_MAX + 24];
@@ -86,6 +135,8 @@ static int merge(const char *root, const char *rel)
 		fprintf(stderr, "keep-accounts: %s: %s\n", tmp, strerror(errno));
 		return 1;
 	}
+	if (!strcmp(rel, "etc/passwd"))
+		live = root_shell(root, live, staged);
 	fputs(live, out);
 	if (live[strlen(live) - 1] != '\n')
 		fputc('\n', out);

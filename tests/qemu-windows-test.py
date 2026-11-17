@@ -143,6 +143,7 @@ def main():
             print(f"booted to login prompt in {time.time() - start_time:.0f}s", flush=True)
             con.send("root\n")
             con.expect("# ", 60)
+            con.send("exec /bin/sh\n")  # root logs in to zsh; tests drive plain sh
             # Under WHPX the guest sees Hyper-V; under TCG no hypervisor.
             hv = con.run("dmesg | grep -c 'Hypervisor detected: Microsoft Hyper-V'")
             print(f"accelerator: {'whpx' if hv == '1' else 'tcg'}", flush=True)
@@ -204,6 +205,7 @@ def main():
             # -snapshot dropped the setup: root has no password again.
             con.send("root\n")
             con.expect("# ", 60)
+            con.send("exec /bin/sh\n")  # root logs in to zsh; tests drive plain sh
             out = con.run("test -d /sys/firmware/efi && echo efi || echo bios")
             check("boots with BIOS firmware", out == "bios", out)
             mon.cmd("system_powerdown")

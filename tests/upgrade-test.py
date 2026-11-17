@@ -57,6 +57,7 @@ AFTER_CHECKS = [
     ("Tor Browser comes along", "cat /opt/tor-browser/version", r"^\d+\.\d+"),
     ("accounts kept", f"grep -c -e '^{USER}:' -e '^messagebus:' -e '^unbound:' /etc/passwd; "
      f"grep -c '^{USER}:\\$' /etc/shadow", r"^3\n1$"),
+    ("root's shell moves to zsh", "grep ^root: /etc/passwd", r":/usr/bin/zsh$"),
     ("system services running", "pidof dbus-daemon unbound | wc -w", r"^[2-9]$"),
     ("the user's files kept", f"ls -d /home/{USER}", rf"^/home/{USER}$"),
     ("still read-only", "touch /usr/x 2>&1", r"Read-only file system"),
@@ -101,6 +102,7 @@ def main():
             con.send(ROOT_PASSWORD + "\n")
             try:
                 con.expect("# ", 15)
+                con.send("exec /bin/sh\n")  # root logs in to zsh; tests drive plain sh
                 return
             except TimeoutError:
                 if time.time() > deadline:

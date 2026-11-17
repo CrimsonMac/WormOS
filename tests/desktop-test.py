@@ -119,6 +119,7 @@ _wormos_prompt_state; print -r -- "state=$_wormos_state"; print history=$SAVEHIS
 """
 SHELL_CHECKS = [
     ("users get zsh", f"grep ^{USER}: /etc/passwd", r":/usr/bin/zsh$"),
+    ("root gets zsh too", "grep ^root: /etc/passwd", r":/usr/bin/zsh$"),
     ("foot sends ^W for Ctrl+Backspace",
      "grep -A4 '^\\[text-bindings\\]' /etc/xdg/foot/foot.ini", r"^\\x17 = Control\+BackSpace$"),
     ("zsh: Ctrl+Backspace deletes a word", f"su {USER} -c 'sh /tmp/zsh-check' 2>&1",
@@ -611,6 +612,7 @@ def main():
                     con.send(ROOT_PASSWORD + "\n")
                     try:
                         con.expect("# ", 15)
+                        con.send("exec /bin/sh\n")  # root logs in to zsh; tests drive plain sh
                         break
                     except TimeoutError:
                         if time.time() > deadline:
@@ -625,6 +627,7 @@ def main():
             else:
                 con.send("root\n")
                 con.expect("# ", 60)
+                con.send("exec /bin/sh\n")  # root logs in to zsh; tests drive plain sh
                 run_checks(con, DEVICE_CHECKS)
                 out = wait_for(con, GREETER_MODE, r"MODE=setup", 300)
                 check("graphical first-boot setup shown", "MODE=setup" in out,
