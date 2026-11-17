@@ -330,11 +330,13 @@ class Qmp:
         """Move the tablet to (x, y) on a width x height screen and click."""
         def abs_(axis, v, size):
             return {"type": "abs", "data": {"axis": axis, "value": v * 0x7fff // size}}
-        self.execute("input-send-event",
+        # The display named: without one QEMU's vdagent scales the
+        # position to 1024x768 instead of the screen's size.
+        self.execute("input-send-event", device="video0", head=0,
                      events=[abs_("x", x, width), abs_("y", y, height)])
         time.sleep(0.5)
         for down in (True, False):
-            self.execute("input-send-event", events=[
+            self.execute("input-send-event", device="video0", head=0, events=[
                 {"type": "btn", "data": {"down": down, "button": button}}])
             time.sleep(0.2)
 
@@ -495,7 +497,7 @@ def main():
     vnc_path = os.path.join(tmp, "vnc")
     qmp_path = os.path.join(tmp, "qmp")
     wav_path = os.path.join(tmp, "sound.wav")
-    extra = (f"-vga none -device virtio-gpu-pci,addr=0x10 "
+    extra = (f"-vga none -device virtio-gpu-pci,addr=0x10,id=video0 "
              f"-device virtio-keyboard-pci,addr=0x11 -device virtio-tablet-pci,addr=0x12 "
              f"-monitor unix:{mon_path},server,nowait -vnc unix:{vnc_path} "
              f"-qmp unix:{qmp_path},server,nowait "
@@ -513,7 +515,7 @@ def main():
     total = (len(DEVICE_CHECKS) + 1 + len(AFTER_SETUP_CHECKS) + 3 + len(SESSION_CHECKS) +
              len(TYPING_CHECKS) + len(SHORTCUT_CHECKS) + len(BUDGET_CHECKS) +
              len(RESIZES) + len(WELCOME_CHECKS) + len(GTK_CHECKS) + len(SOUND_CHECKS) +
-             len(SHELL_CHECKS) + len(CLIPBOARD_CHECKS) + 34)
+             len(SHELL_CHECKS) + len(CLIPBOARD_CHECKS) + 35)
 
     def check(name, ok, out=""):
         nonlocal passed, failures
@@ -647,7 +649,7 @@ def main():
                     break
                 time.sleep(1)
             check("pointer goes through the SPICE agent",
-                  re.search(r"^\s*\*.*vdagent", mice, re.M | re.I), mice)
+                  re.search(r"^\s*\*.*vdagent", mice, re.M | re.I) is not None, mice)
 
             # The welcome terminal has the focus.
             mon.type("echo $(id -un) typed > /tmp/typed\n")
