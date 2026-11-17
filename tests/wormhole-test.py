@@ -88,12 +88,14 @@ CHECKS = [
      r"^1\d\.\d+"),
     ("blackhole keeps its own /lib64 for debian's loader",
      "bh open --from debian -- readlink /lib64", r"^usr/lib64$"),
-    ("wine installed", "wh -y install wine wine64 wine32:i386 2>&1 | tail -2; "
-     "ls /var/lib/wormholes/debian/usr/lib/i386-linux-gnu/wine/i386-windows/cmd.exe", r"cmd\.exe$"),
-    ("i386 added once", "whc debian dpkg --print-foreign-architectures", r"^i386$"),
+    ("64-bit wine installed", "wh -y install wine wine64 2>&1 | tail -1; "
+     "ls /var/lib/wormholes/debian/usr/lib/x86_64-linux-gnu/wine/x86_64-windows/cmd.exe", r"cmd\.exe$"),
     ("64-bit windows program in a blackhole",
      "bh open --from debian -- sh -c 'WINEDEBUG=-all wine cmd /c echo win64 ok' 2>/dev/null",
      r"^win64 ok\s*$"),
+    ("32-bit wine installed", "wh -y install wine32:i386 2>&1 | tail -1; "
+     "ls /var/lib/wormholes/debian/usr/lib/i386-linux-gnu/wine/i386-windows/cmd.exe", r"cmd\.exe$"),
+    ("i386 added once", "whc debian dpkg --print-foreign-architectures", r"^i386$"),
     ("32-bit system calls refused in a namespace blackhole",
      "bh open --from debian -- sh -c 'WINEDEBUG=-all wine C:\\\\windows\\\\syswow64\\\\cmd.exe "
      "/c echo x' 2>&1 | tail -1", r"Bad system call"),
@@ -101,6 +103,9 @@ CHECKS = [
      "bh open --vm --from debian --memory 1G -- sh -c 'WINEDEBUG=-all wine "
      "C:\\\\windows\\\\syswow64\\\\cmd.exe /c echo win32 ok' 2>/dev/null",
      r"^win32 ok\s*$"),
+    ("64-bit windows program in a virtual machine",
+     "bh open --vm --from debian --memory 1G -- sh -c 'WINEDEBUG=-all wine cmd /c echo win64 vm' "
+     "2>/dev/null", r"^win64 vm\s*$"),
     ("kali fallback", "wh -y install --from kali hashid 2>&1 | tail -3",
      r"hashid -> .* \(kali\)"),
     ("kali tool runs", "hashid --version 2>&1", r"^(?i:hashid) v\d"),

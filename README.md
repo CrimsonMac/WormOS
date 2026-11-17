@@ -487,12 +487,14 @@ without Windows:
   ```
 
   32-bit Windows programs (still most malware) need 32-bit system calls,
-  which a namespace blackhole refuses outright ("Bad system call"); in a
-  virtual machine nothing is filtered, and whatever breaks out of Wine
-  still only has the guest's kernel. 64-bit programs also run in a plain
-  namespace blackhole (`bh open --from debian`), which starts faster but
-  shares the kernel with the host. Add `--net` only to watch a sample
-  talk; it never reaches your local network.
+  which a namespace blackhole refuses outright ("Bad system call"), and
+  once Wine's 32-bit half is installed, Wine starts 32-bit helpers for
+  64-bit programs too. In a virtual machine nothing is filtered, and
+  whatever breaks out of Wine still only has the guest's kernel. Without
+  `wine32`, 64-bit programs also run in a plain namespace blackhole
+  (`bh open --from debian`), which starts faster but shares the kernel
+  with the host. Add `--net` only to watch a sample talk; it never
+  reaches your local network.
 - Measured in a nested test VM: Wine's `cmd.exe` answers in about 3 s in
   a namespace blackhole and 20 to 30 s in a virtual machine the first
   time (creating Wine's prefix over 9p).

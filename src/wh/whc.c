@@ -155,6 +155,17 @@ int main(int argc, char **argv)
 
 	setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", 1);
 	setenv("WORMHOLE", name, 1);
+	/*
+	 * The user's shell (zsh) is WormOS's and usually missing inside;
+	 * programs that run commands through $SHELL (script, make, editors)
+	 * get the container's sh instead.
+	 */
+	{
+		const char *shell = getenv("SHELL");
+
+		if (shell && (shell[0] != '/' || access(shell, X_OK) < 0))
+			setenv("SHELL", "/bin/sh", 1);
+	}
 	if (as_root) {
 		setenv("DEBIAN_FRONTEND", "noninteractive", 1);
 		setenv("HOME", "/root", 1);

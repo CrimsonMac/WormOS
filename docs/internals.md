@@ -302,7 +302,9 @@ in the README.
   plus a mount namespace; for root, a mount namespace only (helpers in
   `src/common/ns.c`). It shares `/dev`, `/proc`, `/sys`, `/tmp`, `/home`,
   `/run`, resolv.conf, hosts, passwd and group (user mode) and the host
-  network.
+  network. `$SHELL` becomes `/bin/sh` when it names a shell the container
+  lacks (WormOS's zsh), or `script`, `make` and editors could not run
+  commands.
 
 ## Hardening and privacy
 
