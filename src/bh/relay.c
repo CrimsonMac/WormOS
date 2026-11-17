@@ -2,16 +2,18 @@
  * bh's side of a blackhole's input and output (see box.c).
  *
  * relay_terminal() takes the master of the pseudo-terminal init opened
- * inside the blackhole for a session, puts the host terminal in raw mode and copies keys
- * in and output out until the blackhole is gone. Window size changes are
- * passed on. relay_output() copies output pipes to a terminal.
+ * inside the blackhole for a session, puts the host terminal in raw mode
+ * and copies keys in and output out until the session is gone. Window
+ * size changes are passed on. relay_output() copies output pipes to a
+ * terminal.
  *
- * Output is filtered on the way: OSC 52 sequences, with which a program
- * could set (and on some terminals read) the host's clipboard, are
- * dropped. Everything else is passed through unchanged. When the
- * blackhole is gone, input the terminal sent meanwhile (answers to
- * queries a program inside made) is discarded, so it cannot reach the
- * host shell as typed commands.
+ * Output is filtered on the way: of the operating system commands (OSC),
+ * only harmless ones pass (titles, colours, prompt marks; see
+ * osc_allowed): OSC 52 could set (and on some terminals read) the host's
+ * clipboard, OSC 777 show desktop notifications. Everything else is
+ * passed through unchanged. When the session is gone, input the terminal
+ * sent meanwhile (answers to queries a program inside made) is
+ * discarded, so it cannot reach the host shell as typed commands.
  */
 
 #define _GNU_SOURCE
@@ -27,7 +29,7 @@
 
 #include "bh.h"
 
-/* Longest OSC 52 sequence that is dropped before giving up on it. */
+/* Longest OSC sequence that is dropped before giving up on it. */
 #define DROP_MAX (1u << 20)
 
 enum { F_TEXT, F_ESC, F_OSC_NUM, F_DROP, F_DROP_ESC };
@@ -56,6 +58,11 @@ static void on_winch(int sig)
 
 static int write_all(int fd, const char *p, size_t n)
 {
+	/* Once the reader is gone, output is drained and dropped. */
+	static int gone[3];
+
+	if (fd >= 0 && fd < 3 && gone[fd])
+		return 0;
 	while (n > 0) {
 		ssize_t w = write(fd, p, n);
 
@@ -68,6 +75,8 @@ static int write_all(int fd, const char *p, size_t n)
 				poll(&pfd, 1, -1);
 				continue;
 			}
+			if (errno == EPIPE && fd >= 0 && fd < 3)
+				gone[fd] = 1;
 			return -1;
 		}
 		p += w;
@@ -76,7 +85,26 @@ static int write_all(int fd, const char *p, size_t n)
 	return 0;
 }
 
-/* Copy data to fd, without OSC 52 sequences. */
+/*
+ * Operating system commands a program may send the host terminal: titles,
+ * colours, the working directory and shell prompt marks. Everything else
+ * is dropped: OSC 52 (clipboard), 8 (links, which open on the host when
+ * clicked), 9, 99 and 777 (desktop notifications, easy to spoof), 1337,
+ * 5113 and other terminal-specific extensions.
+ */
+static int osc_allowed(const char *num, unsigned len)
+{
+	static const char *const allowed[] = {
+		"0", "1", "2", "4", "7", "10", "11", "12", "104", "110", "111", "112", "133",
+	};
+
+	for (size_t i = 0; i < sizeof(allowed) / sizeof(allowed[0]); i++)
+		if (strlen(allowed[i]) == len && !memcmp(allowed[i], num, len))
+			return 1;
+	return 0;
+}
+
+/* Copy data to fd, without the OSC sequences osc_allowed() refuses. */
 static void filter_write(int fd, struct filter *f, const char *data, size_t n)
 {
 	char out[8192 + 16];
@@ -114,17 +142,20 @@ again:
 				f->num[f->len++] = c;
 				break;
 			}
-			if (c == ';' && f->len == 2 && !memcmp(f->num, "52", 2)) {
-				f->state = F_DROP;
-				f->dropped = 0;
-				break;
+			/* No number: not an OSC terminals act on (the console's
+			 * palette sequence has no terminator to drop up to). */
+			if (f->len == 0 || osc_allowed(f->num, f->len)) {
+				out[o++] = 0x1b;
+				out[o++] = ']';
+				memcpy(out + o, f->num, f->len);
+				o += f->len;
+				f->state = F_TEXT;
+				goto again;
 			}
-			out[o++] = 0x1b;
-			out[o++] = ']';
-			memcpy(out + o, f->num, f->len);
-			o += f->len;
-			f->state = F_TEXT;
-			goto again;
+			/* Anything else goes, up to its terminator (BEL or ST). */
+			f->dropped = 0;
+			f->state = c == 0x07 ? F_TEXT : c == 0x1b ? F_DROP_ESC : F_DROP;
+			break;
 		case F_DROP:
 		case F_DROP_ESC:
 			if (c == 0x07 || (f->state == F_DROP_ESC && c == '\\') ||

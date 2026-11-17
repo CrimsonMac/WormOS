@@ -529,8 +529,12 @@ in the README.
   a terminal as input (pipes, or a background job, which may not set raw
   mode or flush without SIGTTOU), input comes from `/dev/null` if it was a
   terminal, and output to a terminal goes through pipes that bh relays.
-  Output is filtered on the way: OSC 52 sequences (clipboard) are dropped,
-  everything else passes. At the end, input the terminal sent meanwhile
+  Output is filtered on the way: operating system commands (OSC) pass
+  only for titles (0, 1, 2), colours (4, 10, 11, 12, 104, 110 to 112),
+  the working directory (7) and prompt marks (133), or without a number;
+  the rest (52 clipboard, 8 links that open on the host when clicked, 9,
+  99 and 777 desktop notifications, terminal extensions) are dropped up
+  to their terminator. Everything else passes. At the end, input the terminal sent meanwhile
   (answers to queries from inside) is flushed so the host shell never
   reads it.
 - Why no overlay of `/`: overlayfs clones its lower layer, and the kernel

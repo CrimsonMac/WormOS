@@ -584,6 +584,15 @@ int box_run(const struct box *b, const struct opts *o, char *const argv[])
 	/* Root's groups must not follow it in. */
 	if (getuid() == 0 && setgroups(0, NULL) < 0)
 		die("cannot drop supplementary groups: %s", strerror(errno));
+	/*
+	 * Root's hard process limit depends on the memory (3809 with 1 GiB);
+	 * init can only lower it, so root raises it first. Users keep theirs.
+	 */
+	if (getuid() == 0) {
+		struct rlimit nproc = { o->pids, o->pids };
+
+		setrlimit(RLIMIT_NPROC, &nproc);
+	}
 	if (o->vm && vm_check() < 0)
 		exit(1);
 	if (o->net && net_collect_host() < 0)

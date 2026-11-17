@@ -619,6 +619,9 @@ static void finish_opts(struct opts *o)
 int main(int argc, char **argv)
 {
 	umask(022);
+	/* Output to a reader that went away (| head) must not kill bh
+	 * before it cleans up: writes fail instead (see relay.c). */
+	signal(SIGPIPE, SIG_IGN);
 	if (argc < 2) {
 		usage(stderr);
 		return 2;

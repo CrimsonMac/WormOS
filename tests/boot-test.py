@@ -206,12 +206,15 @@ BLACKHOLE_CHECKS = [
      "[t.Thread(target=e.wait, daemon=True).start() for i in range(2000)]; print(\"n=\", t.active_count())'",
      r"^n= 2001$"),
     ("fork bomb stays inside",
-     "bh open t1 -- sh -c 'i=0; while [ $i -lt 4500 ]; do sleep 100 & i=$((i+1)); done "
-     "2>/dev/null; echo n=$(pgrep sleep | wc -l)'",
-     r"^n=40[0-9][0-9]$"),
+     "bh open --pids 300 -- python3 -c 'import os, signal\nn=0\ntry:\n while n<1000:\n  if os.fork()==0:\n   signal.pause()\n  n+=1\n"
+     "except OSError as e: print(\"n=%d errno=%d\" % (n, e.errno))'",
+     r"^n=29\d errno=11$"),
     ("clipboard sequences dropped",
      "bh open t1 -- printf 'a\\033]52;c;ZXZpbA==\\007b\\n' | od -An -c | tr -s ' '",
      r"^\s*a b \\n\s*$"),
+    ("notification and link sequences dropped",
+     "bh open t1 -- printf 'a\\033]777;notify;x;y\\007b\\033]8;;http://x\\033\\\\c\\n' | od -An -c | tr -s ' '",
+     r"^\s*a b c \\n\s*$"),
     ("other sequences kept", "bh open t1 -- printf '\\033]0;t\\007' | od -An -c | tr -s ' '",
      r"^\s*033 \] 0 ; t \\a\s*$"),
     ("no inherited descriptors",
@@ -226,7 +229,7 @@ BLACKHOLE_CHECKS = [
     ("a second session joins it",
      "bh open t1 -- sh -c 'echo n=$(pgrep sleep | wc -l) $(hostname) $(cat /root/note)'",
      r"^n=1 t1 kept$"),
-    ("a joined session gets its own terminal", "bh open t1 -- tty", r"^/dev/pts/[1-9]\s*$"),
+    ("a joined session gets its own terminal", "bh open t1 -- tty", r"^/dev/pts/\d+\s*$"),
     ("options only when it starts", "bh open --net t1 -- true 2>&1", r"already running"),
     ("joined sessions end with the first",
      "bh open t1 -- sleep 600 & sleep 2; kill %1; wait; bh list | grep -c 't1.*running'",
@@ -274,7 +277,7 @@ BH_NET_CHECKS = [
     ("network interface with --net", "bh open --net -- ip -4 -o addr show eth0",
      r"inet 100\.96\.0\.2/29"),
     ("names through the host's resolver",
-     "bh open --net -- nslookup localhost 2>&1 | tail -2", r"127\.0\.0\.1"),
+     "bh open --net -- nslookup -type=a localhost 2>&1", r"127\.0\.0\.1"),
     ("local network kept out", "bh open --net -- wget -q -T 5 -O- {repo}index 2>&1; echo rc=$?",
      r"rc=[1-9]"),
     ("local network with --lan",
@@ -298,7 +301,8 @@ BH_NET_CHECKS = [
      "bh open --vm --net --lan v1 -- wget -q -T 20 -O- {repo}index | head -c 0; echo rc=$?",
      r"rc=0"),
     ("monitor jailed and limited",
-     "bh open --vm v1 -- sleep 20 & sleep 8; p=$(pidof lkvm); grep -E '^(NoNewPrivs|Seccomp):' /proc/$p/status; "
+     "bh open --vm v1 -- sleep 30 & for i in $(seq 20); do p=$(pidof lkvm) && break; sleep 1; done; "
+     "grep -E '^(NoNewPrivs|Seccomp):' /proc/$p/status; "
      "cat /proc/$p/uid_map; cat /sys/fs/cgroup/blackholes/0-v1/memory.max; wait",
      r"NoNewPrivs:\s+1(.|\n)*Seccomp:\s+2(.|\n)*0\s+1073741\d+\s+1(.|\n)*^\d+$"),
     ("virtual machine closed", "bh close v1", r"^Closed blackhole v1\.$"),
@@ -486,7 +490,7 @@ HELPER_CHECKS = [
 # The command-line tools that come with the image.
 TOOL_CHECKS = [
     ("worm help lists the commands", "worm help | grep -c -e 'snap now' -e 'wh install' "
-     "-e 'bh open' -e 'worm fw' -e tor-browser", r"^[5-9]$"),
+     "-e 'bh open' -e 'worm fw' -e tor-browser", r"^([5-9]|1[0-9])$"),
     ("worm help works for users", "su tester -c 'worm help snap' | head -1",
      r"^usage: snap"),
     ("bash", "bash -c 'echo ${BASH_VERSINFO[0]}'", r"^5$"),

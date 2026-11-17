@@ -73,10 +73,14 @@ int cgroup_create(uid_t uid, const char *name, pid_t pid, unsigned long long mem
 	write_value(BH_CGROUP, "cgroup.subtree_control", "+memory");
 	write_value(BH_CGROUP, "cgroup.subtree_control", "+cpu");
 	snprintf(dir, sizeof(dir), "%s/%u-%s", BH_CGROUP, (unsigned)uid, name);
-	/* Left over from a blackhole that was killed: empty, so it goes. */
-	rmdir(dir);
-	if (mkdir(dir, 0755) < 0)
-		return -1;
+	/*
+	 * Left over from a bh that was killed: the blackhole is not running
+	 * (bh holds its lock), so whatever is still in there goes.
+	 */
+	if (mkdir(dir, 0755) < 0) {
+		if (errno != EEXIST || cgroup_remove(uid, name) < 0 || mkdir(dir, 0755) < 0)
+			return -1;
+	}
 	snprintf(value, sizeof(value), "%u", pids);
 	if (write_value(dir, "pids.max", value) < 0)
 		return -1;
