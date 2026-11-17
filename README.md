@@ -2,7 +2,7 @@
 
 A lightweight, security-focused Linux operating system built around instant, tamper-resistant snapshots.
 
-> **Status:** 1.5.1: a read-only system with snapshots, packages, a
+> **Status:** 1.5.2: a read-only system with snapshots, packages, a
 > firewall, sandboxes, Tor and Tor Browser, tool kits and a light Wayland
 > desktop with its own panel, login screen, snapshot timeline and sound.
 > It runs live from an ISO and installs onto a disk, or as a ready-made
@@ -42,7 +42,7 @@ Download a release from the release page and check it against
 `SHA256SUMS`. Both kinds start with UEFI or BIOS firmware (Secure Boot
 off).
 
-- **The ISO** (`wormos-1.5.1-x86_64.iso`): a live system and an installer.
+- **The ISO** (`wormos-1.5.2-x86_64.iso`): a live system and an installer.
   Boot a virtual machine from it (as a CD/DVD), or write it to a USB stick
   as it is (`dd`, or a tool such as Ventoy or balenaEtcher) and start a PC
   from the stick. WormOS copies itself into memory and starts the desktop
@@ -56,13 +56,13 @@ off).
   passwords, as in the disk image below. The live system's snapshots and
   files are not carried over.
 
-- **The disk image for QEMU / virt-manager** (`wormos-1.5.1-x86_64.qcow2`): an
+- **The disk image for QEMU / virt-manager** (`wormos-1.5.2-x86_64.qcow2`): an
   installed system, ready to start. In virt-manager,
   import an existing disk image and choose a generic recent Linux. From
   the command line:
   ```
   qemu-system-x86_64 -machine q35 -accel kvm -cpu host -m 2048 -smp 2 \
-      -drive file=wormos-1.5.1-x86_64.qcow2,if=virtio \
+      -drive file=wormos-1.5.2-x86_64.qcow2,if=virtio \
       -nic user,model=virtio-net-pci -device virtio-vga \
       -device virtio-keyboard-pci -device virtio-tablet-pci \
       -device virtio-serial-pci \
@@ -81,7 +81,7 @@ off).
   ```
   & "C:\Program Files\qemu\qemu-system-x86_64.exe" -machine q35 `
       -accel whpx,kernel-irqchip=off -m 2048 -smp 2 `
-      -drive file=wormos-1.5.1-x86_64.qcow2,if=virtio `
+      -drive file=wormos-1.5.2-x86_64.qcow2,if=virtio `
       -nic user,model=virtio-net-pci -device virtio-vga -display sdl `
       -device virtio-keyboard-pci -device virtio-tablet-pci
   ```
@@ -536,7 +536,7 @@ the QEMU monitor like a user would. It answers the first-boot setup, logs
 in (which starts the desktop), types into the terminal, opens another with
 Super+Enter, checks a screendump of the real screen, and compares memory
 use and system size with their budgets. `tests/desktop-test.py --release
-out/release/wormos-1.5.1-x86_64.qcow2` runs the same checks on a release
+out/release/wormos-1.5.2-x86_64.qcow2` runs the same checks on a release
 image, where root can only log in once the first-boot setup is done.
 
 `make test` boots a throwaway copy of the image, checks the running system
