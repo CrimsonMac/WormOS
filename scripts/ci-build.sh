@@ -34,7 +34,7 @@ if pkg-config --exists gtk4 && ! pkg-config --exists gtk4-layer-shell-0 && comma
 	fetch "${source[0]}" "${sha256[0]}"
 	unpack "$SOURCES/${source[0]%%::*}" "$work/gtk4-layer-shell"
 	(cd "$work/gtk4-layer-shell" &&
-		meson setup -q build --prefix="$work/prefix" --libdir=lib -Dexamples=false -Ddocs=false \
+		meson setup build --prefix="$work/prefix" --libdir=lib -Dexamples=false -Ddocs=false \
 			-Dtests=false -Dsmoke-tests=false -Dintrospection=false -Dvapi=false > /dev/null &&
 		ninja -C build install > /dev/null) || die "gtk4-layer-shell did not build"
 	export PKG_CONFIG_PATH=$work/prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}
