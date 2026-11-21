@@ -50,7 +50,7 @@ jobs:
           [ -n "$tag" ] || tag=$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName)
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "VERSION=${tag#v}" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ steps.release.outputs.tag }}
       - name: Download and check the image
