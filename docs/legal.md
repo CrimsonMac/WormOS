@@ -15,7 +15,12 @@ their own licenses, among them:
 - the Linux kernel (GPL-2.0), GNU libc and GCC's runtime libraries
   (LGPL-2.1 and GPL-3.0 with the GCC Runtime Library Exception), BusyBox
   (GPL-2.0), GnuPG and its libraries (GPL/LGPL), zsh and its plugins
-  (MIT-style and BSD), bash, nano, readline (GPL-3.0);
+  (MIT-style and BSD), bash, nano, readline, GNU coreutils, grep, sed,
+  gawk, findutils, diffutils, patch and wget (GPL-3.0), iproute2,
+  ethtool, pciutils and usbutils (GPL-2.0);
+- 7-Zip (LGPL-2.1, with BSD-licensed parts and the unRAR license's
+  restriction for its RAR decoder: it may not be used to rebuild a RAR
+  compressor), Info-ZIP zip (Info-ZIP license);
 - GTK, GLib, Pango, PipeWire, WirePlumber and other desktop libraries
   (LGPL), labwc and wlroots (GPL-2.0 and MIT), foot (MIT), Mesa (MIT);
 - OpenSSL (Apache-2.0), curl (curl license), Tor (BSD-3-Clause), unbound
