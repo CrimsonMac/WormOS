@@ -55,7 +55,9 @@ second stage below is done.
   leaves root as the image has it: locked in releases. Without root,
   nothing can mount a disk, install software into the system, change the
   firewall or turn anonymous mode off; snapshots cannot be exported.
-  Blackholes still work: they need no root.
+  Blackholes still work: they need no root. The live user is in Tor's
+  group, so `worm anon status` (open to everyone since 1.7) can show how
+  far Tor has connected.
 - **Tor.** `wormos-amnesia` ships `/etc/worm/anon`, so the firewall loads
   the anonymous-mode rules at boot (`05-firewall`) and Tor starts with the
   system (`16-anon`), before the network service brings up an interface

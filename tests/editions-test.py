@@ -71,19 +71,17 @@ BAREBONES_CHECKS = [
 ]
 
 AMNESIA_CHECKS = [
+    ("the live user sees Tor's progress",
+     "for i in $(seq 30); do su live -c 'worm anon status' | grep -q connected && break; sleep 2; done; "
+     "su live -c 'worm anon status'", r"^Anonymous mode: on: all traffic through Tor \(conn"),
     ("edition", "cat /etc/worm/variant", r"^VARIANT_ID=amnesia$"),
     ("no installer", "command -v wormos-installer || echo none", r"^none$"),
     ("stricter kernel", "cat /proc/cmdline; cat /sys/kernel/security/lockdown",
      r"init_on_free=1(.|\n)*\[confidentiality\]"),
     ("anonymous mode on from the start, Tor running", "worm anon status",
      r"^Anonymous mode: on(?!, but)"),
-    ("Tor runs as its own user",
-     "for i in $(seq 30); do pidof tor > /dev/null && break; sleep 2; done; "
-     # Tor makes itself non-dumpable, so /proc shows its files as root's:
-     # read the IDs it runs with.
-     "awk '/^Uid:/ { print $2 }' /proc/$(pidof tor)/status; id -u tor", r"^(\d+)\n\1$"),
     ("anonymous mode cannot be turned off", "worm anon off 2>&1; worm anon status",
-     r"always sends everything through Tor(.|\n)*^Anonymous mode: on"),
+     r"(always sends everything through Tor|needs root)(.|\n)*^Anonymous mode: on"),
     ("Tor Browser is there", "command -v tor-browser", r"^/usr/bin/tor-browser$"),
     ("grey desktop settings",
      "tr '\\0' '\\n' < /proc/$(pidof worm-shell)/environ | "
@@ -97,6 +95,11 @@ AMNESIA_CHECKS = [
 
 # Checked as root on development ISOs only (release ISOs lock root).
 AMNESIA_ROOT_CHECKS = [
+    ("Tor runs as its own user",
+     "for i in $(seq 30); do pidof tor > /dev/null && break; sleep 2; done; "
+     # Tor makes itself non-dumpable, so /proc shows its files as root's:
+     # read the IDs it runs with.
+     "awk '/^Uid:/ { print $2 }' /proc/$(pidof tor)/status; id -u tor", r"^(\d+)\n\1$"),
     ("firewall sends everything to Tor", "nft list ruleset | grep -c -e redirect -e 'meta skuid'",
      r"^[2-9]"),
 ]
@@ -185,6 +188,8 @@ def main():
             con.send("exec /bin/sh\n")
             print(f"logged in after {time.time() - start:.0f}s")
             for name, cmd, pattern in checks:
+                if args.release:
+                    cmd = cmd.replace("su live -c 'worm anon status'", "worm anon status")
                 out = con.run(cmd, 180)
                 check(name, re.search(pattern, out, re.M) is not None, out)
 

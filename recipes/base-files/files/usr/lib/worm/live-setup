@@ -19,8 +19,13 @@ for group in wheel video input audio render kvm; do
 done
 passwd -d live > /dev/null
 # WormOS Amnesia keeps root as the image has it (locked in releases): no
-# one can make that system keep anything.
-grep -qs '^VARIANT_ID=amnesia' /etc/worm/variant || passwd -d root > /dev/null
+# one can make that system keep anything. Its user may read Tor's progress
+# instead (worm anon status), through Tor's group.
+if grep -qs '^VARIANT_ID=amnesia' /etc/worm/variant; then
+	addgroup live tor
+else
+	passwd -d root > /dev/null
+fi
 mount -o remount,bind,ro /
 /usr/lib/worm/runtime-dirs
 

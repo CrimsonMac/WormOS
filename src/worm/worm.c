@@ -407,6 +407,9 @@ int main(int argc, char **argv)
 			usage(stderr);
 		return r;
 	}
+	/* So does asking whether anonymous mode is on. */
+	if (!strcmp(argv[1], "anon") && argc == 3 && !strcmp(argv[2], "status"))
+		return cmd_anon(1, argv + 2);
 	if (geteuid() != 0)
 		die("this needs root, try again with su%s", "");
 	if (!strcmp(argv[1], "fw")) {

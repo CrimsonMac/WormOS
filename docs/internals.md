@@ -196,7 +196,11 @@ in the README.
     start: `05-firewall` loads its rules before `30-network`, `16-anon`
     starts Tor), and `worm anon off` refuses there.
   - Root keeps the image's password (locked in releases), so nothing can
-    mount a disk or change the system.
+    mount a disk or change the system. `live-setup` adds the live user to
+    the group `tor` instead, which can read `/run/tor` (the pid file and
+    the notice log): `worm anon status`, which anyone may run, then
+    reports Tor's progress; it tells a running Tor from a missing one with
+    `kill(pid, 0)` (EPERM), since `/proc` hides other users' processes.
   - The look: the variant file sets `VARIANT_XDG=/etc/xdg/amnesia`,
     `VARIANT_GTK_THEME=WormOS-Amnesia` and `VARIANT_PANEL=bottom`;
     `session-env` turns them into `XDG_CONFIG_DIRS` (labwc's `rc.xml` with

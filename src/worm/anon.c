@@ -2,7 +2,9 @@
  * worm anon - anonymous mode: all traffic of the machine through Tor.
  *
  *     worm anon on | off      switch it (kept across restarts)
- *     worm anon status        is it on, how far Tor has connected
+ *     worm anon status        is it on, how far Tor has connected (for
+ *                             everyone; users in the group tor also see
+ *                             whether Tor runs and how far it got)
  *     worm anon start         start Tor if anonymous mode is on (at boot)
  *
  * The switch is the file /etc/worm/anon, so it is part of system snapshots
@@ -60,8 +62,16 @@ static pid_t tor_pid(void)
 	if (pid <= 1)
 		return 0;
 	snprintf(path, sizeof(path), "/proc/%ld/comm", pid);
-	if (!(f = fopen(path, "re")))
+	if (!(f = fopen(path, "re"))) {
+		/*
+		 * A user cannot see Tor's process (/proc has hidepid), but a
+		 * signal 0 tells whether it exists. Users reach the pid file
+		 * only through the tor group (WormOS Amnesia's live user).
+		 */
+		if (geteuid() != 0 && kill((pid_t)pid, 0) < 0 && errno == EPERM)
+			return (pid_t)pid;
 		return 0;
+	}
 	if (fgets(comm, sizeof(comm), f))
 		comm[strcspn(comm, "\n")] = '\0';
 	fclose(f);
