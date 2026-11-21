@@ -1,0 +1,20 @@
+name=iperf3
+version=3.22.1
+description="Network throughput measurement"
+depends=(glibc openssl)
+source=(https://downloads.es.net/pub/iperf/iperf-$version.tar.gz)
+sha256=(de018b5252e2a7068c89fac8b35a295d83334f2b7814aa9532a2a8107b04a4a9)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-shared --enable-static --with-openssl="$SYSROOT/usr"
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/info" "$pkgdir/usr/share/locale" \
+		"$pkgdir/usr/share/doc"
+	rm -rf "$pkgdir/usr/include" "$pkgdir/usr/lib"
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/iperf3/LICENSE"
+}

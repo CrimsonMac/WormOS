@@ -1,0 +1,27 @@
+name=7zip
+version=26.06
+description="7-Zip: 7z, zip, rar (extract), iso and many more archive formats (7z, 7zz)"
+depends=(glibc gcc-libs)
+# Upstream publishes no signature: checksum pinned from the release download.
+source=(https://github.com/ip7z/7zip/releases/download/$version/7z${version/./}-src.tar.xz)
+sha256=(a4e374c8f864f51df48c2cfd0e1413ec3b2ea030deae852d6a655402ebb61ac4)
+# The archive has no top folder.
+noextract=1
+
+build() {
+	rm -rf "$srcdir"/*
+	tar -xf "$SOURCES/7z${version/./}-src.tar.xz"
+	# The standalone console version with every format (7zz), without the
+	# assembler routines (they need asmc/uasm).
+	cd CPP/7zip/Bundles/Alone2
+	make -f ../../cmpl_gcc.mak CC="$CC" CXX="$CXX" LDFLAGS_STATIC_2="$LDFLAGS" \
+		CFLAGS_WARN_WALL="-Wall" -j"$JOBS"
+}
+
+package() {
+	install -Dm755 CPP/7zip/Bundles/Alone2/b/g/7zz "$pkgdir/usr/bin/7zz"
+	ln -s 7zz "$pkgdir/usr/bin/7z"
+	ln -s 7zz "$pkgdir/usr/bin/7za"
+	install -Dm644 DOC/License.txt "$pkgdir/usr/share/licenses/7zip/License.txt"
+	install -Dm644 DOC/unRarLicense.txt "$pkgdir/usr/share/licenses/7zip/unRarLicense.txt"
+}

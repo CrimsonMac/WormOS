@@ -1,0 +1,23 @@
+name=coreutils
+version=9.12
+description="GNU core utilities (ls, cp, date, sort...), full versions of BusyBox's"
+depends=(glibc openssl)
+source=(https://ftp.gnu.org/gnu/coreutils/coreutils-$version.tar.xz)
+sha256=(a480198559733e9b3da999e90543ac6f888a2caa544d8d664c5a1f17e528e210)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-nls --disable-acl --disable-xattr --without-selinux \
+		--disable-libcap --with-openssl=yes --enable-single-binary=symlinks \
+		--enable-no-install-program=kill,uptime,hostname,groups
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/info" "$pkgdir/usr/share/locale" \
+		"$pkgdir/usr/share/doc"
+	# One binary; the commands are links to it.
+	rm -rf "$pkgdir/usr/libexec"
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/coreutils/COPYING"
+}

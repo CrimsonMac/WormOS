@@ -1,0 +1,17 @@
+name=usbutils
+version=020
+description="lsusb: list USB devices"
+depends=(glibc libusb eudev)
+# Signed by Greg Kroah-Hartman (647F28654894E3BD457199BE38DBBDC86092693E).
+source=(https://www.kernel.org/pub/linux/utils/usb/usbutils/usbutils-$version.tar.xz)
+sha256=(20287d68fcd9ebb50a05ba0645a4af7583bd8dfc7307215ba121e4bc6d057aa1)
+
+build() {
+	meson_build
+}
+
+package() {
+	meson_package
+	rm -rf "$pkgdir/usr/share/man"
+	install -Dm644 LICENSES/GPL-2.0-only.txt "$pkgdir/usr/share/licenses/usbutils/GPL-2.0-only.txt"
+}

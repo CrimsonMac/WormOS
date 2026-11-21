@@ -1,0 +1,19 @@
+name=sed
+version=4.10
+description="GNU sed: stream editor"
+depends=(glibc)
+source=(https://ftp.gnu.org/gnu/sed/sed-$version.tar.xz)
+sha256=(b8e72182b2ec96a3574e2998c47b7aaa64cc20ce000d8e9ac313cc07cecf28c7)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-nls --disable-acl --without-selinux
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/info" "$pkgdir/usr/share/locale" \
+		"$pkgdir/usr/share/doc"
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/sed/COPYING"
+}

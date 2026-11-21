@@ -1,0 +1,20 @@
+name=libusb
+version=1.0.30
+description="USB device access library"
+depends=(glibc eudev)
+source=(https://github.com/libusb/libusb/releases/download/v$version/libusb-$version.tar.bz2)
+sha256=(fea36f34f9156400209595e300840767ab1a385ede1dc7ee893015aea9c6dbaf)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-static --enable-udev
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/info" "$pkgdir/usr/share/locale" \
+		"$pkgdir/usr/share/doc"
+	rm -f "$pkgdir"/usr/lib/*.la
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/libusb/COPYING"
+}

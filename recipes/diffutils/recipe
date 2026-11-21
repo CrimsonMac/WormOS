@@ -1,0 +1,19 @@
+name=diffutils
+version=3.12
+description="GNU diff, cmp, diff3 and sdiff"
+depends=(glibc)
+source=(https://ftp.gnu.org/gnu/diffutils/diffutils-$version.tar.xz)
+sha256=(7c8b7f9fc8609141fdea9cece85249d308624391ff61dedaf528fcb337727dfd)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-nls gl_cv_func_strcasecmp_works=yes
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/info" "$pkgdir/usr/share/locale" \
+		"$pkgdir/usr/share/doc"
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/diffutils/COPYING"
+}

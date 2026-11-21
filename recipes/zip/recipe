@@ -1,0 +1,22 @@
+name=zip
+version=3.0
+description="Info-ZIP zip: creates .zip archives (unzip comes from libarchive)"
+depends=(glibc bzip2)
+# Upstream publishes no signature: checksum pinned from the release download.
+source=(https://downloads.sourceforge.net/infozip/zip30.tar.gz)
+sha256=(f0e8bb1f9b7eb0b01285495a2699df3a4b766784c1765a8f1aeedf63c0806369)
+
+build() {
+	# Old K&R C: build as C89 (GCC 15 defaults to C23).
+	make -f unix/Makefile generic CC="$CC -std=gnu89" CPP="$CC -E" \
+		LOCAL_ZIP="$CFLAGS -Wno-implicit-function-declaration -Wno-implicit-int" \
+		LFLAGS1="$LDFLAGS"
+}
+
+package() {
+	local cmd
+	for cmd in zip zipcloak zipnote zipsplit; do
+		install -Dm755 $cmd "$pkgdir/usr/bin/$cmd"
+	done
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/zip/LICENSE"
+}

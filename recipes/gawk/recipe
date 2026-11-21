@@ -1,0 +1,22 @@
+name=gawk
+version=5.4.2
+description="GNU awk: pattern scanning and text processing language"
+depends=(glibc)
+source=(https://ftp.gnu.org/gnu/gawk/gawk-$version.tar.xz)
+sha256=(b95e4909533b5f988c6b5e5539b3b3ddf76e7d7df02ca2e5b5b7d6f62db78e6a)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--disable-nls --without-readline --without-mpfr --disable-pma
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/info" "$pkgdir/usr/share/locale" \
+		"$pkgdir/usr/share/doc"
+	# The versioned copy is identical to gawk; awk is a link to gawk.
+	rm -f "$pkgdir/usr/bin/gawk-$version" "$pkgdir/usr/bin/gawkbug"
+	rm -rf "$pkgdir/usr/include"
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/gawk/COPYING"
+}

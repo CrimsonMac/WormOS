@@ -1,0 +1,22 @@
+name=iproute2
+version=7.3.0
+description="ip, ss, bridge, tc: the full network configuration tools"
+depends=(glibc libmnl)
+# Signed by Stephen Hemminger (9F6FC345B05BE7E766B83C8F80A77F6095CDE47E).
+source=(https://www.kernel.org/pub/linux/utils/net/iproute2/iproute2-$version.tar.xz)
+sha256=(5c1789d290bba048a6135ed1ab81b0402dd0fb528d1f1421765c42b1fc3d6289)
+
+build() {
+	# Its own configure: probes with $CC and pkg-config. No BPF, ELF,
+	# libcap or SELinux.
+	CC="$CC" AR="$AR" PKG_CONFIG=pkg-config ./configure --prefix=/usr --libbpf_force off
+	sed -i '/^HAVE_ELF\|^HAVE_CAP\|^HAVE_SELINUX\|^HAVE_BERKELEY_DB/d' config.mk
+	make CC="$CC" AR="$AR" CCOPTS="$CFLAGS" LDFLAGS="$LDFLAGS" SBINDIR=/usr/sbin -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" SBINDIR=/usr/sbin install
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/doc" "$pkgdir/usr/include" \
+		"$pkgdir/usr/share/bash-completion" "$pkgdir/usr/lib/tc"
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/iproute2/COPYING"
+}

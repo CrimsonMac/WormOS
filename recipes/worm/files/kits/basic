@@ -1,0 +1,53 @@
+# The Basic tool kit (worm kit show basic): the everyday command-line tools
+# most systems have, as full versions. WormOS Barebones comes without them;
+# the standard system already has most.
+title = Basic tools
+description = Everyday command-line tools: archives, downloads, networking, devices, text
+included = curl, nano, busybox (small versions of most commands)
+# Full versions of BusyBox's commands (they take over its links).
+core = coreutils
+core = grep
+core = sed
+core = gawk
+core = findutils
+core = diffutils
+core = patch
+core = less
+core = file
+core = tree
+core = bash
+# Archives.
+core = libarchive
+core = xz
+core = bzip2
+core = zip
+core = 7zip
+# Downloads and remote work.
+core = wget
+core = rsync
+core = openssh
+core = git
+# Network.
+core = iproute2
+core = ethtool
+core = whois
+core = traceroute
+core = mtr
+core = iperf3
+core = socat
+tool = bind9-dnsutils
+# Devices and disks.
+core = pciutils
+core = usbutils
+core = dosfstools
+# Processes and the terminal.
+core = htop
+core = lsof
+core = strace
+core = tmux
+core = vim
+core = ncdu
+core = jq
+core = python
+core = sqlite
+core = binutils

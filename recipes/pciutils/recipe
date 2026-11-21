@@ -1,0 +1,22 @@
+name=pciutils
+version=3.15.0
+description="lspci and setpci: list and configure PCI devices"
+depends=(glibc zlib)
+# Signed by Martin Mares (5558F9399CD7836850553C6EC28E7847ED70F82D).
+source=(https://www.kernel.org/pub/software/utils/pciutils/pciutils-$version.tar.xz)
+sha256=(c02940f430841ecf158d5d9a50007afc4d5353c8678a2455003ca0b2c4e9f5ff)
+
+build() {
+	make CC="$CC" AR="$AR" RANLIB="$RANLIB" OPT="$CFLAGS" LDFLAGS="$LDFLAGS" \
+		HOST=x86_64-linux PREFIX=/usr IDSDIR=/usr/share/hwdata ZLIB=yes DNS=no \
+		SHARED=no HWDB=no LIBKMOD=no
+}
+
+package() {
+	install -Dm755 lspci "$pkgdir/usr/bin/lspci"
+	install -Dm755 setpci "$pkgdir/usr/bin/setpci"
+	# The device names (the bundled pci.ids, compressed).
+	gzip -9n < pci.ids > pci.ids.gz
+	install -Dm644 pci.ids.gz "$pkgdir/usr/share/hwdata/pci.ids.gz"
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/pciutils/COPYING"
+}

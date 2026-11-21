@@ -1,0 +1,17 @@
+name=whois
+version=5.6.6
+description="Looks up domain and IP address registrations"
+depends=(glibc)
+# Upstream publishes no signature: checksum pinned from the tagged archive.
+source=(https://github.com/rfc1036/whois/archive/v$version/whois-$version.tar.gz)
+sha256=(43d3b3cc64c75e8bd10aee6feff3906e9488ed335076d206e70f3b25bf644969)
+
+build() {
+	# The server tables are generated with perl (on the build machine).
+	make CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" HAVE_ICONV=1 whois
+}
+
+package() {
+	install -Dm755 whois "$pkgdir/usr/bin/whois"
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/whois/COPYING"
+}

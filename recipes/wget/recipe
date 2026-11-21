@@ -1,0 +1,28 @@
+name=wget
+version=1.25.0
+description="GNU Wget: downloads files over HTTP(S) and FTP"
+depends=(glibc openssl zlib)
+source=(https://ftp.gnu.org/gnu/wget/wget-$version.tar.gz)
+sha256=(766e48423e79359ea31e41db9e5c289675947a7fcf2efdcedb726ac9d0da3784)
+
+build() {
+	./configure --build="$(gcc -dumpmachine)" --host="$TARGET" --prefix=/usr \
+		--sysconfdir=/etc --disable-nls --with-ssl=openssl --with-zlib \
+		--without-libpsl --disable-iri --disable-pcre --disable-pcre2 \
+		--without-libuuid --without-metalink --without-cares
+	# wget --version prints the compiler and linker commands, which name
+	# the sysroot: print plain ones.
+	sed -i -e '/compilation_string/s/\$(COMPILE)/cc/' \
+		-e '/link_string/{N;s/\$(CCLD) .*\$(wget_LDADD)/cc/}' src/Makefile
+	grep -q "link_string = \"'cc'\"" src/Makefile || die "wget's link string not found"
+	rm -f src/version.c
+	make -j"$JOBS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -rf "$pkgdir/usr/share/man" "$pkgdir/usr/share/info" "$pkgdir/usr/share/locale" \
+		"$pkgdir/usr/share/doc"
+	rm -rf "$pkgdir/etc"
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/wget/COPYING"
+}

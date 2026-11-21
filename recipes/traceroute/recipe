@@ -1,0 +1,17 @@
+name=traceroute
+version=2.1.6
+description="Shows the route packets take to a host (unprivileged UDP by default)"
+depends=(glibc)
+# Upstream publishes no signature: checksum pinned from the release download.
+source=(https://downloads.sourceforge.net/traceroute/traceroute-$version.tar.gz)
+sha256=(9ccef9cdb9d7a98ff7fbf93f79ebd0e48881664b525c4b232a0fcec7dcb9db5e)
+
+build() {
+	make CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+}
+
+package() {
+	install -Dm755 traceroute/traceroute "$pkgdir/usr/bin/traceroute"
+	ln -s traceroute "$pkgdir/usr/bin/traceroute6"
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/traceroute/COPYING"
+}
