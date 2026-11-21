@@ -1,0 +1,4 @@
+# The loopback interface, first: the resolver (15-dns) and Tor (16-anon)
+# listen on it, and Tor gives up at once if it cannot.
+type = oneshot
+exec = ip link set lo up

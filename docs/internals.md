@@ -370,9 +370,12 @@ in the README.
 ## Hardening and privacy
 
 - Services in order: `01-sysctl` (`sysctl -p` on `/usr/lib/sysctl.d/*.conf`,
-  then `/etc/sysctl.d/*.conf`), `05-firewall`, `10-filesystems`,
-  `15-dns` (shipped by the unbound package), `16-anon` (tor), `20-loopback`,
-  `25-net-privacy`, `30-network`.
+  then `/etc/sysctl.d/*.conf`), `02-loopback`, `05-firewall`,
+  `10-filesystems`, `15-dns` (shipped by the unbound package), `16-anon`
+  (tor), `25-net-privacy`, `30-network`. Loopback comes first (it was
+  `20-loopback` before 1.7): Tor, started once by `16-anon`, gave up when
+  it could not listen on 127.0.0.1, so anonymous mode came up after a
+  restart with Tor not running and nothing getting out.
 - Kernel command line (`scripts/mkimage.sh`): `slab_nomerge debugfs=off
   iommu.passthrough=0 iommu.strict=1 efi=disable_early_pci_dma`.
 - worminit mounts `/proc` with `hidepid=invisible` and `/dev`, `/run` and

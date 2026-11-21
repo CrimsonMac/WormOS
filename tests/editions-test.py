@@ -75,7 +75,8 @@ AMNESIA_CHECKS = [
     ("no installer", "command -v wormos-installer || echo none", r"^none$"),
     ("stricter kernel", "cat /proc/cmdline; cat /sys/kernel/security/lockdown",
      r"init_on_free=1(.|\n)*\[confidentiality\]"),
-    ("anonymous mode on from the start", "worm anon status", r"^Anonymous mode: on"),
+    ("anonymous mode on from the start, Tor running", "worm anon status",
+     r"^Anonymous mode: on(?!, but)"),
     ("Tor runs as its own user",
      "for i in $(seq 30); do pidof tor > /dev/null && break; sleep 2; done; "
      # Tor makes itself non-dumpable, so /proc shows its files as root's:
