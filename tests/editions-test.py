@@ -78,7 +78,9 @@ AMNESIA_CHECKS = [
     ("anonymous mode on from the start", "worm anon status", r"^Anonymous mode: on"),
     ("Tor runs as its own user",
      "for i in $(seq 30); do pidof tor > /dev/null && break; sleep 2; done; "
-     "stat -c %U /proc/$(pidof tor)", r"^tor$"),
+     # Tor makes itself non-dumpable, so /proc shows its files as root's:
+     # read the IDs it runs with.
+     "awk '/^Uid:/ { print $2 }' /proc/$(pidof tor)/status; id -u tor", r"^(\d+)\n\1$"),
     ("anonymous mode cannot be turned off", "worm anon off 2>&1; worm anon status",
      r"always sends everything through Tor(.|\n)*^Anonymous mode: on"),
     ("Tor Browser is there", "command -v tor-browser", r"^/usr/bin/tor-browser$"),
