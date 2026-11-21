@@ -29,17 +29,21 @@ jobs:
   build:
     name: Build (${{ matrix.cc }})
     runs-on: ubuntu-24.04
+    # Debian testing: kernel headers and GTK 4 recent enough for the
+    # Landlock scopes and GTK calls WormOS uses (its own are newer still).
+    container: debian:testing
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         cc: [gcc, clang]
     steps:
-      - uses: actions/checkout@v4
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential clang pkg-config \
-            libcrypt-dev libgtk-4-dev libwayland-dev libwayland-bin wayland-protocols meson ninja-build
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential clang pkg-config curl \
+            ca-certificates git libcrypt-dev libgtk-4-dev libgtk4-layer-shell-dev libwayland-dev \
+            libwayland-bin wayland-protocols meson ninja-build
+      - uses: actions/checkout@v4
       - name: Build and run the unit tests
         run: scripts/ci-build.sh ${{ matrix.cc }}

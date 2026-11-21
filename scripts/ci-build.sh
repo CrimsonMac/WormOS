@@ -13,7 +13,7 @@ set +u
 CC=${1:-${CC:-cc}}
 # Truncation warnings guess that a short name could be 100 KB long: shown,
 # not fatal.
-CFLAGS="-O2 -Werror -Wno-error=format-truncation"
+CFLAGS="-O2 -D_FORTIFY_SOURCE=3 -Werror -Wno-error=format-truncation"
 [ "$(basename "$CC")" = clang ] && CFLAGS="$CFLAGS -Wno-unknown-warning-option"
 dest=$BUILD/ci
 mkdir -p "$dest"
