@@ -9,8 +9,7 @@
 #   wormos-build-tools.tar         the build scripts all recipes run under
 #
 # Packages built from this repository's own code (localsrc, or no sources)
-# get none, nor does wormos-amnesia: mostly WormOS's own files, with GTK's
-# theme sources (published with wormos-gtk-theme) only for its theme. linux-firmware gets its recipe only: the firmware files are
+# get none. linux-firmware gets its recipe only: the firmware files are
 # shipped as they are, with their licences, and the full upstream archive
 # is over 600 MB.
 #
@@ -45,8 +44,6 @@ for wpkg in "$REPO"/*.wpkg; do
 	name=${name%-*}
 	files=()
 	case $name in
-	wormos-amnesia)
-		continue ;;
 	glibc)
 		files=("$SOURCES/glibc-2.44.tar.xz") ;;
 	gcc-libs)

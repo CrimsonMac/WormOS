@@ -4,11 +4,9 @@
     barebones   the operating system alone: no Tor, no Tor Browser, none of
                 the everyday tools; the network works, the basic kit and the
                 core repository are there to add them
-    amnesia     live only, no installer, the grey look with the panel at the
-                bottom, Tor from the start and nothing leaving the machine
-                past it (a server and a UDP listener on the host must never
-                hear from it), the stricter kernel settings; it starts from
-                a USB stick, and pulling the stick out powers it off
+
+Other editions built on WormOS (WormOS Amnesia, in its own repository) add
+their checks here.
 
 The ISO (out/wormos-EDITION.iso by default) boots in QEMU with a GPU, so the
 live user's desktop starts; root logs in on the serial console (with
@@ -68,44 +66,12 @@ BAREBONES_CHECKS = [
      r"WormOS packages(.|\n)* coreutils (.|\n)* 7zip (.|\n)*Not installed"),
 ]
 
-AMNESIA_CHECKS = [
-    ("the live user sees Tor's progress",
-     "for i in $(seq 30); do su live -c 'worm anon status' | grep -q connected && break; sleep 2; done; "
-     "su live -c 'worm anon status'", r"^Anonymous mode: on: all traffic through Tor \(conn"),
-    ("edition", "cat /etc/worm/variant", r"^VARIANT_ID=amnesia$"),
-    ("no installer", "command -v wormos-installer || echo none", r"^none$"),
-    ("stricter kernel", "cat /proc/cmdline; cat /sys/kernel/security/lockdown",
-     r"init_on_free=1(.|\n)*\[confidentiality\]"),
-    ("anonymous mode on from the start, Tor running", "worm anon status",
-     r"^Anonymous mode: on(?!, but)"),
-    ("anonymous mode cannot be turned off", "worm anon off 2>&1; worm anon status",
-     r"(always sends everything through Tor|needs root)(.|\n)*^Anonymous mode: on"),
-    ("Tor Browser is there", "command -v tor-browser", r"^/usr/bin/tor-browser$"),
-    ("grey desktop settings",
-     "tr '\\0' '\\n' < /proc/$(pidof worm-shell)/environ | "
-     "grep -e ^GTK_THEME= -e ^WORM_SHELL_PANEL= -e ^XDG_CONFIG_DIRS= | sort",
-     r"^GTK_THEME=WormOS-Amnesia\nWORM_SHELL_PANEL=bottom\nXDG_CONFIG_DIRS=/etc/xdg/amnesia:"),
-    ("grey wallpaper", "tr '\\0' ' ' < /proc/$(pidof swaybg)/cmdline",
-     r"wormos-amnesia\.png"),
-    ("welcome says what it is", "welcome | head -12",
-     r"WormOS [\d.]+ Amnesia(.|\n)*Nothing here is kept"),
-]
-
 # Checked as root only (with --release the live user logs in).
 ROOT_CHECKS = [
     ("firewall active", "worm fw status", r"^Firewall: active"),
 ]
 BAREBONES_ROOT_CHECKS = [
     ("anonymous mode asks for Tor", "worm anon on 2>&1", r"Tor is not installed"),
-]
-AMNESIA_ROOT_CHECKS = [
-    ("Tor runs as its own user",
-     "for i in $(seq 30); do pidof tor > /dev/null && break; sleep 2; done; "
-     # Tor makes itself non-dumpable, so /proc shows its files as root's:
-     # read the IDs it runs with.
-     "awk '/^Uid:/ { print $2 }' /proc/$(pidof tor)/status; id -u tor", r"^(\d+)\n\1$"),
-    ("firewall sends everything to Tor", "nft list ruleset | grep -c -e redirect -e 'meta skuid'",
-     r"^[2-9]"),
 ]
 
 
@@ -117,7 +83,7 @@ def free_port(kind=socket.SOCK_STREAM):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("edition", choices=["barebones", "amnesia"])
+    parser.add_argument("edition", choices=["barebones"])
     parser.add_argument("iso", nargs="?")
     parser.add_argument("--release", action="store_true",
                         help="a release ISO: root is locked, the live user logs in")
@@ -162,19 +128,13 @@ def main():
     extra = (f"-vga none -device virtio-gpu-pci -monitor unix:{mon_path},server,nowait "
              f"-vnc unix:{os.path.join(tmp, 'vnc')}")
     env = dict(os.environ, IMAGE=disk, QEMU_MEM="3072", QEMU_EXTRA=extra)
-    env["USB_ISO" if args.edition == "amnesia" else "ISO"] = os.path.abspath(iso)
+    env["ISO"] = os.path.abspath(iso)
     proc = subprocess.Popen([os.path.join(ROOT, "scripts", "run-qemu.sh")],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, env=env)
-    checks = COMMON_CHECKS + (BAREBONES_CHECKS if args.edition == "barebones"
-                              else AMNESIA_CHECKS)
-    if args.release and args.edition == "amnesia":
-        checks = checks + [("root cannot log in",
-                            "echo | su -c 'echo got-root' root 2>&1; echo rc=$?",
-                            r"\A(?![\s\S]*got-root)[\s\S]*rc=[1-9]")]
+    checks = COMMON_CHECKS + BAREBONES_CHECKS
     if not args.release:
-        checks = checks + ROOT_CHECKS + (BAREBONES_ROOT_CHECKS if args.edition == "barebones"
-                                         else AMNESIA_ROOT_CHECKS)
+        checks = checks + ROOT_CHECKS + BAREBONES_ROOT_CHECKS
     passed = failures = 0
     total = len(checks) + 3
 
@@ -206,12 +166,8 @@ def main():
             out = con.run(f"wget -q -T 8 -O- http://10.0.2.2:{http_port}/probe 2>&1; "
                           f"echo probe | nc -u -w 2 10.0.2.2 {udp_port} 2>&1; sleep 3; echo sent",
                           60)
-            if args.edition == "amnesia":
-                check("nothing reaches the host past Tor", not heard and "reached" not in out,
-                      f"{out!r}, heard {heard!r}")
-            else:
-                check("direct connections work", ("http", "/probe") in heard,
-                      f"{out!r}, heard {heard!r}")
+            check("direct connections work", ("http", "/probe") in heard,
+                  f"{out!r}, heard {heard!r}")
 
             # The screen, once the desktop has settled.
             time.sleep(5)
@@ -224,24 +180,13 @@ def main():
             sample = range(0, width * height, 97)
             chroma = sum(max(pixels[3 * i:3 * i + 3]) - min(pixels[3 * i:3 * i + 3])
                          for i in sample) / len(sample)
-            if args.edition == "amnesia":
-                check("the screen is grey", chroma < 6, f"mean chroma {chroma:.1f}")
-            else:
-                check("the screen has the WormOS colours", chroma > 6, f"mean chroma {chroma:.1f}")
+            check("the screen has the WormOS colours", chroma > 6, f"mean chroma {chroma:.1f}")
 
-            if args.edition == "amnesia":
-                # Pull the stick out: the machine must be off within seconds.
-                pulled = time.time()
-                mon.cmd("device_del stick")
-                proc.wait(timeout=30)
-                check("pulling the USB stick out powers off at once", True,
-                      f"{time.time() - pulled:.0f}s")
-            else:
-                # The live user powers off as the panel does.
-                con.send("/usr/lib/worm/power off\n" if args.release else "poweroff\n")
-                con.expect("Power down", 120)
-                proc.wait(timeout=60)
-                check("powered off cleanly", True)
+            # The live user powers off as the panel does.
+            con.send("/usr/lib/worm/power off\n" if args.release else "poweroff\n")
+            con.expect("Power down", 120)
+            proc.wait(timeout=60)
+            check("powered off cleanly", True)
         except (TimeoutError, RuntimeError, OSError, subprocess.TimeoutExpired) as e:
             print(f"FAIL  {e} (see {LOG})")
             failures += 1

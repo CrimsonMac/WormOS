@@ -1,3 +1,0 @@
-# WormOS Amnesia: power off when the boot medium is removed.
-type = respawn
-exec = /usr/lib/worm/medium-watch

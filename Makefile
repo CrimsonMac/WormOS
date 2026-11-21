@@ -22,7 +22,7 @@ PACKAGES := base-files busybox worminit wormrd snap \
 	grep sed gawk findutils diffutils patch coreutils wget zip 7zip iproute2 ethtool \
 	pciutils libusb usbutils dosfstools whois traceroute mtr iperf3 socat \
 	tor-browser-bundle licenses \
-	wormos-desktop wormos-installer wormos-amnesia \
+	wormos-desktop wormos-installer \
 	wormos-login
 
 all: image
@@ -49,14 +49,10 @@ image: rootfs
 iso: rootfs
 	scripts/mkiso.sh
 
-# The other editions' ISOs (out/wormos-barebones.iso, out/wormos-amnesia.iso).
-# They assemble the root filesystem again, as that edition.
+# WormOS Barebones' ISO (out/wormos-barebones.iso). It assembles the root
+# filesystem again, as that edition.
 iso-barebones: repo
 	WORMOS_VARIANT=barebones scripts/build-rootfs.sh
-	scripts/mkiso.sh
-
-iso-amnesia: repo
-	WORMOS_VARIANT=amnesia scripts/build-rootfs.sh
 	scripts/mkiso.sh
 
 run:
@@ -109,4 +105,4 @@ clean:
 distclean:
 	rm -rf build out
 
-.PHONY: all toolchain kernel packages repo rootfs image iso iso-barebones iso-amnesia run run-gui test test-wormholes test-torbrowser test-upgrade test-iso test-qemu-windows release sources publish-repo clean distclean
+.PHONY: all toolchain kernel packages repo rootfs image iso iso-barebones run run-gui test test-wormholes test-torbrowser test-upgrade test-iso test-qemu-windows release sources publish-repo clean distclean

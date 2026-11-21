@@ -146,8 +146,7 @@ in the README.
   reach the tmpfs, so deleted data frees memory. A soft reboot finds the
   device through `/dev/wormos-root`.
 - `11-live` (`/usr/lib/worm/live-setup`) creates the user `live` (groups as
-  the first-boot setup gives, no password), clears root's password (not on
-  WormOS Amnesia, where root stays as the image has it), marks
+  the first-boot setup gives, no password), clears root's password, marks
   `/run/wormos/live` and puts a visible copy of the installer's desktop
   entry (`NoDisplay=true` in the system's) in the live user's
   applications. wormlogin then starts the live user's desktop without the
@@ -171,56 +170,32 @@ in the README.
 
 ## Editions
 
-- `WORMOS_VARIANT` (standard, barebones, amnesia) picks the package list
+- `WORMOS_VARIANT` (standard, barebones) picks the package list
   in `scripts/build-rootfs.sh`: the system (base, desktop, network,
   firewall, snapshots, packages, sandboxes, nano), plus the installer,
   Tor with Tor Browser and the everyday tools for standard; plus the
-  installer for barebones; plus Tor, Tor Browser and `wormos-amnesia`
-  (no installer) for amnesia. `wormos-desktop` no longer depends on Tor
+  installer for barebones. `wormos-desktop` no longer depends on Tor
   Browser, vim, tree, lsof or binutils (1.7), so systems upgraded from
   earlier releases keep them as installed packages.
 - `/etc/worm/variant` names the edition (`VARIANT_ID`, `VARIANT`):
-  written by build-rootfs for barebones, shipped by `wormos-amnesia`. The
+  written by build-rootfs for barebones (another edition's package may
+  ship it). The
   welcome text adds `VARIANT` to the name and prefers
   `/usr/share/wormos/guide-VARIANT_ID` for `welcome --full`; mkiso names
   the ISO after it (`out/wormos-VARIANT_ID.iso`) and its menu entries.
   `worm` has `variant_is()`.
-- `make iso-barebones`, `make iso-amnesia`; `scripts/release.sh` builds the
-  standard images first, then `VARIANTS` (default `barebones amnesia`),
+- `make iso-barebones`; `scripts/release.sh` builds the standard images
+  first, then `VARIANTS` (default `barebones`),
   each as an ISO only.
-- WormOS Amnesia (plan and promises: `docs/amnesia.md`):
-  - mkiso adds `lockdown=confidentiality init_on_free=1
-    page_alloc.shuffle=1 randomize_kstack_offset=on vsyscall=none` and
-    leaves "install" out of the menu.
-  - `wormos-amnesia` ships `/etc/worm/anon` (anonymous mode from the first
-    start: `05-firewall` loads its rules before `30-network`, `16-anon`
-    starts Tor), and `worm anon off` refuses there.
-  - Root keeps the image's password (locked in releases), so nothing can
-    mount a disk or change the system. `live-setup` adds the live user to
-    the group `tor` instead, which can read `/run/tor` (the pid file and
-    the notice log): `worm anon status`, which anyone may run, then
-    reports Tor's progress; it tells a running Tor from a missing one with
-    `kill(pid, 0)` (EPERM), since `/proc` hides other users' processes.
-  - The look: the variant file sets `VARIANT_XDG=/etc/xdg/amnesia`,
-    `VARIANT_GTK_THEME=WormOS-Amnesia` and `VARIANT_PANEL=bottom`;
-    `session-env` turns them into `XDG_CONFIG_DIRS` (labwc's `rc.xml` with
-    the theme `WormOS-Amnesia` and its own `autostart`, foot's `foot.ini`,
-    GTK's `settings.ini` are found there first; labwc's `menu.xml` and
-    `environment` still come from `/etc/xdg/labwc`), `GTK_THEME` and
-    `WORM_SHELL_PANEL` (worm-shell anchors the panel at the bottom and
-    opens its menus upwards). worm-shell loads
-    `/usr/share/wormos/shell/variant.css` after its own CSS when it
-    exists. The GTK theme is GTK's theme sources with
-    `recipes/wormos-amnesia/files/_colors.scss`, built like
-    `wormos-gtk-theme`; the wallpaper is `wallpaper.py --grey` (the WormOS
-    one, desaturated with cairo's HSL saturation operator).
-  - The autostart opens the welcome terminal at every start (the home
-    folder is always new) and never the installer.
-  - wormrd links the live boot medium as `/dev/wormos-medium`; Amnesia's
-    `04-medium` service (`medium-watch`) polls `/sys/class/block/NAME`
-    every second and runs `poweroff -f` when a USB stick goes away (not
-    for `sr*`: a disc drive stays). `run-qemu.sh` with `USB_ISO` attaches
-    an ISO as a USB stick (device `stick`) for the test.
+- The hooks other editions build on (WormOS Amnesia, in its own
+  repository, uses them): the variant file may set `VARIANT_XDG` (a
+  directory put first in `XDG_CONFIG_DIRS` by `session-env`),
+  `VARIANT_GTK_THEME` (`GTK_THEME`) and `VARIANT_PANEL` (`bottom` sets
+  `WORM_SHELL_PANEL`: worm-shell anchors the panel at the bottom and opens
+  its menus upwards); worm-shell loads `/usr/share/wormos/shell/variant.css`
+  after its own CSS when it exists; wormrd links the live boot medium as
+  `/dev/wormos-medium`; `run-qemu.sh` with `USB_ISO` attaches an ISO as a
+  USB stick (device `stick`); `worm` has `variant_is()`.
 
 ## snap
 
@@ -1244,19 +1219,13 @@ in the README.
   (Ctrl+Backspace, a suggestion from the history taken with End) and
   copies text both ways through a second VNC client using the extended
   clipboard.
-- `tests/editions-test.py barebones|amnesia [ISO] [--release]` boots an
-  edition's ISO with a GPU (the live desktop starts) and a monitor socket.
-  Common checks (from memory, read-only, firewall, desktop as `live`),
-  then Barebones: the variant, no Tor/Tor Browser/extra tools, the system
-  commands all there, `worm anon on` asking for Tor, the network, the
-  basic kit; Amnesia: the variant, no installer, the kernel options and
-  lockdown, anonymous mode on, Tor as its own user, `worm anon off`
-  refused, the session's `GTK_THEME`/`WORM_SHELL_PANEL`/`XDG_CONFIG_DIRS`,
-  the grey wallpaper, the welcome text, the firewall's redirects. A web
-  server and a UDP listener on the host must hear from Barebones and must
-  hear nothing from Amnesia. A screendump's mean chroma (max minus min
-  channel) must be low on Amnesia and not on Barebones. `--release` logs
-  in as `live` (root is locked).
+- `tests/editions-test.py barebones [ISO] [--release]` boots the Barebones
+  ISO with a GPU (the live desktop starts) and a monitor socket and checks
+  the edition: from memory, read-only, desktop as `live`, the variant, no
+  Tor/Tor Browser/extra tools, the system commands all there, the
+  network, the basic kit; as root also the firewall and `worm anon on`
+  asking for Tor. A web server on the host must hear from it, and a
+  screendump must have the WormOS colours. `--release` logs in as `live`.
 - `make test-iso` (`tests/iso-test.py [ISO]`) boots the ISO
   (`run-qemu.sh` with `ISO=`, an IDE CD with `bootindex=0`) with a fresh
   12 GiB qcow2 disk and 3 GiB of memory, logs in as root on the serial

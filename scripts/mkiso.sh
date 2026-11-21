@@ -18,11 +18,9 @@
 #                                      writes its own partition table)
 #   wormos/version                     the WormOS version
 #
-# ISO (default out/wormos.iso, out/wormos-barebones.iso or
-# out/wormos-amnesia.iso) chooses the output file. The edition is the one
-# the root filesystem was assembled as (WORMOS_VARIANT in build-rootfs.sh):
-# the amnesia ISO only runs live (no installer) and boots with stricter
-# kernel settings.
+# ISO (default out/wormos.iso, or out/wormos-VARIANT_ID.iso for another
+# edition) chooses the output file. The edition is the one the root
+# filesystem was assembled as (WORMOS_VARIANT in build-rootfs.sh).
 
 . "$(dirname "$0")/env.sh"
 
@@ -63,14 +61,7 @@ sed -n 's/^VERSION_ID=//p' "$ROOTFS/etc/os-release" > "$TREE/wormos/version"
 
 # The installed system's command line, with the live system instead of root=.
 cmdline=$(sed 's/root=UUID=[^ ]* //' "$PARTS/cmdline")
-if [ "$VARIANT_ID" = amnesia ]; then
-	# Nothing to install, and less for an attacker: kernel memory stays
-	# unreadable even to root (lockdown), freed memory is wiped at once.
-	cmdline="$cmdline lockdown=confidentiality init_on_free=1 page_alloc.shuffle=1 randomize_kstack_offset=on vsyscall=none"
-	entry="$TITLE"
-else
-	entry="Try or install $TITLE"
-fi
+entry="Try or install $TITLE"
 cat > "$TREE/boot/grub/grub.cfg" <<EOF
 serial --unit=0 --speed=115200
 terminal_input console serial

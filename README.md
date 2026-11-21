@@ -6,9 +6,8 @@ A lightweight, security-focused Linux operating system built around instant, tam
 > firewall, sandboxes, Tor and Tor Browser, tool kits and a light Wayland
 > desktop with its own panel, login screen, snapshot timeline and sound.
 > It runs live from an ISO and installs onto a disk, or as a ready-made
-> disk image in QEMU and virt-manager. Three editions: the standard one,
-> Barebones (the operating system alone) and Amnesia (a live system that
-> forgets everything and sends all traffic through Tor; a preview).
+> disk image in QEMU and virt-manager. Two editions: the standard one
+> and Barebones (the operating system alone).
 
 ## Philosophy
 
@@ -38,8 +37,7 @@ A lightweight, security-focused Linux operating system built around instant, tam
 - A lightweight Wayland desktop.
 - A live ISO that runs from memory and installs WormOS onto a disk.
 - Editions: WormOS (everything above, with everyday tools and Tor
-  Browser), WormOS Barebones (the operating system alone) and WormOS
-  Amnesia (live only, forgets everything, Tor from the first packet).
+  Browser) and WormOS Barebones (the operating system alone).
 
 ## Trying it
 
@@ -49,20 +47,18 @@ off).
 
 ### Editions
 
-| | WormOS | WormOS Barebones | WormOS Amnesia |
-|---|---|---|---|
-| File | `wormos-1.7-x86_64.iso`, `.qcow2` | `wormos-1.7-barebones-x86_64.iso` | `wormos-1.7-amnesia-x86_64.iso` |
-| What | the full system | the operating system alone: desktop, network, firewall, snapshots, packages, sandboxes | the Barebones system with Tor and Tor Browser, live only |
-| Tor, Tor Browser | yes (anonymous mode off until you turn it on) | no (`wh install tor tor-browser`) | always on, everything goes through Tor |
-| Everyday tools | yes (below) | no (`worm kit install basic`) | no |
-| Installs onto a disk | yes | yes | never |
-| Keeps your changes | yes | yes | never: everything is gone at shutdown |
-| Look | violet | violet | grey, panel at the bottom |
+| | WormOS | WormOS Barebones |
+|---|---|---|
+| File | `wormos-1.7-x86_64.iso`, `.qcow2` | `wormos-1.7-barebones-x86_64.iso` |
+| What | the full system | the operating system alone: desktop, network, firewall, snapshots, packages, sandboxes |
+| Tor, Tor Browser | yes (anonymous mode off until you turn it on) | no (`wh install tor tor-browser`) |
+| Everyday tools | yes (below) | no (`worm kit install basic`) |
 
-WormOS Amnesia is meant for one-off tasks, not for work: see
-[docs/amnesia.md](docs/amnesia.md) for what it promises, how it works
-and what comes next. Root cannot log in on it, so nothing can make it keep
-anything or reach a disk.
+Both run live from the ISO and install onto a disk. WormOS Amnesia, a
+live-only system that forgets everything and sends all traffic through
+Tor, is developed in its own repository,
+[CrimsonMac/WormOS-Amnesia](https://github.com/CrimsonMac/WormOS-Amnesia),
+on top of this one.
 
 - **The ISO** (`wormos-1.7-x86_64.iso`): a live system and an installer.
   Boot a virtual machine from it (as a CD/DVD), or write it to a USB stick
@@ -654,14 +650,11 @@ firewall), installs WormOS onto the disk with the installer's backend,
 then starts the installed disk with UEFI and with BIOS firmware, and the
 ISO with BIOS firmware.
 
-`make iso-barebones` and `make iso-amnesia` assemble the root filesystem
-again as that edition and build its ISO (`out/wormos-barebones.iso`,
-`out/wormos-amnesia.iso`); `tests/editions-test.py barebones` and
-`tests/editions-test.py amnesia` boot them and check what makes each
-edition (for Amnesia: Tor from the start, nothing reaching the host past
-it, the grey screen). `tests/iso-test.py out/wormos-barebones.iso` runs
-the installation checks on Barebones too. `make release VERSION=X`
-builds all three editions.
+`make iso-barebones` assembles the root filesystem again as Barebones and
+builds its ISO (`out/wormos-barebones.iso`); `tests/editions-test.py
+barebones` boots it and checks what makes the edition, and
+`tests/iso-test.py out/wormos-barebones.iso` runs the installation checks
+on it too. `make release VERSION=X` builds both editions.
 
 On a Windows PC, from WSL: `make test-qemu-windows` boots the image in
 QEMU for Windows, which it expects under `D:\qemu` (see
