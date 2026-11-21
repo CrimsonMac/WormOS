@@ -85,6 +85,7 @@ int db_remove(const char *name);
 char *db_owner(const char *path, const char *except);   /* caller frees */
 int db_files(const char *name, char ***paths, int *count);
 int db_disown(const char *name, const char *path);
+int db_adopt(const char *name, char type, const char *path);
 void db_free_files(char **paths, int count);
 
 /* hooks.c */

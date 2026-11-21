@@ -642,6 +642,76 @@ static int check_conflict(const char *name, const char *path, int pfd,
 	return 0;
 }
 
+static int is_busybox_link(const char *target)
+{
+	return !strcmp(target, "busybox") || !strcmp(target, "../bin/busybox");
+}
+
+/*
+ * BusyBox applets give way to full versions of the same commands (GNU grep,
+ * coreutils...): another package took the link over (db_disown), so a new
+ * busybox leaves it alone instead of failing on the conflict.
+ */
+static int busybox_yields(const char *name, const struct entry *e)
+{
+	char *owner;
+
+	if (strcmp(name, "busybox") != 0 || !is_busybox_link(e->link))
+		return 0;
+	if (!(owner = db_owner(e->path, "busybox")))
+		return 0;
+	free(owner);
+	return 1;
+}
+
+/*
+ * The package that took over BusyBox applet links is going away: point
+ * them at busybox again, so the commands do not disappear. The applets
+ * busybox ships are listed in BUSYBOX_LINKS.
+ */
+#define BUSYBOX_LINKS "usr/share/busybox/links"
+
+static void busybox_restore(char **paths, int count)
+{
+	char line[PATH_MAX];
+	struct set *removed = set_new();
+	FILE *f;
+
+	if (!db_installed("busybox", NULL)) {
+		set_free(removed);
+		return;
+	}
+	for (int i = 0; i < count; i++)
+		if (paths[i][0] != 'd')
+			set_add(removed, paths[i] + 2, NULL);
+	{
+		int fd = open_in_root(BUSYBOX_LINKS, O_RDONLY | O_CLOEXEC);
+
+		if (fd < 0 || !(f = fdopen(fd, "r"))) {
+			if (fd >= 0)
+				close(fd);
+			set_free(removed);
+			return;
+		}
+	}
+	while (fgets(line, sizeof(line), f)) {
+		const char *leaf, *target;
+		int pfd;
+
+		line[strcspn(line, "\n")] = '\0';
+		if (!*line || !set_get(removed, line) || clean_path(line) < 0)
+			continue;
+		target = strncmp(line, "usr/sbin/", 9) == 0 ? "../bin/busybox" : "busybox";
+		if ((pfd = open_parent(line, &leaf, 0)) < 0)
+			continue;
+		if (symlinkat(target, pfd, leaf) == 0)
+			db_adopt("busybox", 'l', line);
+		close(pfd);
+	}
+	fclose(f);
+	set_free(removed);
+}
+
 static struct set *old_files(const char *name)
 {
 	struct set *old = set_new();
@@ -786,6 +856,11 @@ int pkg_install(const char *wpkg, const char *expect_name)
 			fprintf(files, "f %s\n", e.path);
 			break;
 		case '2':
+			if (busybox_yields(p.name, &e)) {
+				/* A full version of this command is installed. */
+				close(pfd);
+				continue;
+			}
 			if (check_conflict(p.name, e.path, pfd, leaf, old) < 0)
 				goto fail_entry;
 			unlinkat(pfd, tmp, 0);
@@ -924,6 +999,8 @@ int pkg_remove(const char *name)
 			warn("cannot remove /%s: %s", path, strerror(errno));
 		close(pfd);
 	}
+	if (strcmp(name, "busybox") != 0)
+		busybox_restore(paths, count);
 	db_free_files(paths, count);
 	return db_remove(name);
 }

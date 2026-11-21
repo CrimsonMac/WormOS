@@ -1,6 +1,6 @@
 name=busybox
 version=1.38.0
-release=4
+release=5
 description="Core command-line utilities (temporary userland)"
 depends=(glibc)
 source=(https://busybox.net/downloads/busybox-$version.tar.bz2)
@@ -77,4 +77,10 @@ package() {
 			*)       ln -sf busybox "$pkgdir/usr/bin/$applet" ;;
 		esac
 	done < busybox.links
+
+	# The links shipped, for wh: when a package that took one over (GNU
+	# grep, coreutils...) is removed, wh points it at busybox again.
+	(cd "$pkgdir" && find usr/bin usr/sbin -type l -lname '*busybox' | sort) \
+		> ../busybox-links
+	install -Dm644 ../busybox-links "$pkgdir/usr/share/busybox/links"
 }

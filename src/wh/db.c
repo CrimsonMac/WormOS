@@ -245,6 +245,23 @@ int db_disown(const char *name, const char *path)
 	return ret;
 }
 
+/* Add path (of the given type: f, l, h, d) to the file list of package name. */
+int db_adopt(const char *name, char type, const char *path)
+{
+	char dir[PATH_MAX], file[PATH_MAX + 8];
+	FILE *f;
+	int ret;
+
+	db_dir(dir, sizeof(dir), name);
+	snprintf(file, sizeof(file), "%s/files", dir);
+	if (!(f = fopen(file, "ae")))
+		return -1;
+	fprintf(f, "%c %s\n", type, path);
+	ret = fclose(f);
+	owners_free();
+	return ret;
+}
+
 void db_free_files(char **paths, int count)
 {
 	for (int i = 0; i < count; i++)
