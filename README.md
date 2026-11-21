@@ -363,7 +363,9 @@ worm anon off
 In anonymous mode only Tor itself reaches the network, and only with TCP.
 Every other TCP connection, from any program, user, wormhole or root, is
 sent through Tor, DNS queries are answered by Tor, and everything Tor
-cannot carry (UDP, ICMP, IPv6) is blocked. The one exception is root's
+cannot carry (UDP, ICMP, IPv6) is blocked. Each destination address gets
+its own Tor circuit, so an exit relay cannot link connections to different
+sites. The one exception is root's
 DHCP renewal of the local address. Connections that were open before the
 switch are cut, not carried on outside Tor. The rules load before the network comes
 up and stay in place while Tor connects, so nothing leaks in between.

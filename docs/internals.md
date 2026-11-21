@@ -429,7 +429,8 @@ in the README.
   package) starts Tor once `/var` is mounted.
 - Tor (`recipes/tor`) is built as a client only (`--disable-module-relay`),
   without GeoIP data. `/etc/tor/torrc`: user `tor`, data in `/var/lib/tor`,
-  pid and notices log in `/run/tor`, SocksPort 9050, TransPort 9040,
+  pid and notices log in `/run/tor`, SocksPort 9050, TransPort 9040
+  (`IsolateDestAddr`: one circuit per destination address),
   DNSPort 5353 (IPv4 and IPv6 loopback), .onion names automapped into
   10.192.0.0/10. `worm anon status` reads the last "Bootstrapped N%" line
   of the log.
