@@ -28,7 +28,8 @@
  * and grows the filesystem to the file's size. Everything then works as on
  * a disk, in memory, and the boot medium can be removed. The device the
  * root came from is linked as /dev/wormos-root (fstab mounts the other
- * subvolumes from it, and a soft reboot finds the root there again).
+ * subvolumes from it, and a soft reboot finds the root there again); the
+ * live system's boot medium as /dev/wormos-medium.
  */
 
 #define _GNU_SOURCE
@@ -81,6 +82,7 @@ static int opt_live;
 static int soft_reboot;
 
 #define ROOT_LINK     "/dev/wormos-root"
+#define MEDIUM_LINK   "/dev/wormos-medium"
 #define LIVE_VOLUME   "WORMOS_LIVE"
 #define LIVE_ISO      "/iso"
 #define LIVE_RAM      "/live"
@@ -432,6 +434,10 @@ static void live_setup(char *dev, size_t len)
 
 	if (find_live_iso(iso, sizeof(iso)) < 0)
 		fatal("the WormOS ISO (volume %s) was not found", LIVE_VOLUME);
+	/* The medium it started from (WormOS Amnesia powers off when it goes). */
+	unlink(MEDIUM_LINK);
+	if (symlink(iso, MEDIUM_LINK) < 0)
+		log_msg("cannot link %s: %s", MEDIUM_LINK, strerror(errno));
 	mount_fs(iso, LIVE_ISO, "iso9660", MS_RDONLY | MS_NOSUID | MS_NODEV, NULL);
 	snprintf(opts, sizeof(opts), "size=%llu,mode=0700", size);
 	mount_fs("tmpfs", LIVE_RAM, "tmpfs", MS_NOSUID | MS_NODEV, opts);

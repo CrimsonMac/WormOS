@@ -7,6 +7,7 @@
 
 #define SHELL_APP_ID   "org.wormos.Shell"
 #define SHELL_CSS      "/usr/share/wormos/shell/shell.css"
+#define SHELL_VARIANT_CSS "/usr/share/wormos/shell/variant.css"
 
 /* A window of any program, as the compositor reports it (toplevels.c). */
 struct toplevel {

@@ -1,0 +1,9 @@
+# The WormOS edition this system was built as: WormOS Amnesia, a live
+# system that forgets everything when it stops and sends all traffic
+# through Tor.
+VARIANT_ID=amnesia
+VARIANT="Amnesia"
+# The desktop session reads these (/usr/lib/worm/session-env).
+VARIANT_XDG=/etc/xdg/amnesia
+VARIANT_GTK_THEME=WormOS-Amnesia
+VARIANT_PANEL=bottom

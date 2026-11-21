@@ -2,11 +2,13 @@
 
 A lightweight, security-focused Linux operating system built around instant, tamper-resistant snapshots.
 
-> **Status:** 1.6: a read-only system with snapshots, packages, a
+> **Status:** 1.7: a read-only system with snapshots, packages, a
 > firewall, sandboxes, Tor and Tor Browser, tool kits and a light Wayland
 > desktop with its own panel, login screen, snapshot timeline and sound.
 > It runs live from an ISO and installs onto a disk, or as a ready-made
-> disk image in QEMU and virt-manager.
+> disk image in QEMU and virt-manager. Three editions: the standard one,
+> Barebones (the operating system alone) and Amnesia (a live system that
+> forgets everything and sends all traffic through Tor; a preview).
 
 ## Philosophy
 
@@ -35,14 +37,34 @@ A lightweight, security-focused Linux operating system built around instant, tam
   automatic snapshots before every change (`snap auto on|off`).
 - A lightweight Wayland desktop.
 - A live ISO that runs from memory and installs WormOS onto a disk.
+- Editions: WormOS (everything above, with everyday tools and Tor
+  Browser), WormOS Barebones (the operating system alone) and WormOS
+  Amnesia (live only, forgets everything, Tor from the first packet).
 
 ## Trying it
 
 Download a release from the release page and check it against
-`SHA256SUMS`. Both kinds start with UEFI or BIOS firmware (Secure Boot
+`SHA256SUMS`. All of them start with UEFI or BIOS firmware (Secure Boot
 off).
 
-- **The ISO** (`wormos-1.6-x86_64.iso`): a live system and an installer.
+### Editions
+
+| | WormOS | WormOS Barebones | WormOS Amnesia |
+|---|---|---|---|
+| File | `wormos-1.7-x86_64.iso`, `.qcow2` | `wormos-1.7-barebones-x86_64.iso` | `wormos-1.7-amnesia-x86_64.iso` |
+| What | the full system | the operating system alone: desktop, network, firewall, snapshots, packages, sandboxes | the Barebones system with Tor and Tor Browser, live only |
+| Tor, Tor Browser | yes (anonymous mode off until you turn it on) | no (`wh install tor tor-browser`) | always on, everything goes through Tor |
+| Everyday tools | yes (below) | no (`worm kit install basic`) | no |
+| Installs onto a disk | yes | yes | never |
+| Keeps your changes | yes | yes | never: everything is gone at shutdown |
+| Look | violet | violet | grey, panel at the bottom |
+
+WormOS Amnesia is meant for one-off tasks, not for work: see
+[docs/amnesia.md](docs/amnesia.md) for what it promises, how it works
+and what comes next. Root cannot log in on it, so nothing can make it keep
+anything or reach a disk.
+
+- **The ISO** (`wormos-1.7-x86_64.iso`): a live system and an installer.
   Boot a virtual machine from it (as a CD/DVD), or write it to a USB stick
   as it is (`dd`, or a tool such as Ventoy or balenaEtcher) and start a PC
   from the stick. WormOS copies itself into memory and starts the desktop
@@ -56,13 +78,13 @@ off).
   passwords, as in the disk image below. The live system's snapshots and
   files are not carried over.
 
-- **The disk image for QEMU / virt-manager** (`wormos-1.6-x86_64.qcow2`): an
+- **The disk image for QEMU / virt-manager** (`wormos-1.7-x86_64.qcow2`): an
   installed system, ready to start. In virt-manager,
   import an existing disk image and choose a generic recent Linux. From
   the command line:
   ```
   qemu-system-x86_64 -machine q35 -accel kvm -cpu host -m 2048 -smp 2 \
-      -drive file=wormos-1.6-x86_64.qcow2,if=virtio \
+      -drive file=wormos-1.7-x86_64.qcow2,if=virtio \
       -nic user,model=virtio-net-pci -device virtio-vga \
       -device virtio-keyboard-pci -device virtio-tablet-pci \
       -device virtio-serial-pci \
@@ -81,7 +103,7 @@ off).
   ```
   & "C:\Program Files\qemu\qemu-system-x86_64.exe" -machine q35 `
       -accel whpx,kernel-irqchip=off -m 2048 -smp 2 `
-      -drive file=wormos-1.6-x86_64.qcow2,if=virtio `
+      -drive file=wormos-1.7-x86_64.qcow2,if=virtio `
       -nic user,model=virtio-net-pci -device virtio-vga -display sdl `
       -device virtio-keyboard-pci -device virtio-tablet-pci
   ```
@@ -253,13 +275,17 @@ built from source and kept in the core repository:
 |---|---|
 | Shells and terminal | zsh, bash, tmux, less, htop, ncdu, tree |
 | Editors | nano, vim (also `vi`) |
+| Text | GNU grep (with `-P`), sed, gawk, find and xargs, diff, cmp, patch |
 | Development | git, Python 3 (with `venv` and pip), sqlite3, jq, strace, binutils (objdump, readelf, nm, strings) |
-| Archives | tar, cpio and unzip from libarchive (zip, 7z, ISO, xz, zstd...), xz, bzip2, zstd, gzip |
-| Network | curl, OpenSSH client (ssh, scp, sftp), rsync, nmap with ncat and nping, tcpdump, wg (WireGuard) |
+| Archives | tar, cpio and unzip from libarchive (zip, 7z, ISO, xz, zstd...), 7-Zip (`7z`), zip, xz, bzip2, zstd, gzip |
+| Network | curl, wget, ip, ss and tc (iproute2), ethtool, whois, traceroute, OpenSSH client (ssh, scp, sftp), rsync, nmap with ncat and nping, tcpdump, wg (WireGuard) |
+| Devices | lspci, lsusb, mkfs.fat and fsck.fat |
 | Other | file, lsof, gpg, Tor Browser |
 
 Each can be removed with `wh remove`. `worm help` lists WormOS's own
-commands.
+commands. The commands that also exist in BusyBox (grep, sed, diff, ip...)
+take over its small versions; removing the package brings BusyBox's back.
+WormOS Barebones has none of these; `worm kit install basic` adds them all.
 
 ### Software from Debian and Kali
 
@@ -519,8 +545,9 @@ worm kit remove forensics     # remove it again
 
 | Kit | For |
 |---|---|
+| `basic` | the everyday tools of the standard edition and a few more (coreutils, GNU text tools, 7-Zip, wget, iproute2, mtr, iperf3, socat, lspci, lsusb, htop, vim, git, Python, dig...): mostly WormOS packages |
 | `forensics` | disk images, deleted files, metadata, hashes (sleuthkit, testdisk, foremost, binwalk, exiftool, yara...) |
-| `network` | lookups, routes, throughput, captures (dig, mtr, iperf3, socat, tshark, ngrep...) |
+| `network` | lookups, routes, throughput, captures (whois, traceroute, mtr, iperf3, socat from WormOS; dig, tshark, ngrep...) |
 | `blueteam` | malware scanning and audits (clamav, lynis, chkrootkit, rkhunter, yara...) |
 | `reverse` | disassemblers and debuggers (radare2, gdb, ltrace, upx, pwntools...) |
 | `web` | web application scanners and fuzzers (sqlmap, gobuster, ffuf, feroxbuster...) |
@@ -531,7 +558,10 @@ worm kit remove forensics     # remove it again
 Each tool comes from the first source that has it (Debian, then Kali) and
 runs in that distribution's wormhole, which shares your home folder: your
 files are the kits' workspace, and the base system stays untouched. A tool
-no source has is reported and skipped. Open samples you do not trust in a
+no source has is reported and skipped. Tools that are WormOS packages
+(most of `basic`, a few of `network`) are installed last, all in one
+change with one quick restart, and removing the kit keeps those that were
+there before it. Open samples you do not trust in a
 blackhole, not with a kit's tools on your files.
 
 Use these tools only on systems and data you are allowed to examine.
@@ -601,7 +631,7 @@ the QEMU monitor like a user would. It answers the first-boot setup, logs
 in (which starts the desktop), types into the terminal, opens another with
 Super+Enter, checks a screendump of the real screen, and compares memory
 use and system size with their budgets. `tests/desktop-test.py --release
-out/release/wormos-1.6-x86_64.qcow2` runs the same checks on a release
+out/release/wormos-1.7-x86_64.qcow2` runs the same checks on a release
 image, where root can only log in once the first-boot setup is done.
 
 `make test` boots a throwaway copy of the image, checks the running system
@@ -623,6 +653,15 @@ empty disk: it checks the live system (running from memory, snapshots,
 firewall), installs WormOS onto the disk with the installer's backend,
 then starts the installed disk with UEFI and with BIOS firmware, and the
 ISO with BIOS firmware.
+
+`make iso-barebones` and `make iso-amnesia` assemble the root filesystem
+again as that edition and build its ISO (`out/wormos-barebones.iso`,
+`out/wormos-amnesia.iso`); `tests/editions-test.py barebones` and
+`tests/editions-test.py amnesia` boot them and check what makes each
+edition (for Amnesia: Tor from the start, nothing reaching the host past
+it, the grey screen). `tests/iso-test.py out/wormos-barebones.iso` runs
+the installation checks on Barebones too. `make release VERSION=X`
+builds all three editions.
 
 On a Windows PC, from WSL: `make test-qemu-windows` boots the image in
 QEMU for Windows, which it expects under `D:\qemu` (see

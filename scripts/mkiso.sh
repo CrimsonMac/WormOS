@@ -18,11 +18,24 @@
 #                                      writes its own partition table)
 #   wormos/version                     the WormOS version
 #
-# ISO (default out/wormos.iso) chooses the output file.
+# ISO (default out/wormos.iso, out/wormos-barebones.iso or
+# out/wormos-amnesia.iso) chooses the output file. The edition is the one
+# the root filesystem was assembled as (WORMOS_VARIANT in build-rootfs.sh):
+# the amnesia ISO only runs live (no installer) and boots with stricter
+# kernel settings.
 
 . "$(dirname "$0")/env.sh"
 
-ISO=${ISO:-$OUT/wormos.iso}
+VARIANT_ID=standard
+VARIANT=
+[ -f "$ROOTFS/etc/worm/variant" ] && . "$ROOTFS/etc/worm/variant"
+if [ "$VARIANT_ID" = standard ]; then
+	ISO=${ISO:-$OUT/wormos.iso}
+	TITLE="WormOS"
+else
+	ISO=${ISO:-$OUT/wormos-$VARIANT_ID.iso}
+	TITLE="WormOS $VARIANT"
+fi
 VOLUME=WORMOS_LIVE
 WORK=$BUILD/iso
 PARTS=$WORK/parts
@@ -50,6 +63,14 @@ sed -n 's/^VERSION_ID=//p' "$ROOTFS/etc/os-release" > "$TREE/wormos/version"
 
 # The installed system's command line, with the live system instead of root=.
 cmdline=$(sed 's/root=UUID=[^ ]* //' "$PARTS/cmdline")
+if [ "$VARIANT_ID" = amnesia ]; then
+	# Nothing to install, and less for an attacker: kernel memory stays
+	# unreadable even to root (lockdown), freed memory is wiped at once.
+	cmdline="$cmdline lockdown=confidentiality init_on_free=1 page_alloc.shuffle=1 randomize_kstack_offset=on vsyscall=none"
+	entry="$TITLE"
+else
+	entry="Try or install $TITLE"
+fi
 cat > "$TREE/boot/grub/grub.cfg" <<EOF
 serial --unit=0 --speed=115200
 terminal_input console serial
@@ -58,12 +79,12 @@ terminal_output console serial
 set timeout=5
 set default=0
 
-menuentry "Try or install WormOS" {
+menuentry "$entry" {
 	linux /boot/vmlinuz wormos.live $cmdline
 	initrd /boot/initramfs.img
 }
 
-menuentry "Try or install WormOS (no network)" {
+menuentry "$entry (no network)" {
 	linux /boot/vmlinuz wormos.live wormos.safe $cmdline
 	initrd /boot/initramfs.img
 }

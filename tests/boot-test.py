@@ -169,7 +169,7 @@ BLACKHOLE_CHECKS = [
      "bh open t1 -- mount -t btrfs -o subvol=@snapshots /dev/vda2 /tmp 2>&1",
      r"permission denied|not permitted"),
     ("only loopback", "bh open t1 -- sh -c 'echo n=$(ip -o link | wc -l)'", r"^n=1$"),
-    ("no network", "bh open t1 -- wget -q -T 5 -O- http://10.0.2.2:1/ 2>&1", r"unreachable"),
+    ("no network", "bh open t1 -- busybox wget -q -T 5 -O- http://10.0.2.2:1/ 2>&1", r"unreachable"),
     ("host processes hidden",
      "bh open t1 -- sh -c 'echo n=$(ls /proc | grep -c \"^[0-9]\")'", r"^n=[1-6]$"),
     ("cannot signal host processes", "bh open t1 -- kill -0 $(pidof syslogd) 2>&1",
@@ -278,12 +278,12 @@ BH_NET_CHECKS = [
      r"inet 100\.96\.0\.2/29"),
     ("names through the host's resolver",
      "bh open --net -- nslookup -type=a localhost 2>&1", r"127\.0\.0\.1"),
-    ("local network kept out", "bh open --net -- wget -q -T 5 -O- {repo}index 2>&1; echo rc=$?",
+    ("local network kept out", "bh open --net -- busybox wget -q -T 5 -O- {repo}index 2>&1; echo rc=$?",
      r"rc=[1-9]"),
     ("local network with --lan",
-     "bh open --net --lan -- wget -q -T 10 -O- {repo}index | head -c 0; echo rc=$?", r"^rc=0$"),
+     "bh open --net --lan -- busybox wget -q -T 10 -O- {repo}index | head -c 0; echo rc=$?", r"^rc=0$"),
     ("host kept out even with --lan",
-     "bh open --net --lan -- wget -q -T 5 -O- http://10.0.2.15:9/ 2>&1; echo rc=$?",
+     "bh open --net --lan -- busybox wget -q -T 5 -O- http://10.0.2.15:9/ 2>&1; echo rc=$?",
      r"rc=[1-9]"),
     ("network still cannot be reconfigured", "bh open --net -- ip route del default 2>&1",
      r"not permitted"),
@@ -298,7 +298,7 @@ BH_NET_CHECKS = [
      r"Read-only|Permission denied"),
     ("exit code comes back", "bh open --vm v1 -- sh -c 'exit 7'; echo rc=$?", r"rc=7"),
     ("guest network with --net --lan",
-     "bh open --vm --net --lan v1 -- wget -q -T 20 -O- {repo}index | head -c 0; echo rc=$?",
+     "bh open --vm --net --lan v1 -- busybox wget -q -T 20 -O- {repo}index | head -c 0; echo rc=$?",
      r"rc=0"),
     ("monitor jailed and limited",
      "bh open --vm v1 -- sleep 30 & for i in $(seq 20); do p=$(pidof lkvm) && break; sleep 1; done; "
@@ -359,7 +359,10 @@ PASSWD_CHECKS = [
 ]
 
 KIT_CHECKS = [
-    ("tool kits listed", "worm kit list", r"^forensics(.|\n)*^pentest(.|\n)*^web(.|\n)*^windows"),
+    ("tool kits listed", "worm kit list",
+     r"^basic(.|\n)*^forensics(.|\n)*^pentest(.|\n)*^web(.|\n)*^windows"),
+    ("basic kit marks core packages", "worm kit show basic",
+     r"WormOS packages(.|\n)* coreutils (.|\n)* 7zip\*(.|\n)*Tools \(from Debian(.|\n)*bind9-dnsutils"),
     ("windows kit points at VM blackholes", "worm kit show windows", r"bh open --vm(.|\n)*wine"),
     ("kit contents", "worm kit show forensics", r"sleuthkit(.|\n)*Not installed"),
     ("unknown kit refused", "worm kit show nothing 2>&1; echo rc=$?", r"no kit(.|\n)*rc=1"),
@@ -387,16 +390,16 @@ ANON_CHECKS = [
      r"ct status dnat ip daddr 127\.0\.0\.1 accept(.|\n)*meta skuid \d+ meta l4proto (tcp|6) accept"
      r"(.|\n)*meta skuid 0 udp sport 68 udp dport 67 accept"),
     ("everything else blocked", "ping -c 1 -W 3 10.0.2.2 2>&1", r"not permitted|100% packet loss"),
-    ("direct request attempted", "wget -q -T 10 -O- {repo}anon-leak-check 2>&1; echo done",
+    ("direct request attempted", "busybox wget -q -T 10 -O- {repo}anon-leak-check 2>&1; echo done",
      r"done$"),
-    ("connections reach Tor", "wget -q -T 10 -O- http://198.51.100.1/ 2>&1; echo rc=$?",
+    ("connections reach Tor", "busybox wget -q -T 10 -O- http://198.51.100.1/ 2>&1; echo rc=$?",
      r"\A(?![\s\S]*refused)[\s\S]*rc="),
     ("status shows it", "worm status", r"DNS\s+through Tor(.|\n)*Anonymity\s+on"),
     ("survives a firewall reload", "worm fw load && nft list chain inet worm anon_nat | grep -c 9040",
      r"^1$"),
     ("worm anon off", "worm anon off", r"^Anonymous mode is off"),
     ("tor stopped", "sleep 2; pidof tor || echo none", r"^none$"),
-    ("direct connections again", "wget -q -T 10 -O- {repo}anon-off-check 2>&1; echo done",
+    ("direct connections again", "busybox wget -q -T 10 -O- {repo}anon-off-check 2>&1; echo done",
      r"done$"),
 ]
 
@@ -408,7 +411,7 @@ PANIC_CHECKS = [
      r"Network cut(.|\n)*Stopped 1 blackhole(.|\n)*snapshot \d+ \(pinned"),
     ("blackhole stopped, files kept", "sleep 1; bh list", r"^p1\s+idle"),
     ("devices down", "ip -o link show eth0", r"^\d+: eth0: <(?![^>]*\bUP\b)"),
-    ("nothing gets out", "wget -q -T 5 -O- {repo}index 2>&1 | head -1", r"\S"),
+    ("nothing gets out", "busybox wget -q -T 5 -O- {repo}index 2>&1 | head -1", r"\S"),
     ("panic snapshot pinned", "snap list", r"^\s*\d+\*.*all\s+manual\s+Panic at"),
     ("firewall refuses changes", "worm fw allow 22 2>&1", r"network is cut"),
     ("status shows it", "worm status", r"Firewall\s+network cut"),
@@ -525,6 +528,24 @@ TOOL_CHECKS = [
     ("tcpdump", "tcpdump --version 2>&1 | head -1", r"^tcpdump version"),
     ("binutils", "readelf -h /usr/bin/bash | grep -c Machine; strings /usr/bin/bash | grep -c GNU",
      r"^1\n[1-9]"),
+    ("GNU grep, sed, awk, find and diff",
+     "echo a12b | grep -oP '\\d+'; sed --version | head -1; awk --version | head -1; "
+     "find --version | head -1; diff --version | head -1",
+     r"^12\n.*GNU sed.*\nGNU Awk 5.*\nfind \(GNU findutils\).*\ndiff \(GNU diffutils\)"),
+    ("GNU grep took the busybox link over",
+     "test -L /usr/bin/grep || echo real; grep -c ' usr/bin/grep$' /usr/lib/wh/db/busybox/files; "
+     "grep -c '^usr/bin/grep$' /usr/share/busybox/links", r"^real\n0\n1$"),
+    ("7-Zip", "cd /tmp && echo seven > s7 && 7z a -bd -bso0 s7.7z s7 && rm s7 && "
+     "7z x -bd -bso0 s7.7z && cat s7", r"^seven$"),
+    ("zip", "cd /tmp && echo z > z1 && zip -q z.zip z1 && unzip -l z.zip | grep -c z1", r"^1$"),
+    ("wget", "wget --version | head -1", r"^GNU Wget 1\.25"),
+    ("iproute2", "ip -br link show lo; ss -ltn | head -1", r"^lo\s+UNKNOWN(.|\n)*State"),
+    ("lspci names devices", "lspci | grep -ci 'ethernet controller'", r"^[1-9]"),
+    ("lsusb", "lsusb --version", r"usbutils"),
+    ("mkfs.fat", "dd if=/dev/zero of=/tmp/fat.img bs=1M count=8 2>/dev/null && "
+     "mkfs.fat /tmp/fat.img > /dev/null && fsck.fat -n /tmp/fat.img | tail -1", r"files"),
+    ("whois, traceroute, ethtool", "whois --version | head -1; traceroute --version; "
+     "ethtool --version", r"^Version 5\.6(.|\n)*traceroute.*2\.1(.|\n)*ethtool version 7"),
     ("busybox links taken over cleanly", "readlink /usr/bin/tar; test -L /usr/bin/less || "
      "echo real; grep -c -e ' usr/bin/less$' -e ' usr/bin/tar$' /usr/lib/wh/db/busybox/files",
      r"^bsdtar\nreal\n0$"),
@@ -608,7 +629,11 @@ WORM_CHECKS = [
 # tcpdump comes with the image: the package tests remove it first.
 FIRST_REMOVE_CHECKS = [
     ("preinstalled tcpdump removed", "ls /usr/bin/tcpdump 2>&1", r"No such file"),
-    ("remove in history", "wh history", r"\sremove\s+\d+\s+tcpdump$"),
+    ("remove in history", "wh history", r"\sremove\s+\d+\s+(tcpdump diffutils|diffutils tcpdump)$"),
+    ("busybox takes back the links of a removed package",
+     "readlink /usr/bin/diff /usr/bin/cmp; grep -c -e ' usr/bin/diff$' -e ' usr/bin/cmp$' "
+     "/usr/lib/wh/db/busybox/files; diff /dev/null /dev/null && echo same",
+     r"^busybox\nbusybox\n2\nsame$"),
 ]
 
 AFTER_INSTALL_CHECKS = [
@@ -859,7 +884,7 @@ def main():
             run_checks(con, MENU_CHECKS)
 
             run_checks(con, worm_checks)
-            restart_with(con, "preinstalled package removed", "wh -y remove tcpdump",
+            restart_with(con, "preinstalled package removed", "wh -y remove tcpdump diffutils",
                          "applied the package change")
             run_checks(con, FIRST_REMOVE_CHECKS)
             restart_with(con, "install applied", f"wh --repo {repo} -y install tcpdump",

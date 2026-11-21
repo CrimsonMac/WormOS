@@ -22,6 +22,7 @@ void warn(const char *fmt, const char *arg);
 
 /* Booted in safe mode (wormos.safe on the kernel command line). */
 int safe_mode(void);
+int variant_is(const char *id);
 
 int cmd_fw(int argc, char **argv);
 int cmd_panic(int argc, char **argv);

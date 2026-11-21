@@ -4,7 +4,11 @@
 #   wormos-VERSION-x86_64.iso         live system and installer (CD/DVD or USB
 #                                     stick, UEFI or BIOS firmware)
 #   wormos-VERSION-x86_64.qcow2       ready-made disk for QEMU, virt-manager
+#   wormos-VERSION-barebones-x86_64.iso  the operating system alone
+#   wormos-VERSION-amnesia-x86_64.iso    live only, forgets everything, Tor
 #   SHA256SUMS
+#
+# VARIANTS (default "barebones amnesia") picks the extra editions.
 #
 # Release images differ from development images in two ways: root has no
 # password until the first-boot setup sets one, and the disk is larger
@@ -36,6 +40,12 @@ rm -f "$DEST/$NAME.img"
 
 ISO=$DEST/$NAME.iso "$WORMOS_ROOT/scripts/mkiso.sh"
 
-(cd "$DEST" && sha256sum "$NAME.iso" "$NAME.qcow2" > SHA256SUMS)
+# The other editions: ISOs only.
+for variant in ${VARIANTS-barebones amnesia}; do
+	WORMOS_RELEASE=1 WORMOS_VARIANT=$variant "$WORMOS_ROOT/scripts/build-rootfs.sh"
+	ISO=$DEST/wormos-$VERSION-$variant-x86_64.iso "$WORMOS_ROOT/scripts/mkiso.sh"
+done
+
+(cd "$DEST" && sha256sum *.iso "$NAME.qcow2" > SHA256SUMS)
 msg "Release $VERSION ready in $DEST:"
 ls -lh "$DEST"

@@ -16,6 +16,16 @@ export SDL_VIDEODRIVER=wayland ELECTRON_OZONE_PLATFORM_HINT=wayland
 export XCURSOR_THEME=${XCURSOR_THEME:-Adwaita} XCURSOR_SIZE=${XCURSOR_SIZE:-24}
 export XKB_DEFAULT_OPTIONS=${XKB_DEFAULT_OPTIONS-wormos:caps_unlock_on_press}
 
+# Editions with a look of their own (WormOS Amnesia, /etc/worm/variant):
+# their desktop settings are found first, their GTK theme and panel edge.
+if [ -r /etc/worm/variant ]; then
+	VARIANT_XDG= VARIANT_GTK_THEME= VARIANT_PANEL=
+	. /etc/worm/variant
+	[ -n "$VARIANT_XDG" ] && export XDG_CONFIG_DIRS="$VARIANT_XDG:$XDG_CONFIG_DIRS"
+	[ -n "$VARIANT_GTK_THEME" ] && export GTK_THEME=$VARIANT_GTK_THEME
+	[ -n "$VARIANT_PANEL" ] && export WORM_SHELL_PANEL=$VARIANT_PANEL
+fi
+
 # Intel GPUs and VMware's (vmwgfx, Mesa svga, with 3D acceleration on)
 # render with OpenGL ES; everything else uses the software renderer, which
 # is faster than OpenGL emulated on the CPU. With VMware's 3D acceleration

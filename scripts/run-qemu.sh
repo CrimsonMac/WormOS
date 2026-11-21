@@ -13,7 +13,8 @@
 # (several separated by spaces). QEMU_EXTRA adds options (split on spaces).
 # IMAGE boots another image (raw, or qcow2 such as a release image).
 # ISO adds that ISO as a CD drive and boots from it (with IMAGE as the
-# disk to install onto).
+# disk to install onto). USB_ISO adds it as a USB stick instead (QEMU
+# device id "stick", so the monitor can pull it out: device_del stick).
 # QEMU_VDAGENT_MOUSE=on sends the pointer through the guest's agent, as
 # SPICE clients do (the agent replays it as a virtual pointer).
 # QEMU_NIC picks the network card model (default virtio-net-pci; e.g. e1000,
@@ -54,6 +55,14 @@ if [ -n "${ISO:-}" ]; then
 	[ -f "$ISO" ] || die "no such ISO: $ISO"
 	cdrom=(-drive file="$ISO",format=raw,if=none,id=cd0,media=cdrom,readonly=on
 		-device ide-cd,drive=cd0,bus=ide.1,bootindex=0)
+	disk_boot=1
+fi
+
+if [ -n "${USB_ISO:-}" ]; then
+	[ -f "$USB_ISO" ] || die "no such ISO: $USB_ISO"
+	cdrom=(-device qemu-xhci,id=xhci
+		-drive file="$USB_ISO",format=raw,if=none,id=stick0,readonly=on
+		-device usb-storage,bus=xhci.0,drive=stick0,id=stick,removable=on,bootindex=0)
 	disk_boot=1
 fi
 

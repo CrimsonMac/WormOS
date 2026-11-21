@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Draw the WormOS wallpaper as a PNG: wallpaper.py OUT [W H].
+"""Draw the WormOS wallpaper as a PNG: wallpaper.py [--grey] OUT [W H].
+
+--grey draws it in greys, for WormOS Amnesia.
 
 Layered translucent ribbons on a deep violet gradient. They pinch together
 towards a bright throat on the right, the profile of a wormhole seen from
@@ -133,9 +135,22 @@ def grain(cr, w, h):
     cr.paint()
 
 
+def desaturate(cr):
+    """Keep the brightness of every pixel, drop its colour."""
+    cr.save()
+    cr.set_operator(cairo.OPERATOR_HSL_SATURATION)
+    cr.set_source_rgb(0.5, 0.5, 0.5)
+    cr.paint()
+    cr.restore()
+
+
 def main():
-    out = sys.argv[1]
-    w, h = (int(v) for v in sys.argv[2:4]) if len(sys.argv) > 3 else (2560, 1440)
+    args = sys.argv[1:]
+    grey = bool(args) and args[0] == "--grey"
+    if grey:
+        args = args[1:]
+    out = args[0]
+    w, h = (int(v) for v in args[1:3]) if len(args) > 2 else (2560, 1440)
     surface = cairo.ImageSurface(cairo.FORMAT_RGB24, w, h)
     cr = cairo.Context(surface)
     background(cr, w, h)
@@ -143,6 +158,8 @@ def main():
     ribbons(cr, w, h)
     throat(cr, w, h)
     cr.set_operator(cairo.OPERATOR_OVER)
+    if grey:
+        desaturate(cr)
     grain(cr, w, h)
     surface.write_to_png(out)
 

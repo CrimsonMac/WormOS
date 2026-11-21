@@ -1,7 +1,7 @@
 #!/bin/sh
 # The live system (wormos.live on the kernel command line, from the ISO):
 # a user "live" without a password, whom the login screen logs in at once,
-# and root without a password. The whole system runs from memory, so none
+# and root without a password (except in WormOS Amnesia). The whole system runs from memory, so none
 # of this ever reaches a disk; an installed system starts with the usual
 # first-boot setup instead.
 
@@ -18,7 +18,9 @@ for group in wheel video input audio render kvm; do
 	addgroup live "$group"
 done
 passwd -d live > /dev/null
-passwd -d root > /dev/null
+# WormOS Amnesia keeps root as the image has it (locked in releases): no
+# one can make that system keep anything.
+grep -qs '^VARIANT_ID=amnesia' /etc/worm/variant || passwd -d root > /dev/null
 mount -o remount,bind,ro /
 /usr/lib/worm/runtime-dirs
 

@@ -160,6 +160,8 @@ static int anon_on(void)
 
 static int anon_off(void)
 {
+	if (variant_is("amnesia"))
+		die("WormOS Amnesia always sends everything through Tor%s", "");
 	if (anon_enabled())
 		write_switch(0);
 	if (fw_reload() != 0)

@@ -2,12 +2,20 @@
 # Greet a new terminal: system details, the main commands and a tip.
 # welcome --full prints the whole guide.
 
+VARIANT_ID= VARIANT=
+[ -r /etc/worm/variant ] && . /etc/worm/variant
+
 if [ "${1:-}" = --full ]; then
-	cat /usr/share/wormos/guide
+	if [ -n "$VARIANT_ID" ] && [ -r "/usr/share/wormos/guide-$VARIANT_ID" ]; then
+		cat "/usr/share/wormos/guide-$VARIANT_ID"
+	else
+		cat /usr/share/wormos/guide
+	fi
 	exit
 fi
 
 . /etc/os-release
+[ -n "$VARIANT" ] && PRETTY_NAME="$PRETTY_NAME $VARIANT"
 read -r up _ < /proc/uptime
 up=${up%.*}
 if [ "$up" -ge 86400 ]; then
@@ -32,6 +40,12 @@ m='\033[35m' b='\033[1m' d='\033[2m' r='\033[0m'
 # core. 24-bit colours; terminals without them pick the nearest.
 c1='\033[38;2;91;33;182m' c2='\033[38;2;124;58;237m' c3='\033[38;2;167;139;250m'
 c4='\033[38;2;216;180;254m' c5='\033[1;38;2;253;244;255m'
+if [ "$VARIANT_ID" = amnesia ]; then
+	# Amnesia's logo, in greys.
+	m='\033[37m'
+	c1='\033[38;2;70;70;70m' c2='\033[38;2;110;110;110m' c3='\033[38;2;160;160;160m'
+	c4='\033[38;2;210;210;210m' c5='\033[1;38;2;255;255;255m'
+fi
 if [ -n "${NO_COLOR:-}" ] || [ "${TERM:-dumb}" = dumb ]; then
 	m= b= d= r= c1= c2= c3= c4= c5=
 fi
@@ -45,10 +59,17 @@ printf "  ${c1}   '.${c2}  '-....-'  ${c1}.'${r}      ${m}Snapshots${r} %s  ${d}
 	"${snaps:-0}" "$anon"
 printf "  ${c1}     '-........-'${r}\n"
 printf "\n"
+if [ "$VARIANT_ID" = amnesia ]; then
+printf "  ${b}Nothing here is kept:${r} it is all gone when the computer stops.\n"
+printf "  ${b}Everything goes through Tor${r} (${b}worm anon status${r}).\n\n"
+printf "  ${b}tor-browser${r}  the browser              ${b}bh open${r}      disposable sandbox\n"
+printf "  ${b}worm status${r}  protections              ${b}welcome --full${r} about Amnesia\n"
+else
 printf "  ${b}snap now${r}     take a snapshot          ${b}wh install${r}   add software\n"
 printf "  ${b}snap list${r}    snapshots, ${b}rewind${r}        ${b}bh open${r}      disposable sandbox\n"
 printf "  ${b}worm status${r}  protections              ${b}worm kit${r}     tool kits\n"
 printf "  ${b}worm help${r}    every WormOS command     ${b}su -${r}         administration\n"
+fi
 printf "\n"
 # The tip, wrapped at word boundaries to the terminal's width.
 if [ -n "$tip" ]; then

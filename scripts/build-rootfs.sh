@@ -21,19 +21,38 @@ fi
 
 # The base system. Packages come from the signed repository (tools/wrepo)
 # and are installed with wh, as on a running system.
-PACKAGES=(base-files glibc gcc-libs busybox worminit wormrd snap wh worm linux
+#
+# WORMOS_VARIANT picks the edition:
+#   standard   (default) everything below
+#   barebones  the operating system alone: no Tor, no Tor Browser, none of
+#              the everyday tools (worm kit install basic adds them)
+#   amnesia    the barebones system with Tor and Tor Browser and the amnesia
+#              settings (wormos-amnesia): live only, nothing kept, all
+#              traffic through Tor from the start
+VARIANT=${WORMOS_VARIANT:-standard}
+SYSTEM=(base-files glibc gcc-libs busybox worminit wormrd snap wh worm linux
 	zstd curl gnupg wormhole-keyrings libmnl libnftnl nftables bh expat unbound
-	libevent tor kmod eudev seatd linux-firmware dbus wormos-login licenses wormos-installer tzdata
+	kmod eudev seatd linux-firmware dbus wormos-login licenses tzdata
 	wormos-desktop labwc wlroots mesa foot swaybg grim wlr-randr xcompose font-inter font-hack
-	# Everyday command-line tools. Listed here rather than as dependencies,
-	# so that each one can be removed on its own.
-	bash less nano vim htop tmux git openssh rsync xz bzip2 libarchive file tree ncdu
-	jq lsof strace wireguard-tools sqlite python nmap tcpdump binutils)
+	nano)
+TOR=(libevent tor tor-browser tor-browser-runtime tor-browser-bundle)
+# Everyday command-line tools. Listed here rather than as dependencies, so
+# that each one can be removed on its own.
+TOOLS=(bash less vim htop tmux git openssh rsync xz bzip2 libarchive file tree ncdu
+	jq lsof strace wireguard-tools sqlite python nmap tcpdump binutils
+	grep sed gawk findutils diffutils patch wget zip 7zip iproute2 ethtool
+	pciutils usbutils dosfstools whois traceroute)
+case $VARIANT in
+standard)  PACKAGES=("${SYSTEM[@]}" wormos-installer "${TOR[@]}" "${TOOLS[@]}") ;;
+barebones) PACKAGES=("${SYSTEM[@]}" wormos-installer) ;;
+amnesia)   PACKAGES=("${SYSTEM[@]}" "${TOR[@]}" wormos-amnesia) ;;
+*)         die "unknown variant '$VARIANT' (standard, barebones or amnesia)" ;;
+esac
 WH=$BUILD/host/wh
 
 [ -x "$WH" ] && [ -f "$REPO/index" ] || die "run tools/wrepo first"
 
-msg "Assembling root filesystem"
+msg "Assembling root filesystem ($VARIANT)"
 rm -rf "$FSROOT"
 mkdir -p "$ROOTFS" "$FSROOT/@home" "$FSROOT/@snapshots" "$FSROOT/@wormholes"
 
@@ -57,6 +76,15 @@ ln -s ../var/usrlocal usr/local
 wh() { "$WH" --root "$ROOTFS" --repo "file://$REPO/" --key "$WORMOS_ROOT/keys/core.pub" "$@"; }
 wh update
 wh install "${PACKAGES[@]}"
+# The edition, for the welcome text and the ISO (amnesia's comes with its
+# package).
+if [ "$VARIANT" = barebones ]; then
+	cat > "$ROOTFS/etc/worm/variant" <<-EOF
+	# The WormOS edition this system was built as.
+	VARIANT_ID=barebones
+	VARIANT="Barebones"
+	EOF
+fi
 # The image keeps the index (newer ones must be at least as recent) but not
 # the downloaded packages.
 rm -rf "$ROOTFS/var/cache/wh"

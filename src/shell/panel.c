@@ -21,6 +21,24 @@ struct panel {
 	GtkWidget *confirm;             /* the power action waiting for a second click */
 };
 
+/*
+ * The panel sits at the top, or at the bottom with WORM_SHELL_PANEL=bottom
+ * (the session sets it for editions that want it); its menus then open
+ * upwards.
+ */
+static int at_bottom(void)
+{
+	const char *edge = getenv("WORM_SHELL_PANEL");
+
+	return edge && !strcmp(edge, "bottom");
+}
+
+static void menu_direction(GtkWidget *button)
+{
+	if (at_bottom())
+		gtk_menu_button_set_direction(GTK_MENU_BUTTON(button), GTK_ARROW_UP);
+}
+
 static GtkApplication *app;
 static GPtrArray *panels;               /* of struct panel */
 static gboolean volume_updating;        /* showing a new reading, not a change */
@@ -325,6 +343,7 @@ static GtkWidget *volume_button(struct panel *panel)
 	g_signal_connect(popover, "show", G_CALLBACK(volume_opened), NULL);
 	keyboard_while_open(popover);
 	gtk_menu_button_set_popover(GTK_MENU_BUTTON(button), popover);
+	menu_direction(button);
 
 	scroll = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL |
 						 GTK_EVENT_CONTROLLER_SCROLL_DISCRETE);
@@ -454,6 +473,7 @@ static GtkWidget *power_menu(struct panel *panel)
 	g_signal_connect(popover, "closed", G_CALLBACK(power_menu_closed), panel);
 	keyboard_while_open(popover);
 	gtk_menu_button_set_popover(GTK_MENU_BUTTON(button), popover);
+	menu_direction(button);
 	return button;
 }
 
@@ -501,6 +521,7 @@ static GtkWidget *info_button(const char *icon, const char *tooltip, GtkWidget *
 	gtk_widget_add_css_class(*info, "info");
 	gtk_popover_set_child(GTK_POPOVER(popover), *info);
 	gtk_menu_button_set_popover(GTK_MENU_BUTTON(button), popover);
+	menu_direction(button);
 	keyboard_while_open(popover);
 	return button;
 }
@@ -606,7 +627,8 @@ static void panel_new(GdkMonitor *monitor)
 	gtk_layer_set_namespace(GTK_WINDOW(window), "wormos-panel");
 	gtk_layer_set_layer(GTK_WINDOW(window), GTK_LAYER_SHELL_LAYER_TOP);
 	gtk_layer_set_monitor(GTK_WINDOW(window), monitor);
-	gtk_layer_set_anchor(GTK_WINDOW(window), GTK_LAYER_SHELL_EDGE_TOP, TRUE);
+	gtk_layer_set_anchor(GTK_WINDOW(window),
+			     at_bottom() ? GTK_LAYER_SHELL_EDGE_BOTTOM : GTK_LAYER_SHELL_EDGE_TOP, TRUE);
 	gtk_layer_set_anchor(GTK_WINDOW(window), GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
 	gtk_layer_set_anchor(GTK_WINDOW(window), GTK_LAYER_SHELL_EDGE_RIGHT, TRUE);
 	gtk_layer_auto_exclusive_zone_enable(GTK_WINDOW(window));
@@ -636,6 +658,7 @@ static void panel_new(GdkMonitor *monitor)
 	g_signal_connect(popover, "show", G_CALLBACK(calendar_opened), panel);
 	keyboard_while_open(popover);
 	gtk_menu_button_set_popover(GTK_MENU_BUTTON(panel->clock), popover);
+	menu_direction(panel->clock);
 	gtk_center_box_set_center_widget(GTK_CENTER_BOX(bar), panel->clock);
 
 	end = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);

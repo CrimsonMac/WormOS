@@ -1,0 +1,33 @@
+
+   [2m.-'''-.[0m
+  [2m(  [1;97m(@)[0;2m  )[0m   WormOS Amnesia
+   [2m'-...-'[0m
+
+  This system forgets.
+    Everything runs from memory. When the computer stops, everything you
+    did here is gone: files, downloads, history, settings, installed
+    programs. Nothing is written to any disk, and nothing can change that.
+    Start it again and it is exactly as new. Keep nothing here you need.
+
+  Everything goes through Tor.
+    Every connection of this computer goes through the Tor network from
+    the moment it starts; anything that cannot (other traffic, IPv6) is
+    blocked. worm anon status shows how far Tor has connected.
+    Tor Browser is in the launcher (the grid at the bottom left).
+
+  Made for one-off tasks.
+    Reading, looking something up, opening a file you do not trust,
+    trying a program in a sandbox. It is not a place for real work.
+
+  The desktop
+    The Super key opens the launcher, Super+Enter a terminal, Super+Q
+    closes a window, Alt+Tab switches windows. The power icon at the
+    bottom right shuts the computer down, and with it everything here.
+
+  Sandboxes, inside the sandbox
+    bh open lab            a disposable sandbox: no network, no files
+    bh open --vm lab       the same on a kernel of its own
+    bh close lab           stop it and delete what is in it
+
+  There is no administrator: root cannot log in, so nothing can make this
+  system keep anything or reach a disk.

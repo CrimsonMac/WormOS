@@ -1,0 +1,44 @@
+name=wormos-amnesia
+version=1.0
+description="WormOS Amnesia: the live edition that forgets everything and goes through Tor"
+depends=(wormos-desktop worm tor tor-browser tor-browser-runtime tor-browser-bundle)
+# GTK's theme sources, for the grey GTK theme (as in wormos-gtk-theme).
+source=(https://download.gnome.org/sources/gtk/4.24/gtk-4.24.1.tar.xz)
+sha256=(e98abe720e16129c8c0f50761dee0a2e9ae2478055e31018f6cf977fcf6513e9)
+
+build() {
+	cd gtk/theme/Default
+	cp "$recipedir/files/_colors.scss" .
+	cp "$recipedir/../wormos-gtk-theme/files/WormOS.scss" Amnesia.scss
+	sed -i 's/^\$button_radius: 5px;/$button_radius: 8px;/; s/^\$menu_radius: 5px;/$menu_radius: 7px;/' \
+		_common.scss
+	sassc -M -t compact Amnesia.scss gtk.css
+	cd "$srcdir"
+	# The wallpaper, in greys.
+	python3 "$recipedir/../wormos-desktop/files/wallpaper.py" --grey wormos-amnesia.png 2560 1440
+}
+
+package() {
+	local f=$recipedir/files d=$pkgdir/usr/share/themes/WormOS-Amnesia/gtk-4.0
+	install -Dm644 "$f/variant" "$pkgdir/etc/worm/variant"
+	# Anonymous mode, on from the first start (worm anon refuses to turn it off).
+	install -Dm644 "$f/anon" "$pkgdir/etc/worm/anon"
+	# The desktop's settings, found before /etc/xdg (session-env).
+	install -Dm644 "$f/xdg/labwc/autostart" "$pkgdir/etc/xdg/amnesia/labwc/autostart"
+	sed 's|<name>WormOS</name>|<name>WormOS-Amnesia</name>|' \
+		"$recipedir/../wormos-desktop/files/labwc/rc.xml" > rc.xml
+	grep -q '<name>WormOS-Amnesia</name>' rc.xml || die "theme name not found in rc.xml"
+	install -Dm644 rc.xml "$pkgdir/etc/xdg/amnesia/labwc/rc.xml"
+	install -Dm644 "$f/xdg/foot/foot.ini" "$pkgdir/etc/xdg/amnesia/foot/foot.ini"
+	install -Dm644 "$f/settings.ini" "$pkgdir/etc/xdg/amnesia/gtk-4.0/settings.ini"
+	install -Dm644 "$f/themerc" "$pkgdir/usr/share/themes/WormOS-Amnesia/labwc/themerc"
+	install -Dm644 gtk/theme/Default/gtk.css "$d/gtk.css"
+	install -Dm644 gtk/theme/Default/gtk.css "$d/gtk-dark.css"
+	cp -r gtk/theme/Default/assets "$d/assets"
+	chmod -R go-w "$d"
+	install -Dm644 "$f/variant.css" "$pkgdir/usr/share/wormos/shell/variant.css"
+	install -Dm644 "$f/guide" "$pkgdir/usr/share/wormos/guide-amnesia"
+	install -Dm755 "$f/medium-watch" "$pkgdir/usr/lib/worm/medium-watch"
+	install -Dm644 "$f/services/04-medium" "$pkgdir/etc/worm/services/04-medium"
+	install -Dm644 wormos-amnesia.png "$pkgdir/usr/share/backgrounds/wormos-amnesia.png"
+}

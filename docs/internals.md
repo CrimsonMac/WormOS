@@ -146,7 +146,8 @@ in the README.
   reach the tmpfs, so deleted data frees memory. A soft reboot finds the
   device through `/dev/wormos-root`.
 - `11-live` (`/usr/lib/worm/live-setup`) creates the user `live` (groups as
-  the first-boot setup gives, no password), clears root's password, marks
+  the first-boot setup gives, no password), clears root's password (not on
+  WormOS Amnesia, where root stays as the image has it), marks
   `/run/wormos/live` and puts a visible copy of the installer's desktop
   entry (`NoDisplay=true` in the system's) in the live user's
   applications. wormlogin then starts the live user's desktop without the
@@ -167,6 +168,55 @@ in the README.
   the live system's fs UUID; the kernel mounts it under a temporary one
   (btrfs temp-fsid, single-device clones). The installed system starts
   with the first-boot setup.
+
+## Editions
+
+- `WORMOS_VARIANT` (standard, barebones, amnesia) picks the package list
+  in `scripts/build-rootfs.sh`: the system (base, desktop, network,
+  firewall, snapshots, packages, sandboxes, nano), plus the installer,
+  Tor with Tor Browser and the everyday tools for standard; plus the
+  installer for barebones; plus Tor, Tor Browser and `wormos-amnesia`
+  (no installer) for amnesia. `wormos-desktop` no longer depends on Tor
+  Browser, vim, tree, lsof or binutils (1.7), so systems upgraded from
+  earlier releases keep them as installed packages.
+- `/etc/worm/variant` names the edition (`VARIANT_ID`, `VARIANT`):
+  written by build-rootfs for barebones, shipped by `wormos-amnesia`. The
+  welcome text adds `VARIANT` to the name and prefers
+  `/usr/share/wormos/guide-VARIANT_ID` for `welcome --full`; mkiso names
+  the ISO after it (`out/wormos-VARIANT_ID.iso`) and its menu entries.
+  `worm` has `variant_is()`.
+- `make iso-barebones`, `make iso-amnesia`; `scripts/release.sh` builds the
+  standard images first, then `VARIANTS` (default `barebones amnesia`),
+  each as an ISO only.
+- WormOS Amnesia (plan and promises: `docs/amnesia.md`):
+  - mkiso adds `lockdown=confidentiality init_on_free=1
+    page_alloc.shuffle=1 randomize_kstack_offset=on vsyscall=none` and
+    leaves "install" out of the menu.
+  - `wormos-amnesia` ships `/etc/worm/anon` (anonymous mode from the first
+    start: `05-firewall` loads its rules before `30-network`, `16-anon`
+    starts Tor), and `worm anon off` refuses there.
+  - Root keeps the image's password (locked in releases), so nothing can
+    mount a disk or change the system.
+  - The look: the variant file sets `VARIANT_XDG=/etc/xdg/amnesia`,
+    `VARIANT_GTK_THEME=WormOS-Amnesia` and `VARIANT_PANEL=bottom`;
+    `session-env` turns them into `XDG_CONFIG_DIRS` (labwc's `rc.xml` with
+    the theme `WormOS-Amnesia` and its own `autostart`, foot's `foot.ini`,
+    GTK's `settings.ini` are found there first; labwc's `menu.xml` and
+    `environment` still come from `/etc/xdg/labwc`), `GTK_THEME` and
+    `WORM_SHELL_PANEL` (worm-shell anchors the panel at the bottom and
+    opens its menus upwards). worm-shell loads
+    `/usr/share/wormos/shell/variant.css` after its own CSS when it
+    exists. The GTK theme is GTK's theme sources with
+    `recipes/wormos-amnesia/files/_colors.scss`, built like
+    `wormos-gtk-theme`; the wallpaper is `wallpaper.py --grey` (the WormOS
+    one, desaturated with cairo's HSL saturation operator).
+  - The autostart opens the welcome terminal at every start (the home
+    folder is always new) and never the installer.
+  - wormrd links the live boot medium as `/dev/wormos-medium`; Amnesia's
+    `04-medium` service (`medium-watch`) polls `/sys/class/block/NAME`
+    every second and runs `poweroff -f` when a USB stick goes away (not
+    for `sr*`: a disc drive stays). `run-qemu.sh` with `USB_ISO` attaches
+    an ISO as a USB stick (device `stick`) for the test.
 
 ## snap
 
@@ -239,6 +289,17 @@ in the README.
   (1.3), busybox is upgraded first and drops them, then the replacements
   install; a newer wh would also take the links over if the order were
   reversed.
+- Since 1.7 the other direction works too, so full versions of BusyBox
+  commands can come and go without `REPLACED` (GNU grep, sed, gawk,
+  findutils, diffutils, patch, coreutils, iproute2, wget, dosfstools,
+  whois, traceroute...): a new busybox skips an applet link whose path
+  another package owns (`busybox_yields`), and removing a package gives
+  busybox back the links it took (`busybox_restore`): busybox ships the
+  list of its links in `/usr/share/busybox/links`, and wh recreates each
+  removed path in that list as a link to busybox and adds it to busybox's
+  file list (`db_adopt`). Paths still in `REPLACED` stay out of busybox,
+  because 1.6's wh, which runs the upgrade to 1.7, fails on a link owned
+  by another package.
 
 ## Wormholes
 
@@ -708,15 +769,22 @@ in the README.
 
 - `worm kit` (`src/worm/kit.c`). Kits are files in `/usr/share/worm/kits`
   (from `recipes/worm/files/kits`): `title`, `description`, `included`
-  (tools WormOS already has, shown only) and one `tool = PACKAGE` per
-  package. `list` and `show` work for everyone; `install` and `remove` need
-  root. `install` runs `wh --yes install PACKAGE` for each tool in turn, so
-  each comes from the first source that has it (core, Debian, Kali) and a
-  missing one is reported and skipped, then records the installed packages
-  in `/var/lib/worm/kits/NAME`. `remove` runs `wh --yes remove` for each
-  recorded package that no other installed kit recorded. Kits hold only
-  packages from Debian and Kali (a core package would mean a soft reboot
-  for each). The tools run in wormholes, which share the home folder.
+  (tools WormOS already has, shown only), one `tool = PACKAGE` per Debian
+  or Kali package and one `core = PACKAGE` per core package. `list` and
+  `show` work for everyone (`show` marks core packages already installed);
+  `install` and `remove` need root. `install` runs `wh --yes install
+  PACKAGE` for each `tool` in turn, so each comes from the first source
+  that has it (Debian, Kali) and a missing one is reported and skipped.
+  Then the core packages not installed yet go to one `wh --yes install`:
+  a core change soft-reboots, so the kit's record
+  (`/var/lib/worm/kits/NAME`, the packages it added) is written before,
+  with them, and rewritten without them if wh fails. `remove` runs `wh
+  --yes remove` for each recorded `tool` that no other installed kit
+  recorded, then removes the recorded core packages in one change (core
+  packages that were there before the kit are not recorded, so they stay).
+  The `basic` kit is mostly core packages: the everyday tools of the
+  standard edition and a few more, for Barebones. Wormhole tools share
+  the home folder.
 
 ## Licenses
 
@@ -1169,6 +1237,19 @@ in the README.
   (Ctrl+Backspace, a suggestion from the history taken with End) and
   copies text both ways through a second VNC client using the extended
   clipboard.
+- `tests/editions-test.py barebones|amnesia [ISO] [--release]` boots an
+  edition's ISO with a GPU (the live desktop starts) and a monitor socket.
+  Common checks (from memory, read-only, firewall, desktop as `live`),
+  then Barebones: the variant, no Tor/Tor Browser/extra tools, the system
+  commands all there, `worm anon on` asking for Tor, the network, the
+  basic kit; Amnesia: the variant, no installer, the kernel options and
+  lockdown, anonymous mode on, Tor as its own user, `worm anon off`
+  refused, the session's `GTK_THEME`/`WORM_SHELL_PANEL`/`XDG_CONFIG_DIRS`,
+  the grey wallpaper, the welcome text, the firewall's redirects. A web
+  server and a UDP listener on the host must hear from Barebones and must
+  hear nothing from Amnesia. A screendump's mean chroma (max minus min
+  channel) must be low on Amnesia and not on Barebones. `--release` logs
+  in as `live` (root is locked).
 - `make test-iso` (`tests/iso-test.py [ISO]`) boots the ISO
   (`run-qemu.sh` with `ISO=`, an IDE CD with `bootindex=0`) with a fresh
   12 GiB qcow2 disk and 3 GiB of memory, logs in as root on the serial

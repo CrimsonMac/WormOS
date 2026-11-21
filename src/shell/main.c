@@ -17,6 +17,15 @@ static void load_css(void)
 						   GTK_STYLE_PROVIDER(css),
 						   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 	g_object_unref(css);
+	/* An edition's own look (WormOS Amnesia's greys), on top. */
+	if (g_file_test(SHELL_VARIANT_CSS, G_FILE_TEST_EXISTS)) {
+		css = gtk_css_provider_new();
+		gtk_css_provider_load_from_path(css, SHELL_VARIANT_CSS);
+		gtk_style_context_add_provider_for_display(gdk_display_get_default(),
+							   GTK_STYLE_PROVIDER(css),
+							   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
+		g_object_unref(css);
+	}
 }
 
 static void startup(GApplication *gapp, gpointer data)

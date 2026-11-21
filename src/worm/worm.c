@@ -58,6 +58,22 @@ int safe_mode(void)
 	return safe;
 }
 
+/* Is this system the WormOS edition id (VARIANT_ID in /etc/worm/variant)? */
+int variant_is(const char *id)
+{
+	char line[256], want[128];
+	FILE *f = fopen("/etc/worm/variant", "re");
+	int found = 0;
+
+	if (!f)
+		return 0;
+	snprintf(want, sizeof(want), "VARIANT_ID=%s\n", id);
+	while (!found && fgets(line, sizeof(line), f))
+		found = strcmp(line, want) == 0;
+	fclose(f);
+	return found;
+}
+
 int run(char *const argv[], char *out, size_t len, int quiet)
 {
 	int pipefd[2], status;
