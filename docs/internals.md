@@ -425,6 +425,10 @@ in the README.
   user nothing is accepted or excepted, so the machine fails closed. A cut
   network (panic, safe mode) replaces the whole table and wins.
 
+- `worm anon start` (the `16-anon` service) does nothing while
+  `/run/worm/anon-hold` exists: an edition's start screen (WormOS Amnesia)
+  first asks how Tor should connect, then removes it and starts Tor, so a
+  network that blocks Tor never sees a direct attempt.
 - Bridges (`worm anon bridges KIND`, `anon.c`): `/etc/tor/torrc.d/bridges.conf`
   (the torrc ends with `%include /etc/tor/torrc.d/`, an empty directory in
   the tor package) gets `UseBridges 1`, `ClientTransportPlugin

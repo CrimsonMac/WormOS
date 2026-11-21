@@ -5,7 +5,11 @@
  *     worm anon status        is it on, how far Tor has connected (for
  *                             everyone; users in the group tor also see
  *                             whether Tor runs and how far it got)
- *     worm anon start         start Tor if anonymous mode is on (at boot)
+ *     worm anon start         start Tor if anonymous mode is on (at boot),
+ *                             unless ANON_HOLD exists: an edition's start
+ *                             screen asks first how Tor should connect
+ *                             (WormOS Amnesia), then removes it and runs
+ *                             "worm anon start" itself
  *     worm anon bridges snowflake|obfs4|meek|custom|off|status
  *                             reach Tor through bridges, on networks that
  *                             block it: the Tor Project's default bridges
@@ -47,6 +51,7 @@
 #define TOR_PID      TOR_RUN "/tor.pid"
 #define TOR_LOG      TOR_RUN "/notices.log"
 #define TOR_DATA     "/var/lib/tor"
+#define ANON_HOLD    "/run/worm/anon-hold"
 #define LYREBIRD     "/opt/tor-browser/Browser/TorBrowser/Tor/PluggableTransports/lyrebird"
 #define DEFAULT_BRIDGES "/usr/share/tor/bridges"
 #define MAX_BRIDGE_LINE 2048
@@ -351,6 +356,7 @@ int cmd_anon(int argc, char **argv)
 		return 0;
 	}
 	if (!strcmp(argv[0], "start"))
-		return anon_enabled() && !safe_mode() ? (tor_start() < 0) : 0;
+		return anon_enabled() && !safe_mode() && access(ANON_HOLD, F_OK) < 0 ?
+		       (tor_start() < 0) : 0;
 	return 2;
 }
