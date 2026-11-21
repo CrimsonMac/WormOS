@@ -49,7 +49,7 @@ SERIES = {
     "linux": None,  # the same major.minor (a long-term series)
     "openssl": r"^3\.5\.",  # long-term support series
     "ncdu": r"^1\.",          # 2.x is a rewrite in Zig
-    "wget": r"^1\.",          # 2.x is Wget2, another program
+    "wget": r"^1\.2\d",       # Wget2 (2.x, pre-releases 1.99) is another program
 }
 SKIP = {"tor-browser-runtime", "wormhole-keyrings", "ca-certificates", "licenses", "tzdata"}
 
