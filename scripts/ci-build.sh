@@ -26,6 +26,20 @@ fetch "${source[0]}" "${sha256[0]}"
 mono=$work/monocypher
 unpack "$SOURCES/$(basename "${source[0]}")" "$mono"
 
+# gtk4-layer-shell, from its recipe's pinned source, where the build
+# machine has GTK 4 but no package of it (Ubuntu 24.04).
+if pkg-config --exists gtk4 && ! pkg-config --exists gtk4-layer-shell-0 && command -v meson > /dev/null; then
+	msg "Building gtk4-layer-shell (no package of it here)"
+	eval "$(sed -n '/^\(name\|version\|source\|sha256\)=/p' "$WORMOS_ROOT/recipes/gtk4-layer-shell/recipe")"
+	fetch "${source[0]}" "${sha256[0]}"
+	unpack "$SOURCES/${source[0]%%::*}" "$work/gtk4-layer-shell"
+	(cd "$work/gtk4-layer-shell" &&
+		meson setup -q build --prefix="$work/prefix" --libdir=lib -Dexamples=false -Ddocs=false \
+			-Dtests=false -Dsmoke-tests=false -Dintrospection=false -Dvapi=false > /dev/null &&
+		ninja -C build install > /dev/null) || die "gtk4-layer-shell did not build"
+	export PKG_CONFIG_PATH=$work/prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}
+fi
+
 cp -r "$WORMOS_ROOT/src" "$work/src"
 failed=()
 for dir in "$work"/src/*/; do

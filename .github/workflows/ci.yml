@@ -40,6 +40,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential clang pkg-config \
-            libcrypt-dev libgtk-4-dev libgtk4-layer-shell-dev libwayland-dev libwayland-bin
+            libcrypt-dev libgtk-4-dev libwayland-dev libwayland-bin wayland-protocols meson ninja-build
       - name: Build and run the unit tests
         run: scripts/ci-build.sh ${{ matrix.cc }}
