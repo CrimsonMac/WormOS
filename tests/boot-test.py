@@ -528,10 +528,10 @@ TOOL_CHECKS = [
     ("tcpdump", "tcpdump --version 2>&1 | head -1", r"^tcpdump version"),
     ("binutils", "readelf -h /usr/bin/bash | grep -c Machine; strings /usr/bin/bash | grep -c GNU",
      r"^1\n[1-9]"),
-    ("GNU grep, sed, awk, find and diff",
+    ("GNU grep, sed, awk, find and patch",
      "echo a12b | grep -oP '\\d+'; sed --version | head -1; awk --version | head -1; "
-     "find --version | head -1; diff --version | head -1",
-     r"^12\n.*GNU sed.*\nGNU Awk 5.*\nfind \(GNU findutils\).*\ndiff \(GNU diffutils\)"),
+     "find --version | head -1; patch --version | head -1",
+     r"^12\n.*GNU sed.*\nGNU Awk 5.*\nfind \(GNU findutils\).*\nGNU patch"),
     ("GNU grep took the busybox link over",
      "test -L /usr/bin/grep || echo real; grep -c ' usr/bin/grep$' /usr/lib/wh/db/busybox/files; "
      "grep -c '^usr/bin/grep$' /usr/share/busybox/links", r"^real\n0\n1$"),
@@ -631,7 +631,7 @@ FIRST_REMOVE_CHECKS = [
     ("preinstalled tcpdump removed", "ls /usr/bin/tcpdump 2>&1", r"No such file"),
     ("remove in history", "wh history", r"\sremove\s+\d+\s+(tcpdump diffutils|diffutils tcpdump)$"),
     ("busybox takes back the links of a removed package",
-     "readlink /usr/bin/diff /usr/bin/cmp; grep -c -e ' usr/bin/diff$' -e ' usr/bin/cmp$' "
+     "readlink /usr/bin/diff; readlink /usr/bin/cmp; grep -c -e ' usr/bin/diff$' -e ' usr/bin/cmp$' "
      "/usr/lib/wh/db/busybox/files; diff /dev/null /dev/null && echo same",
      r"^busybox\nbusybox\n2\nsame$"),
 ]

@@ -10,7 +10,10 @@ build() {
 	# Its own configure: probes with $CC and pkg-config. No BPF, ELF,
 	# libcap or SELinux.
 	CC="$CC" AR="$AR" PKG_CONFIG=pkg-config ./configure --prefix=/usr --libbpf_force off
-	sed -i '/^HAVE_ELF\|^HAVE_CAP\|^HAVE_SELINUX\|^HAVE_BERKELEY_DB/d' config.mk
+	# Nor the RPC names in ss (libtirpc is in the sysroot, not a dependency).
+	sed -i -e '/^HAVE_ELF\|^HAVE_CAP\|^HAVE_SELINUX\|^HAVE_BERKELEY_DB\|^HAVE_RPC/d' \
+		-e '/tirpc\|-DHAVE_RPC/d' config.mk
+	! grep -q tirpc config.mk || die "libtirpc still in config.mk"
 	make CC="$CC" AR="$AR" CCOPTS="$CFLAGS" LDFLAGS="$LDFLAGS" SBINDIR=/usr/sbin -j"$JOBS"
 }
 
