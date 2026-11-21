@@ -49,7 +49,6 @@ COMMON_CHECKS = [
     ("live system from memory", "cat /proc/cmdline; readlink /dev/wormos-root",
      r"wormos\.live(.|\n)*^/dev/loop\d+$"),
     ("system read-only", "touch /usr/x 2>&1", r"Read-only file system"),
-    ("firewall active", "worm fw status", r"^Firewall: active"),
     ("desktop started for the live user",
      "for i in $(seq 60); do pidof worm-shell > /dev/null && break; sleep 2; done; "
      "stat -c %U /proc/$(pidof labwc | cut -d' ' -f1)", r"^live$"),
@@ -64,7 +63,6 @@ BAREBONES_CHECKS = [
     ("the operating system is complete",
      "for f in wh snap worm bh nft unbound curl nano labwc worm-shell wormos-installer; do "
      "command -v $f > /dev/null || echo missing $f; done; echo end", r"^end$"),
-    ("anonymous mode asks for Tor", "worm anon on 2>&1", r"Tor is not installed"),
     ("network configured", "ip -4 addr show eth0", r"inet 10\.0\.2\.15"),
     ("the basic kit offers the tools", "worm kit show basic",
      r"WormOS packages(.|\n)* coreutils (.|\n)* 7zip (.|\n)*Not installed"),
@@ -93,7 +91,13 @@ AMNESIA_CHECKS = [
      r"WormOS [\d.]+ Amnesia(.|\n)*Nothing here is kept"),
 ]
 
-# Checked as root on development ISOs only (release ISOs lock root).
+# Checked as root only (with --release the live user logs in).
+ROOT_CHECKS = [
+    ("firewall active", "worm fw status", r"^Firewall: active"),
+]
+BAREBONES_ROOT_CHECKS = [
+    ("anonymous mode asks for Tor", "worm anon on 2>&1", r"Tor is not installed"),
+]
 AMNESIA_ROOT_CHECKS = [
     ("Tor runs as its own user",
      "for i in $(seq 30); do pidof tor > /dev/null && break; sleep 2; done; "
@@ -164,8 +168,13 @@ def main():
                             stderr=subprocess.STDOUT, env=env)
     checks = COMMON_CHECKS + (BAREBONES_CHECKS if args.edition == "barebones"
                               else AMNESIA_CHECKS)
-    if args.edition == "amnesia" and not args.release:
-        checks = checks + AMNESIA_ROOT_CHECKS
+    if args.release and args.edition == "amnesia":
+        checks = checks + [("root cannot log in",
+                            "echo | su -c 'echo got-root' root 2>&1; echo rc=$?",
+                            r"\A(?![\s\S]*got-root)[\s\S]*rc=[1-9]")]
+    if not args.release:
+        checks = checks + ROOT_CHECKS + (BAREBONES_ROOT_CHECKS if args.edition == "barebones"
+                                         else AMNESIA_ROOT_CHECKS)
     passed = failures = 0
     total = len(checks) + 3
 
