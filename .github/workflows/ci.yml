@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: scripts/lint.sh
 
   build:
@@ -44,6 +44,6 @@ jobs:
           apt-get install -y --no-install-recommends build-essential clang pkg-config curl \
             ca-certificates git libcrypt-dev libgtk-4-dev libgtk4-layer-shell-dev libwayland-dev \
             libwayland-bin wayland-protocols meson ninja-build
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build and run the unit tests
         run: scripts/ci-build.sh ${{ matrix.cc }}

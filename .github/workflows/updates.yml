@@ -21,7 +21,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       TITLE: Outdated packages
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Compare with upstream
         run: scripts/check-updates.py --markdown > body.md && cat body.md
       - name: Update the issue
