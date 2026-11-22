@@ -406,6 +406,22 @@ in [building.md](building.md); what each feature does for the user, in the
   wormhole with `openat2` (`RESOLVE_IN_ROOT`), regular files of at most
   8 MiB only, and recorded with the commands, so removing the package
   removes them.
+- Kali keeps menu entries and icons in `kali-menu`, not in the tools'
+  packages. The Kali wormhole keeps an unpacked copy of it in
+  `/var/lib/wh/kali-menu` (`apt-get download` + `dpkg-deb -x`; installing
+  it would bring sudo and pkexec and run its menu scripts), refreshed by
+  `wh upgrade`. A Kali package also gets the entries whose
+  `X-Kali-Package` names it, and their icons, under the same rules (Kali's
+  terminal entries for command line tools run a shell, so they are left
+  out).
+- The root terminal runs `/usr/lib/worm/root-terminal`: `su - root -c` with
+  the Wayland socket's full path and `DISPLAY` handed over, and
+  `XDG_RUNTIME_DIR=/run/user/0`, so graphical programs open from it
+  without root writing into the user's runtime folder. Xwayland admits
+  only the user running it (no cookie file), so the script first runs
+  `/usr/lib/worm/x11-allow-root` as the user, which adds
+  `si:localuser:root` to the server's access list (ChangeHosts, as `xhost`
+  would); Java programs such as Ghidra failed with "Authorization required".
 - Containers live in subvolumes under `/var/lib/wormholes` (`@wormholes`,
   mounted `nosuid,nodev`, mode 0755). Exported commands are wrappers in
   `/usr/local/bin` (a link to `/var/usrlocal`) and never shadow `/usr/bin` or

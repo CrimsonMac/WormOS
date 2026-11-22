@@ -251,6 +251,15 @@ def main():
                           f"({time.time() - begin:.0f}s)")
                     if not ok:
                         print(f"      output: {out[-600:]!r}")
+                # Kali's menu entries live in kali-menu: wh adds the tools'.
+                out = con.run("cat /usr/local/share/applications/kali-ghidra.desktop; "
+                              "ls /usr/local/share/icons/hicolor/*/apps/kali-ghidra.*")
+                ok = bool(re.search(r"^Exec=ghidra$", out, re.M) and "kali-ghidra." in out)
+                passed += ok
+                failures += not ok
+                print(f"{'PASS' if ok else 'FAIL'}  Ghidra has Kali's menu entry and icon")
+                if not ok:
+                    print(f"      output: {out[-600:]!r}")
             con.send("poweroff\n")
             con.expect("Power down", 120)
         except (TimeoutError, RuntimeError) as e:
@@ -259,7 +268,7 @@ def main():
         finally:
             if proc.poll() is None:
                 proc.kill()
-    print(f"{passed}/{len(CHECKS) + (len(APPS) if args.apps else 0)} checks passed")
+    print(f"{passed}/{len(CHECKS) + (len(APPS) + 1 if args.apps else 0)} checks passed")
     return 1 if failures else 0
 
 

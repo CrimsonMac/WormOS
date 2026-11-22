@@ -73,14 +73,20 @@ on top of this one.
         -audiodev pipewire,id=snd0 -device ich9-intel-hda \
         -device hda-duplex,audiodev=snd0 \
         -device virtio-serial-pci \
-        -chardev qemu-vdagent,id=vdagent0,name=vdagent,clipboard=on,mouse=off \
-        -device virtserialport,chardev=vdagent0,name=com.redhat.spice.0
+        -chardev socket,id=vdagent0,path=/tmp/wormos-clipboard.sock,server=on,wait=off \
+        -device virtserialport,chardev=vdagent0,name=com.redhat.spice.0 &
+    tools/qemu-clipboard /tmp/wormos-clipboard.sock
     ```
-    The screen follows the window size, sound goes through PipeWire and
-    the clipboard is shared. `vmport=off` matters: otherwise QEMU uses
-    VMware's mouse emulation, which WormOS reads as a relative mouse, and
-    the window keeps moving the host pointer to the guest's. Ctrl+Alt+G releases the pointer, Ctrl+Alt+F
-    switches to full screen.
+    The screen follows the window size and sound goes through PipeWire.
+    `vmport=off` matters: otherwise QEMU uses VMware's mouse emulation,
+    which WormOS reads as a relative mouse, and the window keeps moving
+    the host pointer to the guest's. QEMU's window cannot share the
+    clipboard on a Wayland desktop (it may set and read it only in narrow
+    cases), so the guest's agent port goes to a socket and
+    `tools/qemu-clipboard` (from this repository; Python with GObject)
+    moves text between it and the desktop's clipboard, through KDE's
+    Klipper or `wl-copy`/`wl-paste`; it ends with QEMU. Ctrl+Alt+G releases
+    the pointer, Ctrl+Alt+F switches to full screen.
 
   In virt-manager, *View* → *Scale Display* → *Auto resize VM with
   window* makes WormOS use the window's size instead of being stretched
@@ -110,8 +116,9 @@ on top of this one.
       -chardev qemu-vdagent,id=vdagent,name=vdagent,clipboard=on,mouse=off \
       -device virtserialport,chardev=vdagent,name=com.redhat.spice.0
   ```
-  The last three lines share the clipboard with QEMU's window (when QEMU
-  is built with clipboard support) and with VNC viewers. virt-manager's
+  The last three lines share the clipboard with VNC viewers (and with
+  QEMU's window on an X11 desktop; on Wayland, see `tools/qemu-clipboard`
+  above). virt-manager's
   SPICE display shares it without them. For UEFI firmware, add
   `-drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd`.
 - **QEMU on Windows:** install QEMU from https://qemu.weilnetz.de/w64/
@@ -158,7 +165,9 @@ idles at well under 100 MB of memory.
 - Ctrl+Alt+F2 switches to a second console (for logging in as root);
   Ctrl+Alt+F1 returns to the desktop.
 - Administration is done as root: `su -` in a terminal, or the menu's root
-  terminal.
+  terminal. Graphical programs open from the root terminal (it keeps the
+  desktop's display), not from a plain `su -`; programs from wormholes run
+  as well from your own terminal or the launcher.
 - `passwd` (or `worm passwd`) changes your own password, although `/etc`
   is read-only: it asks for the current one first.
 - Time: the first-boot setup asks for your time zone; `worm time` shows the
@@ -350,7 +359,11 @@ The core repository holds the base system and the tools that need direct
 access to the machine. Everything else comes from existing distributions:
 when a package is not in core, `wh install` looks in Debian stable, then in
 Kali, and installs it into a container for that distribution, a
-*wormhole*. Its commands appear on your `PATH` as if installed natively.
+*wormhole*. Its commands appear on your `PATH` as if installed natively,
+and its graphical programs in the launcher. Kali keeps its menu entries
+and icons in a separate package (`kali-menu`); wh takes a tool's entries
+from it, so Ghidra or Burp Suite get theirs. Command line tools such as
+rizin have no entry: run them in a terminal.
 
 ```
 wh install fastfetch          # not in core: found in Debian, installed there

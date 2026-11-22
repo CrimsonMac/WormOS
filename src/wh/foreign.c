@@ -1069,6 +1069,83 @@ static void export_desktop(const char *source, const char *list, char *const *cm
 	free(copy);
 }
 
+/*
+ * Kali keeps its menu entries and their icons in kali-menu, not in the
+ * tools' own packages: Ghidra would install without a menu entry. The
+ * Kali wormhole keeps an unpacked copy of kali-menu (not installed: it
+ * depends on sudo and pkexec and edits menus in its scripts), and a tool
+ * gets the entries that name it in X-Kali-Package. Entries that run
+ * the tool through a shell (Kali's terminal entries for command line
+ * tools) are left out like any entry whose program was not exported.
+ */
+#define KALI_MENU "/var/lib/wh/kali-menu"
+
+static void kali_menu_fetch(const char *source, int refresh)
+{
+	in_wormhole(source, (char *[]){ "sh", "-c",
+		"d=" KALI_MENU "; [ \"$1\" = 1 ] && rm -rf \"$d\"; [ -d \"$d/usr\" ] && exit 0; "
+		"mkdir -p \"${d%/*}\" && t=$(mktemp -d) && cd \"$t\" && apt-get download -q kali-menu >/dev/null 2>&1 && "
+		"rm -rf \"$d.new\" && dpkg-deb -x kali-menu_*.deb \"$d.new\" && mv \"$d.new\" \"$d\"; "
+		"cd / && rm -rf \"$t\"; true", "sh", refresh ? "1" : "0", NULL }, NULL, 0);
+}
+
+static void export_kali_menu(const char *source, const char *pkg, char *const *cmds,
+			     int ncmds, FILE *record)
+{
+	static char found[1 << 16];
+	char *line, *save;
+
+	if (strcmp(source, "kali") != 0 || ncmds == 0)
+		return;
+	kali_menu_fetch(source, 0);
+	found[0] = '\0';
+	in_wormhole(source, (char *[]){ "sh", "-c",
+		"grep -l -x -F \"X-Kali-Package=$1\" " KALI_MENU
+		"/usr/share/kali-menu/applications/*.desktop 2>/dev/null; true",
+		"sh", (char *)pkg, NULL }, found, sizeof(found));
+	for (line = strtok_r(found, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
+		static char icons[1 << 14];
+		char dest[PATH_MAX + 32], host[PATH_MAX + 32], icon[128] = "";
+		const char *base = strrchr(line, '/');
+		char *data, *entry, *p, *iline, *isave;
+		size_t len, elen;
+
+		if (!base || strstr(line, ".."))
+			continue;
+		base++;
+		snprintf(host, sizeof(host), "/usr/share/applications/%s", base);
+		if (access(host, F_OK) == 0 || !(data = read_inside(source, line, &len)))
+			continue;
+		entry = host_entry(data, cmds, ncmds, &elen);
+		if ((p = strstr(data, "\nIcon=")))
+			sscanf(p + 6, "%127[A-Za-z0-9._-]", icon);
+		free(data);
+		if (!entry)
+			continue;
+		snprintf(dest, sizeof(dest), EXPORT_SHARE "/applications/%s", base);
+		if (write_export(dest, entry, elen) == 0)
+			fprintf(record, "export = %s\n", dest);
+		free(entry);
+		if (!icon[0])
+			continue;
+		icons[0] = '\0';
+		in_wormhole(source, (char *[]){ "sh", "-c",
+			"find " KALI_MENU "/usr/share/icons -name \"$1.*\" -type f 2>/dev/null; true",
+			"sh", icon, NULL }, icons, sizeof(icons));
+		for (iline = strtok_r(icons, "\n", &isave); iline;
+		     iline = strtok_r(NULL, "\n", &isave)) {
+			const char *rel = strstr(iline, "/usr/share/icons/");
+
+			if (!rel || strstr(iline, "..") || !(data = read_inside(source, iline, &len)))
+				continue;
+			snprintf(dest, sizeof(dest), EXPORT_SHARE "/icons/%s", rel + 17);
+			if (write_export(dest, data, len) == 0)
+				fprintf(record, "export = %s\n", dest);
+			free(data);
+		}
+	}
+}
+
 /* Export the commands of pkg as wrappers. Writes the record. */
 static void export_commands(const char *source, const char *pkg)
 {
@@ -1140,6 +1217,7 @@ static void export_commands(const char *source, const char *pkg)
 			die("out of memory");
 	}
 	export_desktop(source, list, cmds, ncmds, f);
+	export_kali_menu(source, pkg, cmds, ncmds, f);
 	for (int i = 0; i < ncmds; i++)
 		free(cmds[i]);
 	free(list);
@@ -1262,6 +1340,8 @@ int foreign_refresh(int upgrade)
 		if (upgrade &&
 		    in_wormhole(name, (char *[]){ "apt-get", "-q", "-y", "upgrade", NULL }, NULL, 0) != 0)
 			warn("apt-get upgrade failed in the %s wormhole", name);
+		if (upgrade && !strcmp(name, "kali"))
+			kali_menu_fetch(name, 1);
 		/* New versions can add or drop commands: export again. */
 		if (upgrade && (d = opendir(FOREIGN_DB))) {
 			while ((e = readdir(d))) {

@@ -1,0 +1,17 @@
+#!/bin/sh
+# The root terminal's shell. su - clears the environment, so programs
+# started as root could not find the desktop (Ghidra and other graphical
+# wormhole programs quit at once). Hand the display over: the Wayland
+# socket by its full path and Xwayland's display number. Root gets its own
+# runtime folder, so nothing it writes lands in the user's /run/user one.
+wayland=
+if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+	case $WAYLAND_DISPLAY in
+	/*) wayland=$WAYLAND_DISPLAY ;;
+	*) wayland=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$WAYLAND_DISPLAY ;;
+	esac
+fi
+# Xwayland admits only its own user: add root (it starts Xwayland if needed).
+[ -n "${DISPLAY:-}" ] && /usr/lib/worm/x11-allow-root 2>/dev/null
+exec su - root -c "mkdir -p -m 0700 /run/user/0; exec env XDG_RUNTIME_DIR=/run/user/0 \
+WAYLAND_DISPLAY='$wayland' DISPLAY='${DISPLAY:-}' \"\$SHELL\" -l"
