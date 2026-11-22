@@ -42,7 +42,7 @@ on top of this one.
   passwords, as in the disk image below. The live system's snapshots and
   files are not carried over.
 
-- **The disk image for QEMU / virt-manager** (`wormos-1.10-x86_64.qcow2`): an
+- **The disk image for QEMU / virt-manager** (`wormos-1.12-x86_64.qcow2`): an
   installed system, ready to start. In virt-manager,
   import an existing disk image and choose a generic recent Linux.
 
