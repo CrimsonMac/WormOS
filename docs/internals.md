@@ -1064,7 +1064,11 @@ in [building.md](building.md); what each feature does for the user, in the
   svga, VMware with 3D acceleration) or is QEMU's virtio GPU with virgl
   (since 1.11.1: the DRM card's device is the PCI device, driver
   `virtio-pci`; the virtio device below it, driver `virtio_gpu`, has
-  VIRTIO_GPU_F_VIRGL as bit 0 of its `features`); otherwise wlroots' pixman renderer
+  VIRTIO_GPU_F_VIRGL as bit 0 of its `features`; with virgl the cursor is
+  drawn into the frame, `WLR_NO_HARDWARE_CURSORS=1`, because QEMU showed
+  the cursor plane's image upside down, hotspot included: wlroots draws it
+  with OpenGL ES and virglrenderer flips it again when QEMU reads it back);
+  otherwise wlroots' pixman renderer
   (`WLR_RENDERER=pixman`), which beats OpenGL emulated on the CPU. With
   VMware's 3D acceleration off, EGL fails at once and the session falls
   back to pixman (below). wlroots checked every client's DMA-BUF by
