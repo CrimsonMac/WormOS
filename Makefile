@@ -87,6 +87,10 @@ test-iso:
 test-upgrade:
 	tests/upgrade-test.py $(FROM)
 
+# Deltas, unchanged files and the download cache, on out/wormos.img.
+test-delta:
+	tests/delta-test.py
+
 # On a Windows PC, from WSL: QEMU for Windows.
 test-qemu-windows:
 	tests/qemu-windows-test.py
@@ -108,4 +112,4 @@ clean:
 distclean:
 	rm -rf build out
 
-.PHONY: all toolchain kernel packages repo rootfs image iso iso-barebones run run-gui test test-wormholes test-torbrowser test-upgrade test-iso test-qemu-windows release sources publish-repo clean distclean
+.PHONY: all toolchain kernel packages repo rootfs image iso iso-barebones run run-gui test test-wormholes test-torbrowser test-upgrade test-delta test-iso test-qemu-windows release sources publish-repo clean distclean
