@@ -251,15 +251,21 @@ def main():
                           f"({time.time() - begin:.0f}s)")
                     if not ok:
                         print(f"      output: {out[-600:]!r}")
-                # Kali's menu entries live in kali-menu: wh adds the tools'.
-                out = con.run("cat /usr/local/share/applications/kali-ghidra.desktop; "
-                              "ls /usr/local/share/icons/hicolor/*/apps/kali-ghidra.*")
-                ok = bool(re.search(r"^Exec=ghidra$", out, re.M) and "kali-ghidra." in out)
+                # Menu entries come from tool-menus (Kali's menu): Ghidra's
+                # starts it, a command line tool's opens a terminal.
+                con.run("wh -y install crunch > /tmp/crunch.log 2>&1", 600)
+                out = con.run("cat /usr/local/share/applications/kali-ghidra.desktop "
+                              "/usr/local/share/applications/kali-crunch.desktop; "
+                              "ls /usr/share/icons/hicolor/*/apps/kali-ghidra.*")
+                ok = bool(re.search(r"^Exec=ghidra$", out, re.M) and "kali-ghidra." in out and
+                          re.search(r'^Exec=/usr/lib/worm/exec-in-shell "crunch"$', out, re.M) and
+                          re.search(r"^Terminal=true$", out, re.M) and
+                          re.search(r"^X-WormOS-Section=Credential Access$", out, re.M))
                 passed += ok
                 failures += not ok
-                print(f"{'PASS' if ok else 'FAIL'}  Ghidra has Kali's menu entry and icon")
+                print(f"{'PASS' if ok else 'FAIL'}  menu entries for Ghidra and crunch, with sections")
                 if not ok:
-                    print(f"      output: {out[-600:]!r}")
+                    print(f"      output: {out[-900:]!r}")
             con.send("poweroff\n")
             con.expect("Power down", 120)
         except (TimeoutError, RuntimeError) as e:

@@ -1,6 +1,6 @@
 name=wormos-desktop
 version=1.0
-release=29
+release=30
 description="The WormOS desktop session: labwc, foot and the WormOS look"
 depends=(labwc foot swaybg grim wlr-randr xcompose seatd dbus font-inter font-hack base-files
 	gtk4 gtk4-layer-shell wormos-gtk-theme adwaita-icon-theme dconf worm-shell wormos-snapshots
@@ -31,6 +31,8 @@ package() {
 	install -Dm644 "$f/root-terminal.desktop" \
 		"$pkgdir/usr/share/applications/org.wormos.RootTerminal.desktop"
 	install -Dm755 "$f/root-terminal" "$pkgdir/usr/lib/worm/root-terminal"
+	install -Dm755 "$f/root-shell" "$pkgdir/usr/lib/worm/root-shell"
+	install -Dm755 "$f/exec-in-shell" "$pkgdir/usr/lib/worm/exec-in-shell"
 	install -Dm755 x11-allow-root "$pkgdir/usr/lib/worm/x11-allow-root"
 	install -Dm755 "$f/welcome" "$pkgdir/usr/bin/welcome"
 	install -Dm755 "$f/xdg-terminal-exec" "$pkgdir/usr/bin/xdg-terminal-exec"

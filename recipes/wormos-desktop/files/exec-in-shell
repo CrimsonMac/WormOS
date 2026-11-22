@@ -1,0 +1,11 @@
+#!/bin/sh
+# Menu entries of command line tools, as in Kali's menu: show the command,
+# run it (usually the tool's help) and stay in a shell to use the tool.
+# --root runs it as root, after the root terminal's password prompt.
+# Usage: exec-in-shell [--root] COMMAND
+if [ "${1:-}" = --root ]; then
+	exec /usr/lib/worm/root-terminal "${2:-}"
+fi
+printf '\033[1m$ %s\033[0m\n' "${1:-}"
+sh -c "${1:-}"
+exec "${SHELL:-/bin/sh}" -i

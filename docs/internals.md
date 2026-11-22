@@ -406,15 +406,21 @@ in [building.md](building.md); what each feature does for the user, in the
   wormhole with `openat2` (`RESOLVE_IN_ROOT`), regular files of at most
   8 MiB only, and recorded with the commands, so removing the package
   removes them.
-- Kali keeps menu entries and icons in `kali-menu`, not in the tools'
-  packages. The Kali wormhole keeps an unpacked copy of it in
-  `/var/lib/wh/kali-menu` (`apt-get download` + `dpkg-deb -x`; installing
-  it would bring sudo and pkexec and run its menu scripts), refreshed by
-  `wh upgrade`. A Kali package also gets the entries whose
-  `X-Kali-Package` names it, and their icons, under the same rules (Kali's
-  terminal entries for command line tools run a shell, so they are left
-  out).
-- The root terminal runs `/usr/lib/worm/root-terminal`: `su - root -c` with
+- Kali keeps the menu entries of its tools, and of Debian's tools it
+  carries, in `kali-menu`, not in the tools' packages. The `tool-menus`
+  package (built from kali-menu's source archive) has them in
+  `/usr/share/wormos/tool-menu/applications`, their icons in hicolor, and
+  `sections` (generated from `kali-applications.menu`: every category to its
+  top-level section, `CATEGORY = ORDER|NAME|ICON`). A package from any
+  wormhole gets the entries whose `X-Kali-Package` names it, when their
+  program is one it exported: `exec-in-shell "CMD"` entries become
+  `/usr/lib/worm/exec-in-shell "CMD"` (prints the command, runs it, stays in
+  the user's shell), `sudo CMD` and `pkexec PROG` become
+  `exec-in-shell --root` (the root terminal's password prompt, then CMD as
+  root), others keep their command. Field codes are dropped from terminal
+  commands. Each gets `X-WormOS-Section`. When the package exported its own
+  entries, Kali's for windowed programs are skipped.
+- The root terminal runs `/usr/lib/worm/root-terminal [COMMAND]`: `su - root -c` running `root-shell` with
   the Wayland socket's full path and `DISPLAY` handed over, and
   `XDG_RUNTIME_DIR=/run/user/0`, so graphical programs open from it
   without root writing into the user's runtime folder. Xwayland admits
@@ -1049,10 +1055,20 @@ in [building.md](building.md); what each feature does for the user, in the
 - The program passes the password from its dialog to the helper's input
   and keeps the dialog open after a wrong one (exit status 3).
 - Launcher (`launcher.c`): an overlay layer surface with exclusive keyboard
-  focus: a search field over a grid of the desktop entries GIO lists
-  (`g_app_info_should_show`), filtered by name, description, generic name,
-  program and keywords. Enter starts the first match, Escape or a click
-  outside closes it.
+  focus and a card: search field, sidebar of sections, content. Entries are
+  the ones GIO lists (`g_app_info_should_show`). Sections: Recent (desktop
+  ids in `$XDG_STATE_HOME/wormos/launcher-recent`, newest first, 12),
+  All, the usual categories (the first freedesktop main category: Utility
+  is Accessories, Network is Internet, AudioVideo is Multimedia...), and the
+  security sections wh writes into tool entries (`X-WormOS-Section`),
+  ordered and with icons from `/usr/share/wormos/tool-menu/sections`.
+  Terminal=true entries show as rows with their description, the others
+  as tiles; All leaves out the security command line tools. Search scores
+  every word against name (start of the name, then of a word, then
+  anywhere), program, generic name, keywords, description and section, and
+  lists up to 60 results, best first; Up and Down move the selection from
+  the search field, Enter starts it. Typing anywhere goes to the search
+  field; Escape clears it, then closes.
 - Notifications (`notify.c`): `org.freedesktop.Notifications` on the session
   bus (Notify, CloseNotification, GetCapabilities, GetServerInformation and
   the two signals), shown as cards in an overlay surface at the top right.

@@ -152,6 +152,14 @@ The desktop is [labwc](https://labwc.github.io), a light stacking Wayland
 compositor, with the [foot](https://codeberg.org/dnkl/foot) terminal. It
 idles at well under 100 MB of memory.
 
+- The Super key (or the button at the left of the panel) opens the
+  launcher: start typing to search every program and tool by name,
+  command, keywords or description, the best match first; the arrow keys
+  choose and Enter starts. Its sidebar has Recent, All programs, the usual
+  categories and, once tools are installed, Kali's sections
+  (Reconnaissance, Credential Access, Discovery, Forensics and so on).
+  Programs with a window show as tiles; command line tools as rows that
+  open a terminal running the tool's help, ready to use it.
 - Right click on the background (or Super+Space) opens the menu: terminals,
   applications installed from wormholes, snapshots, screenshots, log out.
 - Super+Enter opens a terminal, Super+Q closes a window, Alt+Tab switches,
@@ -360,10 +368,12 @@ access to the machine. Everything else comes from existing distributions:
 when a package is not in core, `wh install` looks in Debian stable, then in
 Kali, and installs it into a container for that distribution, a
 *wormhole*. Its commands appear on your `PATH` as if installed natively,
-and its graphical programs in the launcher. Kali keeps its menu entries
-and icons in a separate package (`kali-menu`); wh takes a tool's entries
-from it, so Ghidra or Burp Suite get theirs. Command line tools such as
-rizin have no entry: run them in a terminal.
+and it gets an entry in the launcher, as in Kali's menu, from the
+`tool-menus` package (built from Kali's `kali-menu`, which has the menu
+entries of the tools Kali and Debian carry): programs with a window start
+directly, command line tools open a terminal that runs the tool and stays
+open, and tools that need root ask for the root password first. Each
+lands in its section of the launcher.
 
 ```
 wh install fastfetch          # not in core: found in Debian, installed there

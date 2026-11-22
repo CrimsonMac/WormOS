@@ -1,0 +1,14 @@
+#!/bin/sh
+# Root's side of the root terminal, run by su: the desktop's display and a
+# runtime folder of root's own (nothing it writes lands in the user's),
+# then root's login shell. A command given runs first; the shell stays.
+# Usage: root-shell WAYLAND_DISPLAY DISPLAY [COMMAND]
+mkdir -p -m 0700 /run/user/0
+export XDG_RUNTIME_DIR=/run/user/0
+[ -n "${1:-}" ] && export WAYLAND_DISPLAY="$1"
+[ -n "${2:-}" ] && export DISPLAY="$2"
+if [ -n "${3:-}" ]; then
+	printf '\033[1m# %s\033[0m\n' "$3"
+	sh -c "$3"
+fi
+exec "${SHELL:-/bin/sh}" -l

@@ -1027,10 +1027,11 @@ static char *host_entry(const char *text, char *const *cmds, int ncmds, size_t *
  * Export the desktop entries and icons in the package's file list (list,
  * one path per line), for the commands just exported. Records each file.
  */
-static void export_desktop(const char *source, const char *list, char *const *cmds,
-			   int ncmds, FILE *record)
+static int export_desktop(const char *source, const char *list, char *const *cmds,
+			  int ncmds, FILE *record)
 {
 	char *copy = strdup(list), *line, *save;
+	int entries = 0;
 
 	if (!copy)
 		die("out of memory");
@@ -1049,8 +1050,10 @@ static void export_desktop(const char *source, const char *list, char *const *cm
 			if (!entry)
 				continue;
 			snprintf(dest, sizeof(dest), EXPORT_SHARE "/applications/%s", line + 24);
-			if (write_export(dest, entry, elen) == 0)
+			if (write_export(dest, entry, elen) == 0) {
 				fprintf(record, "export = %s\n", dest);
+				entries++;
+			}
 			free(entry);
 			continue;
 		}
@@ -1067,83 +1070,218 @@ static void export_desktop(const char *source, const char *list, char *const *cm
 		free(data);
 	}
 	free(copy);
+	return entries;
 }
 
 /*
- * Kali keeps its menu entries and their icons in kali-menu, not in the
- * tools' own packages: Ghidra would install without a menu entry. The
- * Kali wormhole keeps an unpacked copy of kali-menu (not installed: it
- * depends on sudo and pkexec and edits menus in its scripts), and a tool
- * gets the entries that name it in X-Kali-Package. Entries that run
- * the tool through a shell (Kali's terminal entries for command line
- * tools) are left out like any entry whose program was not exported.
+ * Menu entries for security tools. Kali keeps them (for its tools and for
+ * Debian's tools it carries) in kali-menu, not in the tools' packages, so
+ * Ghidra or crunch would install without one. The tool-menus package has
+ * them in TOOL_MENU, with Kali's sections; a package installed from any
+ * wormhole gets the entries naming it in X-Kali-Package, for programs it
+ * exported:
+ *   - a program with a window starts directly;
+ *   - a command line tool (Kali: exec-in-shell "CMD") opens a terminal
+ *     that runs CMD and stays open (/usr/lib/worm/exec-in-shell);
+ *   - CMD given with sudo, and pkexec programs, run as root through the
+ *     root terminal's password prompt (exec-in-shell --root).
+ * Each entry names its section (X-WormOS-Section) for the launcher. When
+ * the package brings its own entries, Kali's for its windowed programs
+ * are left out (two entries for one program).
  */
-#define KALI_MENU "/var/lib/wh/kali-menu"
+#define TOOL_MENU "/usr/share/wormos/tool-menu"
+#define EXEC_IN_SHELL "/usr/lib/worm/exec-in-shell"
 
-static void kali_menu_fetch(const char *source, int refresh)
+/* The section of the first category with one ("NAME"), or NULL. */
+static char *tool_section(const char *categories)
 {
-	in_wormhole(source, (char *[]){ "sh", "-c",
-		"d=" KALI_MENU "; [ \"$1\" = 1 ] && rm -rf \"$d\"; [ -d \"$d/usr\" ] && exit 0; "
-		"mkdir -p \"${d%/*}\" && t=$(mktemp -d) && cd \"$t\" && apt-get download -q kali-menu >/dev/null 2>&1 && "
-		"rm -rf \"$d.new\" && dpkg-deb -x kali-menu_*.deb \"$d.new\" && mv \"$d.new\" \"$d\"; "
-		"cd / && rm -rf \"$t\"; true", "sh", refresh ? "1" : "0", NULL }, NULL, 0);
-}
+	char line[512], *found = NULL, *cats = strdup(categories), *c, *save;
+	FILE *f;
 
-static void export_kali_menu(const char *source, const char *pkg, char *const *cmds,
-			     int ncmds, FILE *record)
-{
-	static char found[1 << 16];
-	char *line, *save;
+	if (!cats || !(f = fopen(TOOL_MENU "/sections", "re"))) {
+		free(cats);
+		return NULL;
+	}
+	for (c = strtok_r(cats, ";", &save); c && !found; c = strtok_r(NULL, ";", &save)) {
+		size_t n = strlen(c);
 
-	if (strcmp(source, "kali") != 0 || ncmds == 0)
-		return;
-	kali_menu_fetch(source, 0);
-	found[0] = '\0';
-	in_wormhole(source, (char *[]){ "sh", "-c",
-		"grep -l -x -F \"X-Kali-Package=$1\" " KALI_MENU
-		"/usr/share/kali-menu/applications/*.desktop 2>/dev/null; true",
-		"sh", (char *)pkg, NULL }, found, sizeof(found));
-	for (line = strtok_r(found, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
-		static char icons[1 << 14];
-		char dest[PATH_MAX + 32], host[PATH_MAX + 32], icon[128] = "";
-		const char *base = strrchr(line, '/');
-		char *data, *entry, *p, *iline, *isave;
-		size_t len, elen;
+		rewind(f);
+		while (fgets(line, sizeof(line), f)) {
+			char *bar1, *bar2;
 
-		if (!base || strstr(line, ".."))
-			continue;
-		base++;
-		snprintf(host, sizeof(host), "/usr/share/applications/%s", base);
-		if (access(host, F_OK) == 0 || !(data = read_inside(source, line, &len)))
-			continue;
-		entry = host_entry(data, cmds, ncmds, &elen);
-		if ((p = strstr(data, "\nIcon=")))
-			sscanf(p + 6, "%127[A-Za-z0-9._-]", icon);
-		free(data);
-		if (!entry)
-			continue;
-		snprintf(dest, sizeof(dest), EXPORT_SHARE "/applications/%s", base);
-		if (write_export(dest, entry, elen) == 0)
-			fprintf(record, "export = %s\n", dest);
-		free(entry);
-		if (!icon[0])
-			continue;
-		icons[0] = '\0';
-		in_wormhole(source, (char *[]){ "sh", "-c",
-			"find " KALI_MENU "/usr/share/icons -name \"$1.*\" -type f 2>/dev/null; true",
-			"sh", icon, NULL }, icons, sizeof(icons));
-		for (iline = strtok_r(icons, "\n", &isave); iline;
-		     iline = strtok_r(NULL, "\n", &isave)) {
-			const char *rel = strstr(iline, "/usr/share/icons/");
-
-			if (!rel || strstr(iline, "..") || !(data = read_inside(source, iline, &len)))
+			if (strncmp(line, c, n) || strncmp(line + n, " = ", 3))
 				continue;
-			snprintf(dest, sizeof(dest), EXPORT_SHARE "/icons/%s", rel + 17);
-			if (write_export(dest, data, len) == 0)
-				fprintf(record, "export = %s\n", dest);
-			free(data);
+			if ((bar1 = strchr(line + n + 3, '|')) && (bar2 = strchr(bar1 + 1, '|'))) {
+				*bar2 = '\0';
+				found = strdup(bar1 + 1);
+			}
+			break;
 		}
 	}
+	fclose(f);
+	free(cats);
+	return found;
+}
+
+/* Quote s as one argument of a desktop entry's Exec line. */
+static void exec_quote(char *out, size_t size, const char *s)
+{
+	size_t n = 0;
+
+	if (size < 3)
+		return;
+	out[n++] = '"';
+	for (; *s && n + 4 < size; s++) {
+		if (strchr("\"`$\\", *s))
+			out[n++] = '\\';
+		out[n++] = *s;
+	}
+	out[n++] = '"';
+	out[n] = '\0';
+}
+
+/*
+ * The Exec line for a tool-menu entry's command, or "" when its program is
+ * not one of cmds. terminal is set for entries that open a terminal.
+ */
+static void tool_exec(const char *exec, char *const *cmds, int ncmds, char *out,
+		      size_t size, int *terminal)
+{
+	char cmd[1024], word[256], quoted[2200];
+	const char *run = NULL;
+	int root = 0;
+	size_t n;
+
+	out[0] = '\0';
+	*terminal = 0;
+	if (!strncmp(exec, "/usr/share/kali-menu/exec-in-shell ", 35)) {
+		const char *q = exec + 35;
+
+		if (*q != '"' || !(n = strlen(q)) || q[n - 1] != '"' || n - 2 >= sizeof(cmd))
+			return;
+		snprintf(cmd, sizeof(cmd), "%.*s", (int)(n - 2), q + 1);
+		*terminal = 1;
+	} else if (!strncmp(exec, "pkexec ", 7)) {
+		snprintf(cmd, sizeof(cmd), "%s", exec + 7);
+		root = *terminal = 1;
+	} else {
+		snprintf(cmd, sizeof(cmd), "%s", exec);
+	}
+	/* Field codes (%F, %u...) mean nothing to a terminal command. */
+	if (*terminal && strchr(cmd, '%')) {
+		char kept[1024] = "", *w, *wsave;
+		size_t k = 0;
+
+		for (w = strtok_r(cmd, " ", &wsave); w; w = strtok_r(NULL, " ", &wsave))
+			if (w[0] != '%' && k + strlen(w) + 2 < sizeof(kept))
+				k += sprintf(kept + k, "%s%s", k ? " " : "", w);
+		snprintf(cmd, sizeof(cmd), "%s", kept);
+	}
+	run = cmd;
+	if (!strncmp(run, "sudo ", 5)) {
+		run += 5;
+		root = 1;
+	}
+	n = strcspn(run, " ");
+	if (n == 0 || n >= sizeof(word))
+		return;
+	snprintf(word, sizeof(word), "%.*s", (int)n, run);
+	if (!word_is_exported(word, cmds, ncmds))
+		return;
+	if (!*terminal) {
+		snprintf(out, size, "%s", run);
+		return;
+	}
+	exec_quote(quoted, sizeof(quoted), run);
+	snprintf(out, size, EXEC_IN_SHELL " %s%s", root ? "--root " : "", quoted);
+}
+
+static void export_tool_menu(const char *pkg, char *const *cmds, int ncmds, int own_entries,
+			     FILE *record)
+{
+	char want[300];
+	struct dirent *e;
+	DIR *d;
+
+	if (ncmds == 0 || !(d = opendir(TOOL_MENU "/applications")))
+		return;
+	snprintf(want, sizeof(want), "X-Kali-Package=%s", pkg);
+	while ((e = readdir(d))) {
+		char path[PATH_MAX], dest[PATH_MAX + 32], host[PATH_MAX + 32];
+		char exec[2400] = "", categories[512] = "", *section;
+		char *text, *out, *line, *save;
+		size_t len, n = 0;
+		int terminal = 0, main_group = 0, match = 0;
+		FILE *f;
+
+		if (!strstr(e->d_name, ".desktop") || strchr(e->d_name, '/'))
+			continue;
+		snprintf(path, sizeof(path), TOOL_MENU "/applications/%s", e->d_name);
+		if (!(f = fopen(path, "re")))
+			continue;
+		text = malloc(65536);
+		len = text ? fread(text, 1, 65535, f) : 0;
+		fclose(f);
+		if (!text)
+			die("out of memory");
+		text[len] = '\0';
+		if (!strstr(text, want)) {
+			free(text);
+			continue;
+		}
+		for (line = strtok_r(text, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
+			if (line[0] == '[')
+				main_group = !strcmp(line, "[Desktop Entry]");
+			else if (main_group && !strcmp(line, want))
+				match = 1;
+			else if (main_group && !strncmp(line, "Exec=", 5))
+				tool_exec(line + 5, cmds, ncmds, exec, sizeof(exec), &terminal);
+			else if (main_group && !strncmp(line, "Categories=", 11))
+				snprintf(categories, sizeof(categories), "%s", line + 11);
+		}
+		free(text);
+		if (!match || !exec[0] || (own_entries && !terminal))
+			continue;
+		snprintf(host, sizeof(host), "/usr/share/applications/%s", e->d_name);
+		if (access(host, F_OK) == 0)
+			continue;
+		/* The entry again, rewritten: [Desktop Entry] only, our Exec. */
+		if (!(f = fopen(path, "re")))
+			continue;
+		text = malloc(65536);
+		out = malloc(65536 + 4096);
+		if (!text || !out)
+			die("out of memory");
+		len = fread(text, 1, 65535, f);
+		fclose(f);
+		text[len] = '\0';
+		main_group = 0;
+		for (line = strtok_r(text, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
+			if (line[0] == '[') {
+				main_group = !strcmp(line, "[Desktop Entry]");
+				if (main_group)
+					n += sprintf(out + n, "%s\n", line);
+				continue;
+			}
+			if (!main_group || !strncmp(line, "Exec=", 5) || !strncmp(line, "TryExec=", 8) ||
+			    !strncmp(line, "Actions=", 8) || !strncmp(line, "Terminal=", 9) ||
+			    !strncmp(line, "DBusActivatable=", 16) || n + strlen(line) + 8 > 65536)
+				continue;
+			n += sprintf(out + n, "%s\n", line);
+		}
+		section = tool_section(categories);
+		n += sprintf(out + n, "Exec=%s\nTerminal=%s\nX-WormOS-Wormhole=true\n", exec,
+			     terminal ? "true" : "false");
+		if (section)
+			n += snprintf(out + n, 512, "X-WormOS-Section=%s\n", section);
+		free(section);
+		free(text);
+		snprintf(dest, sizeof(dest), EXPORT_SHARE "/applications/%s", e->d_name);
+		if (write_export(dest, out, n) == 0)
+			fprintf(record, "export = %s\n", dest);
+		free(out);
+	}
+	closedir(d);
 }
 
 /* Export the commands of pkg as wrappers. Writes the record. */
@@ -1151,7 +1289,7 @@ static void export_commands(const char *source, const char *pkg)
 {
 	static char out[1 << 20];
 	char record[PATH_MAX], *line, *save, *list, *cmds[256];
-	int ncmds = 0;
+	int ncmds = 0, own;
 	FILE *f;
 
 	if (in_wormhole(source, (char *[]){ "dpkg-query", "-L", (char *)pkg, NULL },
@@ -1216,8 +1354,8 @@ static void export_commands(const char *source, const char *pkg)
 		if (ncmds < (int)(sizeof(cmds) / sizeof(cmds[0])) && !(cmds[ncmds++] = strdup(cmd)))
 			die("out of memory");
 	}
-	export_desktop(source, list, cmds, ncmds, f);
-	export_kali_menu(source, pkg, cmds, ncmds, f);
+	own = export_desktop(source, list, cmds, ncmds, f);
+	export_tool_menu(pkg, cmds, ncmds, own, f);
 	for (int i = 0; i < ncmds; i++)
 		free(cmds[i]);
 	free(list);
@@ -1340,8 +1478,6 @@ int foreign_refresh(int upgrade)
 		if (upgrade &&
 		    in_wormhole(name, (char *[]){ "apt-get", "-q", "-y", "upgrade", NULL }, NULL, 0) != 0)
 			warn("apt-get upgrade failed in the %s wormhole", name);
-		if (upgrade && !strcmp(name, "kali"))
-			kali_menu_fetch(name, 1);
 		/* New versions can add or drop commands: export again. */
 		if (upgrade && (d = opendir(FOREIGN_DB))) {
 			while ((e = readdir(d))) {
