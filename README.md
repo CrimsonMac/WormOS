@@ -37,7 +37,8 @@ traffic through Tor. Four ideas run through all of it: **testing**,
 - **Read-only and transactional.** The system is mounted read-only;
   `wh install` builds the change in a copy and switches to it, so an
   install either fully happens or does not happen. `wh undo` and
-  `wh install --try` come for free.
+  `wh install --try` come for free, and upgrades download only the files
+  that changed.
 - **Blackholes.** Disposable sandboxes (namespaces, seccomp, Landlock, or a
   virtual machine with its own kernel) for untrusted programs and malware
   analysis, Windows binaries included.
