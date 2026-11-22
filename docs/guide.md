@@ -72,6 +72,21 @@ on top of this one.
   (With another GPU chosen, the window stays black: the NVIDIA driver
   cannot show frames rendered on a different GPU.)
 
+  On NVIDIA, virt-manager's viewer may still fail to show the frames
+  (`failed to create EGL image from DMA-BUF` in its log; the window stays
+  black or virt-manager stops responding), whatever the guest. Then let
+  QEMU render on the card by itself and send SPICE finished frames: untick
+  *OpenGL* under *Display Spice* (keep *3D acceleration*) and add a
+  second display in the machine's XML (*Edit* → *Preferences* → *Enable
+  XML editing*, then the *XML* tab of *Display Spice*, or
+  `virsh edit NAME`), next to the SPICE one:
+  ```
+  <graphics type='egl-headless'>
+    <gl rendernode='/dev/dri/by-path/pci-0000:01:00.0-render'/>
+  </graphics>
+  ```
+  with the PCI address of your card (`ls /dev/dri/by-path`).
+
   From the command line:
   ```
   qemu-system-x86_64 -machine q35 -accel kvm -cpu host -m 2048 -smp 2 \
