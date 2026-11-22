@@ -46,46 +46,43 @@ on top of this one.
   installed system, ready to start. In virt-manager,
   import an existing disk image and choose a generic recent Linux.
 
-  **Smooth drawing in virt-manager.** With a plain SPICE display, QEMU
-  sends each change as strips 32 pixels wide and virt-manager paints them
-  as they arrive, so large changes (a scrolling terminal) visibly roll
-  down the screen. Two ways around it:
+  **Smooth drawing.** virt-manager's plain SPICE and VNC displays show
+  half-sent frames when the screen changes quickly (a scrolling
+  terminal): QEMU sends SPICE changes as strips 32 pixels wide, and when
+  output outruns encoding its VNC server sends part of a frame and the
+  rest later. A line then rolls across the window. WormOS's own frames
+  are complete; the fix is a display that hands whole frames over on the
+  GPU:
 
-  - *SPICE with OpenGL* (hosts with Intel or AMD graphics): in the
-    machine's details, *Display Spice*, set *Listen type* to *None* and
-    tick *OpenGL*, choosing the GPU your desktop runs on; in *Video
-    Virtio*, tick *3D acceleration*. WormOS draws with the virtual GPU
-    (virgl) and the viewer shows whole frames.
-  - *VNC* (any host, and the one that works with NVIDIA's driver):
-    virt-manager's VNC viewer paints an update only once it has all of
-    it. Change the display in the machine's XML (*Edit* → *Preferences*
-    → *Enable XML editing*, or `virsh edit NAME`): the SPICE display
-    becomes
+  - *SPICE with OpenGL* in virt-manager (hosts with Intel or AMD
+    graphics): in the machine's details, *Display Spice*, set *Listen
+    type* to *None* and tick *OpenGL*, choosing the GPU your desktop runs
+    on; in *Video Virtio*, tick *3D acceleration*.
+  - *QEMU's own window* (any host, including NVIDIA's driver, where
+    SPICE with OpenGL fails: QEMU 11.1 hands the viewer frame handles
+    that are not DMA-BUFs, so the window stays black or virt-manager
+    stops responding with `failed to create EGL image from DMA-BUF`).
+    Shut the machine down in virt-manager, then start the same disk
+    with:
     ```
-    <graphics type='vnc'>
-      <listen type='none'/>
-    </graphics>
-    <graphics type='egl-headless'>
-      <gl rendernode='/dev/dri/by-path/pci-0000:01:00.0-render'/>
-    </graphics>
+    qemu-system-x86_64 -machine q35,accel=kvm -cpu host -smp 4 -m 4G \
+        -drive file=wormos-x86_64.qcow2,if=virtio,format=qcow2 \
+        -device virtio-vga-gl -display gtk,gl=on,zoom-to-fit=off \
+        -device virtio-tablet-pci -device virtio-keyboard-pci \
+        -nic user,model=virtio-net-pci \
+        -audiodev pipewire,id=snd0 -device ich9-intel-hda \
+        -device hda-duplex,audiodev=snd0 \
+        -device virtio-serial-pci \
+        -chardev qemu-vdagent,id=vdagent0,name=vdagent,clipboard=on,mouse=off \
+        -device virtserialport,chardev=vdagent0,name=com.redhat.spice.0
     ```
-    (the second part lets WormOS draw on the host's GPU, with *3D
-    acceleration* ticked; use your card's address from
-    `ls /dev/dri/by-path`, or leave it out), and the SPICE agent channel
-    becomes QEMU's own, so the shared clipboard and window resizing keep
-    working:
-    ```
-    <channel type='qemu-vdagent'>
-      <source>
-        <clipboard copypaste='yes'/>
-        <mouse mode='client'/>
-      </source>
-      <target type='virtio' name='com.redhat.spice.0'/>
-    </channel>
-    ```
-    Remove the `<redirdev type='spicevmc'>` entries and set
-    `<audio id='1' type='none'/>`: USB redirection and sound go through
-    SPICE and are not available over VNC.
+    The screen follows the window size, sound goes through PipeWire and
+    the clipboard is shared. Ctrl+Alt+G releases the pointer, Ctrl+Alt+F
+    switches to full screen.
+
+  In virt-manager, *View* → *Scale Display* → *Auto resize VM with
+  window* makes WormOS use the window's size instead of being stretched
+  to it (it is off by default).
 
   With an NVIDIA card, libvirt also hides the card's device files from
   QEMU (`eglInitialize failed`); allow them once, as root:
@@ -100,11 +97,6 @@ on top of this one.
   EOF
   systemctl restart libvirtd
   ```
-  SPICE with OpenGL does not work on NVIDIA's driver (QEMU 11.1): the
-  frame handles QEMU passes to the viewer are not DMA-BUFs, so the window
-  stays black or virt-manager stops responding (`failed to create EGL
-  image from DMA-BUF`). Choosing another GPU under *OpenGL* fails the same
-  way.
 
   From the command line:
   ```
