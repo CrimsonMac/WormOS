@@ -162,8 +162,8 @@ CHECKS = [
 
 
 # --apps: real programs across the toolkits people install, each started
-# as a user with X11 (WAYLAND_DISPLAY unset, so GTK and Qt programs use
-# Xwayland too and xwininfo sees their windows). (package, source,
+# as a user with X11 (GTK and Qt told to use it too, which they otherwise
+# would not, so that xwininfo sees every window). (package, source,
 # command, window name pattern, seconds to wait for the window)
 APPS = [
     ("mousepad", "debian", "mousepad", "Mousepad", 60),
@@ -177,7 +177,10 @@ APP_SESSION = (
     "worm unlock >/dev/null; id tester >/dev/null 2>&1 || adduser -D tester; "
     "worm lock >/dev/null; /usr/lib/worm/runtime-dirs; "
     "su tester -c 'export XDG_RUNTIME_DIR=/run/user/1000 WLR_BACKENDS=headless "
-    "WLR_RENDERER=pixman; labwc > /tmp/labwc-apps.log 2>&1 &'; sleep 5; "
+    "WLR_RENDERER=pixman; labwc > /tmp/labwc-apps.log 2>&1 & "
+    # A session bus, as on the desktop: GTK programs stall without one.
+    "dbus-daemon --session --address=unix:path=/run/user/1000/bus --fork "
+    ">/dev/null'; sleep 5; "
     "ls /tmp/.X11-unix")
 
 
@@ -186,7 +189,9 @@ def app_check(con, name, source, cmd, pattern, wait):
     out = con.run(f"wh -y install --from {source} {name} 2>&1 | tail -3", 3600)
     if "wh:" in out and "->" not in out and "already" not in out:
         return False, out
-    start = (f"su tester -c 'cd; export XDG_RUNTIME_DIR=/run/user/1000 DISPLAY=:0; "
+    start = (f"su tester -c 'cd; export XDG_RUNTIME_DIR=/run/user/1000 DISPLAY=:0 "
+             f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus "
+             f"GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb; "
              f"unset WAYLAND_DISPLAY; {cmd} > /tmp/app-{name}.log 2>&1 &'")
     con.run(start)
     look = (f"for i in $(seq {wait // 3}); do su tester -c 'DISPLAY=:0 xwininfo -root -tree' "

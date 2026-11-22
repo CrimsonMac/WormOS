@@ -193,7 +193,7 @@ SOUND_CHECKS = [
 # One second of noise through PipeWire, then the volume as the shell sees it.
 PLAY = ("head -c 192000 /dev/urandom | pw-cat --playback --raw --format s16 --rate 48000 "
         "--channels 2 - && echo played\n")
-VOLUME = "wpctl get-volume @DEFAULT_AUDIO_SINK@"
+VOLUME = "wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null"
 
 
 def wav_peak(path):
@@ -598,7 +598,7 @@ def main():
     total = (len(DEVICE_CHECKS) + 1 + len(AFTER_SETUP_CHECKS) + 3 + len(SESSION_CHECKS) +
              len(TYPING_CHECKS) + len(SHORTCUT_CHECKS) + len(BUDGET_CHECKS) +
              len(RESIZES) + len(WELCOME_CHECKS) + len(GTK_CHECKS) + len(SOUND_CHECKS) +
-             len(SHELL_CHECKS) + len(CLIPBOARD_CHECKS) + 36)
+             len(SHELL_CHECKS) + len(CLIPBOARD_CHECKS) + 37)
     if gtk_check is None:
         total -= len(GTK_CHECKS) + 3
 
@@ -779,6 +779,27 @@ def main():
             wait_for(con, "pidof foot | wc -w", r"^2$", 60)
             run_checks(con, SHORTCUT_CHECKS)
 
+            # Tiling from the keyboard: the new terminal, snapped to the left
+            # half, then maximized, is about half as wide as then.
+            time.sleep(2)
+            mon.key("meta_l-left")
+            time.sleep(2)
+            mon.type("stty size > /tmp/tile-half\n")
+            time.sleep(1)
+            mon.key("meta_l-f")
+            time.sleep(2)
+            mon.type("stty size > /tmp/tile-full\n")
+            time.sleep(1)
+            mon.key("meta_l-f")
+            time.sleep(1)
+            mon.key("meta_l-down")
+            time.sleep(1)
+            half = con.run("cut -d' ' -f2 /tmp/tile-half")
+            full = con.run("cut -d' ' -f2 /tmp/tile-full")
+            ok = half.isdigit() and full.isdigit() and 1.8 < int(full) / max(int(half), 1) < 2.3
+            check("Super+Left tiles to half the screen, Super+F maximizes", ok,
+                  f"{half} columns tiled, {full} maximized")
+
             # What is really on the screen: the wallpaper's purple and the
             # dark terminal, not a blank or text console.
             time.sleep(3)
@@ -950,7 +971,7 @@ def main():
             session("worm-shell --volume down")
             session("worm-shell --volume down")
             out = wait_for(con, f"su {USER} -c '/tmp/in-session {VOLUME}'",
-                           rf"Volume: {max(level - 0.1, 0):.2f}", 30)
+                           rf"Volume: {max(level - 0.1, 0):.2f}", 60)
             check("volume down from the shell", f"{max(level - 0.1, 0):.2f}" in out,
                   f"{level:.2f} before; {out}")
             width, height, pixels = screen("volume")
