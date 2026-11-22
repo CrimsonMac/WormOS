@@ -268,7 +268,8 @@ in [building.md](building.md); what each feature does for the user, in the
 
 - Downloads (since 1.11): `repo_fetch_all` fetches every package of a
   plan with one parallel curl (`download_many`) and checks each against
-  the index; once the plan is installed, `repo_clean_cache` empties
+  the index; once the plan is installed, `repo_remove_downloads` deletes
+  them, and each new download first clears what earlier changes left in
   `/var/cache/wh` (earlier releases kept every package downloaded).
 - Deltas (since 1.11): an index entry may carry
   `delta = FROM-VERSION FILE SIZE SHA256`. When the installed version is
