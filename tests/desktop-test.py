@@ -105,6 +105,16 @@ SESSION_CHECKS = [
      r"^DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus$"),
     ("standard folders", f"ls -1 /home/{USER}; grep -c DIR= /home/{USER}/.config/user-dirs.dirs",
      r"Documents(.|\n)*Downloads(.|\n)*Pictures(.|\n)*^8$"),
+    # X11 programs: Xwayland starts when the first one connects. xkbcomp
+    # is an X client too (it reads the server's keymap).
+    ("programs on the desktop know the X display",
+     "tr '\\0' '\\n' < /proc/$(pidof foot | cut -d' ' -f1)/environ | grep ^DISPLAY=",
+     r"^DISPLAY=:\d+$"),
+    ("an X11 program connects through Xwayland",
+     f"d=$(tr '\\0' '\\n' < /proc/$(pidof foot | cut -d' ' -f1)/environ | sed -n 's/^DISPLAY=//p'); "
+     f"su {USER} -c \"DISPLAY=$d xkbcomp -xkb $d /tmp/x11.xkb\" 2>&1 | grep -v -i warning | head -3; "
+     "grep -c xkb_keymap /tmp/x11.xkb; pidof Xwayland | wc -w",
+     r"^1\n1$"),
 ]
 
 TYPING_CHECKS = [
@@ -588,7 +598,7 @@ def main():
     total = (len(DEVICE_CHECKS) + 1 + len(AFTER_SETUP_CHECKS) + 3 + len(SESSION_CHECKS) +
              len(TYPING_CHECKS) + len(SHORTCUT_CHECKS) + len(BUDGET_CHECKS) +
              len(RESIZES) + len(WELCOME_CHECKS) + len(GTK_CHECKS) + len(SOUND_CHECKS) +
-             len(SHELL_CHECKS) + len(CLIPBOARD_CHECKS) + 35)
+             len(SHELL_CHECKS) + len(CLIPBOARD_CHECKS) + 36)
     if gtk_check is None:
         total -= len(GTK_CHECKS) + 3
 
@@ -912,6 +922,14 @@ def main():
             con.run(f"su {USER} -c '/tmp/in-session worm-shell > /dev/null 2>&1 &'")
             out = wait_for(con, f"su {USER} -c '/tmp/in-session {SCALE}'", r"1\.25", 90)
             check("chosen scale applied", "1.25" in out, out)
+            # Below 100%: more room on big screens (wlroots keeps scales in
+            # 256ths: 0.8 is 0.8008).
+            con.run(f"echo 'scale = 0.8' > /home/{USER}/.config/wormos/display")
+            session("worm-shell --quit")
+            con.run(f"su {USER} -c '/tmp/in-session worm-shell > /dev/null 2>&1 &'")
+            out = wait_for(con, f"su {USER} -c '/tmp/in-session {SCALE}'", r"0\.80\d*", 90)
+            check("a scale below 100% applied", re.search(r"0\.80\d*", out) is not None, out)
+            con.run(f"echo 'scale = 1.25' > /home/{USER}/.config/wormos/display")
             vnc.resize(1280, 800)
             time.sleep(5)
 
