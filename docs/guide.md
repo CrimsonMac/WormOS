@@ -65,7 +65,7 @@ on top of this one.
     Shut the machine down in virt-manager, then start the same disk
     with:
     ```
-    qemu-system-x86_64 -machine q35,accel=kvm -cpu host -smp 4 -m 4G \
+    qemu-system-x86_64 -machine q35,accel=kvm,vmport=off -cpu host -smp 4 -m 4G \
         -drive file=wormos-x86_64.qcow2,if=virtio,format=qcow2 \
         -device virtio-vga-gl -display gtk,gl=on,zoom-to-fit=off \
         -device virtio-tablet-pci -device virtio-keyboard-pci \
@@ -77,7 +77,9 @@ on top of this one.
         -device virtserialport,chardev=vdagent0,name=com.redhat.spice.0
     ```
     The screen follows the window size, sound goes through PipeWire and
-    the clipboard is shared. Ctrl+Alt+G releases the pointer, Ctrl+Alt+F
+    the clipboard is shared. `vmport=off` matters: otherwise QEMU uses
+    VMware's mouse emulation, which WormOS reads as a relative mouse, and
+    the window keeps moving the host pointer to the guest's. Ctrl+Alt+G releases the pointer, Ctrl+Alt+F
     switches to full screen.
 
   In virt-manager, *View* → *Scale Display* → *Auto resize VM with
