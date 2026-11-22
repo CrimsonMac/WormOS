@@ -53,6 +53,10 @@ on top of this one.
   finished frames. Without it, everything still works, but SPICE sends
   each change as image pieces that the viewer paints as they arrive, so
   large changes (a scrolling terminal) visibly roll down the screen.
+  If the machine then fails to start with `eglInitialize failed`, the
+  host has more than one GPU and *Auto* picked one QEMU cannot use (an
+  NVIDIA card with its proprietary driver, typically): choose the other
+  render node (`/dev/dri/renderD128`...) in the list under *OpenGL*.
 
   From the command line:
   ```
