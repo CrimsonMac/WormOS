@@ -53,10 +53,13 @@ on top of this one.
   finished frames. Without it, everything still works, but SPICE sends
   each change as image pieces that the viewer paints as they arrive, so
   large changes (a scrolling terminal) visibly roll down the screen.
-  If the machine then fails to start with `eglInitialize failed`, the
-  host has more than one GPU and *Auto* picked one QEMU cannot use (an
-  NVIDIA card with its proprietary driver, typically): choose the other
-  render node (`/dev/dri/renderD128`...) in the list under *OpenGL*.
+  This needs QEMU and virt-manager's window on the same GPU, with Mesa's
+  drivers (Intel or AMD graphics). It does not work when the host's
+  desktop runs on an NVIDIA card with its proprietary driver: QEMU cannot
+  render on that card (`eglInitialize failed`), and with another GPU
+  chosen under *OpenGL* the window stays black, because the NVIDIA driver
+  cannot show frames from that other GPU (virt-manager logs "failed to
+  create EGL image from DMA-BUF"). Leave OpenGL off there.
 
   From the command line:
   ```
