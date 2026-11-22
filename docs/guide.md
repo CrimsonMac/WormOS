@@ -46,18 +46,49 @@ on top of this one.
   installed system, ready to start. In virt-manager,
   import an existing disk image and choose a generic recent Linux.
 
-  For smooth drawing in virt-manager, turn on OpenGL before the first
-  start: in the machine's details, *Display Spice*, set *Listen type* to
-  *None* and tick *OpenGL*; in *Video Virtio*, tick *3D acceleration*.
-  WormOS then draws with the virtual GPU (virgl), and the viewer shows
-  finished frames. Without it, everything still works, but SPICE sends
-  each change as image pieces that the viewer paints as they arrive, so
-  large changes (a scrolling terminal) visibly roll down the screen.
-  QEMU and virt-manager's window must use the same GPU: choose, under
-  *OpenGL*, the GPU your desktop runs on. If that is an NVIDIA card with
-  its own driver, libvirt hides the card's device files from QEMU
-  (`eglInitialize failed`); allow them once, as root, then choose the
-  NVIDIA card:
+  **Smooth drawing in virt-manager.** With a plain SPICE display, QEMU
+  sends each change as strips 32 pixels wide and virt-manager paints them
+  as they arrive, so large changes (a scrolling terminal) visibly roll
+  down the screen. Two ways around it:
+
+  - *SPICE with OpenGL* (hosts with Intel or AMD graphics): in the
+    machine's details, *Display Spice*, set *Listen type* to *None* and
+    tick *OpenGL*, choosing the GPU your desktop runs on; in *Video
+    Virtio*, tick *3D acceleration*. WormOS draws with the virtual GPU
+    (virgl) and the viewer shows whole frames.
+  - *VNC* (any host, and the one that works with NVIDIA's driver):
+    virt-manager's VNC viewer paints an update only once it has all of
+    it. Change the display in the machine's XML (*Edit* → *Preferences*
+    → *Enable XML editing*, or `virsh edit NAME`): the SPICE display
+    becomes
+    ```
+    <graphics type='vnc'>
+      <listen type='none'/>
+    </graphics>
+    <graphics type='egl-headless'>
+      <gl rendernode='/dev/dri/by-path/pci-0000:01:00.0-render'/>
+    </graphics>
+    ```
+    (the second part lets WormOS draw on the host's GPU, with *3D
+    acceleration* ticked; use your card's address from
+    `ls /dev/dri/by-path`, or leave it out), and the SPICE agent channel
+    becomes QEMU's own, so the shared clipboard and window resizing keep
+    working:
+    ```
+    <channel type='qemu-vdagent'>
+      <source>
+        <clipboard copypaste='yes'/>
+        <mouse mode='client'/>
+      </source>
+      <target type='virtio' name='com.redhat.spice.0'/>
+    </channel>
+    ```
+    Remove the `<redirdev type='spicevmc'>` entries and set
+    `<audio id='1' type='none'/>`: USB redirection and sound go through
+    SPICE and are not available over VNC.
+
+  With an NVIDIA card, libvirt also hides the card's device files from
+  QEMU (`eglInitialize failed`); allow them once, as root:
   ```
   cat >> /etc/libvirt/qemu.conf <<'EOF'
   cgroup_device_acl = [
@@ -69,23 +100,11 @@ on top of this one.
   EOF
   systemctl restart libvirtd
   ```
-  (With another GPU chosen, the window stays black: the NVIDIA driver
-  cannot show frames rendered on a different GPU.)
-
-  On NVIDIA, virt-manager's viewer may still fail to show the frames
-  (`failed to create EGL image from DMA-BUF` in its log; the window stays
-  black or virt-manager stops responding), whatever the guest. Then let
-  QEMU render on the card by itself and send SPICE finished frames: untick
-  *OpenGL* under *Display Spice* (keep *3D acceleration*) and add a
-  second display in the machine's XML (*Edit* → *Preferences* → *Enable
-  XML editing*, then the *XML* tab of *Display Spice*, or
-  `virsh edit NAME`), next to the SPICE one:
-  ```
-  <graphics type='egl-headless'>
-    <gl rendernode='/dev/dri/by-path/pci-0000:01:00.0-render'/>
-  </graphics>
-  ```
-  with the PCI address of your card (`ls /dev/dri/by-path`).
+  SPICE with OpenGL does not work on NVIDIA's driver (QEMU 11.1): the
+  frame handles QEMU passes to the viewer are not DMA-BUFs, so the window
+  stays black or virt-manager stops responding (`failed to create EGL
+  image from DMA-BUF`). Choosing another GPU under *OpenGL* fails the same
+  way.
 
   From the command line:
   ```
