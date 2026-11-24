@@ -55,7 +55,13 @@ traffic through Tor. Four ideas run through all of it: **testing**,
 - **Tool kits.** Forensics, network analysis, blue team, reverse
   engineering, web testing, passwords and penetration testing, each one
   command away (`worm kit install forensics`, or `worm kit install all`).
-- **Light and polished.** labwc with WormOS's own GTK 4 panel, launcher,
+- **Made for virtual machines.** WormOS finds the hypervisor at every
+  start and applies base settings shipped for it (QEMU/KVM, VirtualBox,
+  Hyper-V...): drawing, pointer, clipboard, disk tuning, the host's shared
+  folders under `/media`, and its own guest agent, so virt-manager shows
+  the IP address and shuts it down cleanly (`worm vm`).
+- **Light and polished.** labwc with WormOS's own GTK 4 panel with quick
+  settings, a launcher with quick actions, a Settings program,
   notifications, login screen and first-boot setup; about 130 MB of memory
   at idle.
 
@@ -119,6 +125,7 @@ worm fw allow 22                    # open a port (everything else stays closed)
 worm anon on                        # every connection through Tor
 worm status                         # the state of every protection
 worm panic                          # cut the network, stop sandboxes, snapshot
+worm vm                             # the hypervisor found, its settings, host tips
 ```
 
 `worm help` lists every command; the [user guide](docs/guide.md) explains
