@@ -172,8 +172,10 @@ idles at well under 100 MB of memory.
   `wpctl set-default ID` picks the output.
 - Ctrl+Alt+F2 switches to a second console (for logging in as root);
   Ctrl+Alt+F1 returns to the desktop.
-- Administration is done as root: `su -` in a terminal, or the menu's root
-  terminal. Graphical programs open from the root terminal (it keeps the
+- Administration is done as root: `su -` in a terminal, the menu's root
+  terminal, or `sudo COMMAND` (it asks for the root password, as there is
+  no sudoers file: the root account is the administrator). Graphical
+  programs open from the root terminal and from `sudo` (they keep the
   desktop's display), not from a plain `su -`; programs from wormholes run
   as well from your own terminal or the launcher.
 - `passwd` (or `worm passwd`) changes your own password, although `/etc`
@@ -391,6 +393,31 @@ A wormhole is set up the first time it is needed, from the distribution's
 own signed archive (checked with `gpgv` against its archive keyring, which
 WormOS ships), and from then on it is managed by its own apt. These
 installs take effect immediately, without a restart.
+
+Programs from wormholes work like the system's own, whatever they are
+built with (GTK, Qt, Java, Electron, plain X11):
+
+- they open on the desktop: Qt, GTK and SDL programs use Wayland when the
+  wormhole has their Wayland support and Xwayland otherwise;
+- wh adds what such programs need but Debian only recommends (the SVG
+  icon loader and icon theme for GTK programs, the Wayland and SVG
+  plugins for Qt programs; `/usr/share/wh/runtime` lists these rules);
+- a program that opens a link, a file or a terminal, or that asks for root
+  with `sudo` or `pkexec` (GParted, `msfdb init`), reaches the desktop:
+  links and files open with the desktop's programs, terminals open on the
+  desktop, and root requests open the root terminal, which asks for the
+  root password and runs the program there;
+- they see your home folder, `/tmp`, disks under `/mnt` and `/media`, and,
+  run as root, root's home; elsewhere they see their distribution's own
+  files (they say so when started from another folder);
+- every package with commands gets a launcher entry: its own, Kali's (with
+  Kali's helper scripts, such as John the Ripper's list of `*2john`
+  helpers, run inside the wormhole), or else one that lists its commands;
+- a package split in parts (`vlc`, `keepassxc`) or with commands behind
+  Debian's alternatives (`nc`) exports them all, and a full program
+  replaces BusyBox's small version of the same name (`ipcalc`, `nc`) on
+  your `PATH`. Library packages (`python3-pefile`) are for programs in the
+  wormhole: `whc debian python3` runs Debian's Python with them.
 
 Wormholes share your home folder and the network: they make software
 available, they are not a security boundary. They live on a separate
@@ -637,7 +664,9 @@ them instead of shipped with the system:
 worm kit list                 # the kits
 worm kit show forensics       # what one contains
 worm kit install forensics    # install it (as root)
-worm kit remove forensics     # remove it again
+worm kit install web passwords   # several at once
+worm kit install all          # every kit
+worm kit remove forensics     # remove it again (several, or all, too)
 ```
 
 | Kit | For |
@@ -657,7 +686,8 @@ runs in that distribution's wormhole, which shares your home folder: your
 files are the kits' workspace, and the base system stays untouched. A tool
 no source has is reported and skipped. Tools that are WormOS packages
 (most of `basic`, a few of `network`) are installed last, all in one
-change with one quick restart, and removing the kit keeps those that were
+change with one quick restart (also when several kits are installed at
+once), and removing the kit keeps those that were
 there before it. Open samples you do not trust in a
 blackhole, not with a kit's tools on your files.
 

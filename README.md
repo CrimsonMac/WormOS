@@ -48,10 +48,13 @@ traffic through Tor. Four ideas run through all of it: **testing**,
   preinstalled.
 - **Packages from three worlds.** WormOS's own signed repository, plus
   Debian and Kali through *wormholes*: one container per distribution,
-  with its programs appearing on the host like native ones.
+  with its programs appearing on the host like native ones. GTK, Qt, Java
+  and X11 programs open on the desktop, get a launcher entry, open links
+  and terminals, and ask for root through the root terminal, with no
+  per-program fixes.
 - **Tool kits.** Forensics, network analysis, blue team, reverse
   engineering, web testing, passwords and penetration testing, each one
-  command away (`worm kit install forensics`).
+  command away (`worm kit install forensics`, or `worm kit install all`).
 - **Light and polished.** labwc with WormOS's own GTK 4 panel, launcher,
   notifications, login screen and first-boot setup; about 130 MB of memory
   at idle.

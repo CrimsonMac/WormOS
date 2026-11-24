@@ -74,6 +74,12 @@ test:
 test-wormholes:
 	tests/wormhole-test.py $(if $(DNS),--dns $(DNS))
 
+# Needs internet access (several GB): installs every tool kit and graphical
+# programs from Debian and Kali, starts every menu entry on the desktop and
+# runs every exported command. KITS=blueteam,web picks kits.
+test-apps:
+	tests/apps-test.py $(if $(KITS),--kits $(KITS))
+
 # Needs internet access: installs Tor Browser's libraries, downloads the
 # browser from torproject.org and starts it.
 test-torbrowser:
@@ -113,4 +119,4 @@ clean:
 distclean:
 	rm -rf build out
 
-.PHONY: all toolchain kernel packages repo rootfs image iso iso-barebones run run-gui test test-wormholes test-torbrowser test-upgrade test-delta test-iso test-qemu-windows release sources publish-repo clean distclean
+.PHONY: all toolchain kernel packages repo rootfs image iso iso-barebones run run-gui test test-wormholes test-apps test-torbrowser test-upgrade test-delta test-iso test-qemu-windows release sources publish-repo clean distclean
