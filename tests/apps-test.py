@@ -29,10 +29,13 @@ import argparse
 import importlib.util
 import os
 import re
+import shutil
+import struct
 import subprocess
 import sys
 import tempfile
 import time
+import zlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOG = os.path.join(ROOT, "build", "apps.log")
@@ -116,18 +119,72 @@ for f; do
 done
 """
 
-# Runs every exported command with --help as the user and prints those
-# showing signs of a broken program.
+# Runs a command line as the user for at most SECONDS, then stops it and
+# everything it started (interactive tools such as recon-ng never exit on
+# their own), and prints its output and status.
+RUN = r"""#!/bin/sh
+# run SECONDS COMMAND
+limit=$1; shift
+ps -o pid,user | awk '$2 == "tester" {print $1}' | sort > /tmp/run-procs
+rm -f /tmp/run.out /tmp/run.status
+su tester -s /bin/sh -c ". /tmp/session.env; cd; ($* ) </dev/null > /tmp/run.out 2>&1; echo \$? > /tmp/run.status" &
+i=0
+while [ $i -lt "$limit" ] && [ ! -e /tmp/run.status ]; do sleep 1; i=$((i + 1)); done
+ps -o pid,user | awk '$2 == "tester" {print $1}' | sort > /tmp/run-now
+for p in $(comm -13 /tmp/run-procs /tmp/run-now); do kill -9 "$p" 2>/dev/null; done
+head -c 600 /tmp/run.out
+echo
+echo "status $(cat /tmp/run.status 2>/dev/null || echo stopped)"
+"""
+
+# Runs every exported command with --help as the user.
 COMMANDS = r"""#!/bin/sh
-cd /tmp
 for w in /usr/local/bin/*; do
-  out=$(su tester -s /bin/sh -c ". /tmp/session.env; cd; timeout -s KILL 20 $w --help </dev/null 2>&1")
-  echo "## $(basename $w) $?"
-  printf '%s\n' "$out" | head -c 600
-  echo
+  echo "## $(basename $w)"
+  /tmp/run 20 "$w --help"
 done
 echo "## end"
 """
+
+
+def grow_disk(path, size):
+    """Extend a raw GPT disk image and its last partition (WormOS's) to size."""
+    sector = 512
+    with open(path, "r+b") as f:
+        f.truncate(size)
+        f.seek(sector)
+        header = bytearray(f.read(92))
+        entries_lba, count, entry_size = struct.unpack_from("<QII", header, 72)
+        f.seek(entries_lba * sector)
+        table = bytearray(f.read(count * entry_size))
+        last_sector = size // sector - 1
+        last_usable = last_sector - 33
+        # The partition ending last is the system (BIOS boot and EFI come first).
+        index = max(range(count), key=lambda i: struct.unpack_from(
+            "<Q", table, i * entry_size + 40)[0])
+        struct.pack_into("<Q", table, index * entry_size + 40, last_usable)
+        table_crc = zlib.crc32(table) & 0xffffffff
+        f.seek(entries_lba * sector)
+        f.write(table)
+        # Primary header: where the backup is, the last usable sector, the
+        # table's checksum, then its own.
+        struct.pack_into("<Q", header, 32, last_sector)
+        struct.pack_into("<Q", header, 48, last_usable)
+        struct.pack_into("<I", header, 88, table_crc)
+        struct.pack_into("<I", header, 16, 0)
+        struct.pack_into("<I", header, 16, zlib.crc32(header) & 0xffffffff)
+        f.seek(sector)
+        f.write(header)
+        # The backup table and header at the end of the disk.
+        backup = bytearray(header)
+        struct.pack_into("<QQ", backup, 24, last_sector, 1)
+        struct.pack_into("<Q", backup, 72, last_sector - 32)
+        struct.pack_into("<I", backup, 16, 0)
+        struct.pack_into("<I", backup, 16, zlib.crc32(backup) & 0xffffffff)
+        f.seek((last_sector - 32) * sector)
+        f.write(table)
+        f.seek(last_sector * sector)
+        f.write(backup)
 
 
 def build_toplevels():
@@ -164,9 +221,12 @@ def main():
         print("SKIP  no WormOS toolchain to build the window lister (tests/toplevels.c)")
         return 0
 
-    tmp = tempfile.mkdtemp(prefix="wormos-apps-")
-    mon_path = os.path.join(tmp, "monitor")
-    qmp_path = os.path.join(tmp, "qmp")
+    # On disk: the copy of the image grows by several GB (/tmp is often
+    # in memory).
+    tmp = tempfile.mkdtemp(prefix="apps-test-", dir=os.path.join(ROOT, "build"))
+    sockets = tempfile.mkdtemp(prefix="wormos-apps-")
+    mon_path = os.path.join(sockets, "monitor")
+    qmp_path = os.path.join(sockets, "qmp")
     extra = (f"-vga none -device virtio-gpu-pci,addr=0x10,id=video0 "
              f"-device virtio-keyboard-pci,addr=0x11 -device virtio-tablet-pci,addr=0x12 "
              f"-monitor unix:{mon_path},server,nowait -qmp unix:{qmp_path},server,nowait")
@@ -174,12 +234,15 @@ def main():
                QEMU_VDAGENT_MOUSE="on")
     if args.image:
         env["IMAGE"] = os.path.abspath(args.image)
-    # The image's 8 GiB do not hold every kit: a copy with a bigger disk.
-    image = os.path.join(tmp, "apps.qcow2")
-    subprocess.run(["qemu-img", "create", "-q", "-f", "qcow2", "-F",
-                    "qcow2" if env.get("IMAGE", "").endswith(".qcow2") else "raw",
-                    "-b", env.get("IMAGE", os.path.join(ROOT, "out", "wormos.img")),
-                    image, "60G"], check=True)
+    # The image's 8 GiB do not hold every kit: a copy with a bigger disk
+    # (a raw image shares its blocks with the original on btrfs).
+    source = env.get("IMAGE", os.path.join(ROOT, "out", "wormos.img"))
+    image = os.path.join(tmp, "apps.img")
+    if source.endswith(".qcow2"):
+        subprocess.run(["qemu-img", "convert", "-O", "raw", source, image], check=True)
+    else:
+        subprocess.run(["cp", "--reflink=auto", "--sparse=always", source, image], check=True)
+    grow_disk(image, 60 << 30)
     env["IMAGE"] = image
     proc = subprocess.Popen([os.path.join(ROOT, "scripts", "run-qemu.sh")],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -241,12 +304,16 @@ def main():
             desktop.put_file(con, IN_SESSION.encode(), "/tmp/in-session")
             desktop.put_file(con, PROBE.encode(), "/tmp/probe")
             desktop.put_file(con, COMMANDS.encode(), "/tmp/commands")
+            desktop.put_file(con, RUN.encode(), "/tmp/run")
             out = con.run("/tmp/in-session /tmp/toplevels")
             check("windows listed (the welcome terminal)", "foot" in out, out)
             out = con.run("ls -l $(/tmp/in-session 'echo $XDG_RUNTIME_DIR')/wormhole-bridge")
             check("the session's wormhole bridge is listening", out.startswith("p"), out)
 
-            # The kits, then the graphical programs.
+            # The kits, then the graphical programs. Core packages are left
+            # out: applying them restarts the system (other tests cover them).
+            con.run("worm unlock >/dev/null; sed -i '/^core = /d' /usr/share/worm/kits/*; "
+                    "worm lock >/dev/null")
             for kit in kits:
                 begin = time.time()
                 out = con.run(f"worm kit install {kit} 2>&1 | tail -3", 7200)
@@ -293,8 +360,8 @@ def main():
                 m = re.search(r'^Exec=/usr/lib/worm/exec-in-shell "(.*)"$', text, re.M)
                 if m and terminal:
                     cmd = m.group(1).replace("\\$", "$").replace('\\"', '"')
-                    out = con.run(f"/tmp/in-session 'timeout -s KILL 30 sh -c \"{cmd}\" "
-                                  f"</dev/null 2>&1 | tail -c 500'", 90)
+                    desktop.put_file(con, cmd.encode(), "/tmp/entry-command", "644")
+                    out = con.run("/tmp/run 30 sh /tmp/entry-command", 120)
                     report.write(f"   command: {out!r}\n")
                     check(f"{name}: {cmd} runs", not BROKEN.search(out), out)
 
@@ -305,7 +372,9 @@ def main():
                 head, _, body = block.partition("\n")
                 if head.startswith("end"):
                     break
-                cmd, _, status = head.partition(" ")
+                cmd = head.strip()
+                status = re.search(r"^status (\S+)$", body, re.M)
+                status = status.group(1) if status else "?"
                 check(f"command {cmd} runs", status not in ("126", "127") and
                       not BROKEN.search(body), body)
 
@@ -370,6 +439,8 @@ def main():
             if proc.poll() is None:
                 proc.kill()
     report.close()
+    shutil.rmtree(tmp, ignore_errors=True)
+    shutil.rmtree(sockets, ignore_errors=True)
     print(f"{passed}/{passed + failures} checks passed (report: {REPORT})")
     return 1 if failures else 0
 

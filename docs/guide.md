@@ -42,7 +42,7 @@ on top of this one.
   passwords, as in the disk image below. The live system's snapshots and
   files are not carried over.
 
-- **The disk image for QEMU / virt-manager** (`wormos-1.12-x86_64.qcow2`): an
+- **The disk image for QEMU / virt-manager** (`wormos-1.13-x86_64.qcow2`): an
   installed system, ready to start. In virt-manager,
   import an existing disk image and choose a generic recent Linux.
 
@@ -675,7 +675,7 @@ worm kit remove forensics     # remove it again (several, or all, too)
 | `forensics` | disk images, deleted files, metadata, hashes (sleuthkit, testdisk, foremost, binwalk, exiftool, yara...) |
 | `network` | lookups, routes, throughput, captures (whois, traceroute, mtr, iperf3, socat from WormOS; dig, tshark, ngrep...) |
 | `blueteam` | malware scanning and audits (clamav, lynis, chkrootkit, rkhunter, yara...) |
-| `reverse` | disassemblers and debuggers (radare2, gdb, ltrace, upx, pwntools...) |
+| `reverse` | disassemblers and debuggers (rizin and its window Cutter, gdb, ltrace, upx, pwntools...; radare2 is in neither Debian 13 nor Kali) |
 | `web` | web application scanners and fuzzers (sqlmap, gobuster, ffuf, feroxbuster...) |
 | `passwords` | crackers and hash tools (john, hashcat, hydra, medusa...) |
 | `pentest` | from Kali: Metasploit, exploit-db, NetExec, Impacket, Responder... |
