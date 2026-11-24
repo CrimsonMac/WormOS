@@ -42,8 +42,12 @@ for f in "$REPO"/*.wpkg; do
 	name=$(basename "$f")
 	sum=${published[$name]:-}
 	[ -n "$sum" ] && [ "$sum" != "$(sha256sum "$f" | cut -c1-64)" ] || continue
-	gh release download "$TAG" -R "$PACKAGES_REPO" -p "$name" -O "$f.published" --clobber ||
-		die "cannot download the published $name"
+	for try in 1 2 3; do
+		gh release download "$TAG" -R "$PACKAGES_REPO" -p "$name" -O "$f.published" \
+			--clobber && break
+		[ "$try" = 3 ] && die "cannot download the published $name"
+		sleep 10
+	done
 	[ "$(sha256sum "$f.published" | cut -c1-64)" = "$sum" ] || die "the published $name does not match its digest"
 	mv "$f.published" "$f"
 	kept=$((kept + 1))
