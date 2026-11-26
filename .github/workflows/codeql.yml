@@ -23,6 +23,9 @@ jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-24.04
+    # Debian testing, as in ci.yml: Ubuntu's kernel and GTK headers are too
+    # old for the Landlock scopes and GTK calls WormOS uses.
+    container: debian:testing
     timeout-minutes: 30
     permissions:
       contents: read
@@ -32,15 +35,15 @@ jobs:
       matrix:
         language: [c-cpp, python]
     steps:
+      - name: Build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential pkg-config curl \
+            ca-certificates git libcrypt-dev libgtk-4-dev libgtk4-layer-shell-dev libwayland-dev \
+            libwayland-bin wayland-protocols meson ninja-build python3 zstd
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Build dependencies
-        if: matrix.language == 'c-cpp'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libcrypt-dev libgtk-4-dev \
-            libwayland-dev libwayland-bin wayland-protocols meson ninja-build
       - uses: github/codeql-action/init@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
         with:
           languages: ${{ matrix.language }}
