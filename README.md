@@ -39,6 +39,11 @@ traffic through Tor. Four ideas run through all of it: **testing**,
   install either fully happens or does not happen. `wh undo` and
   `wh install --try` come for free, and upgrades download only the files
   that changed.
+- **Easy to use.** A Welcome tour on first login, a Files window, a
+  Software window that searches WormOS, Debian and Kali and installs
+  without closing anything, update notifications, Settings for everything
+  everyday, and every keyboard shortcut on Super+/. The terminal is there
+  when you want it, not because you need it.
 - **Blackholes.** Disposable sandboxes (namespaces, seccomp, Landlock, or a
   virtual machine with its own kernel) for untrusted programs and malware
   analysis, Windows binaries included.
