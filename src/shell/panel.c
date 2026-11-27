@@ -624,6 +624,12 @@ static void power_clicked(GtkButton *button, gpointer data)
 	struct panel *panel = data;
 	const char *action = g_object_get_data(G_OBJECT(button), "action");
 
+	if (!strcmp(action, "lock")) {
+		gtk_popover_popdown(GTK_POPOVER(gtk_widget_get_ancestor(GTK_WIDGET(button),
+									 GTK_TYPE_POPOVER)));
+		panels_lock();
+		return;
+	}
 	/* Restart, shut down and panic ask for a second click. */
 	if (strcmp(action, "logout") && panel->confirm != GTK_WIDGET(button)) {
 		if (panel->confirm)
@@ -661,6 +667,26 @@ static GtkWidget *power_button(struct panel *panel, const char *icon, const char
 		gtk_widget_add_css_class(button, "destructive-action");
 	g_signal_connect(button, "clicked", G_CALLBACK(power_clicked), panel);
 	return button;
+}
+
+/* ---- the lock screen (wormos-lock) ---- */
+
+/* Asked each time: a password set during the session counts at once. */
+gboolean lock_possible(void)
+{
+	int status = -1;
+
+	return g_spawn_sync(NULL, (char *[]){ "/usr/lib/worm/checkpass", "--status", NULL },
+			    NULL, G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
+			    NULL, NULL, NULL, NULL, &status, NULL) &&
+	       g_spawn_check_wait_status(status, NULL);
+}
+
+void panels_lock(void)
+{
+	if (lock_possible())
+		g_spawn_async(NULL, (char *[]){ "wormos-lock", NULL }, NULL, G_SPAWN_SEARCH_PATH,
+			      NULL, NULL, NULL, NULL);
 }
 
 /* ---- the screen's brightness (laptops) ---- */
@@ -876,6 +902,10 @@ static GtkWidget *power_menu(struct panel *panel)
 	gtk_box_append(GTK_BOX(box), power_button(panel, "network-offline-symbolic",
 						  "Panic: cut the network", "panic"));
 	gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+	/* Locking needs a password to open it again. */
+	if (lock_possible())
+		gtk_box_append(GTK_BOX(box), power_button(panel, "system-lock-screen-symbolic", "Lock",
+							  "lock"));
 	gtk_box_append(GTK_BOX(box), power_button(panel, "system-log-out-symbolic", "Log out",
 						  "logout"));
 	gtk_box_append(GTK_BOX(box), power_button(panel, "system-reboot-symbolic", "Restart",

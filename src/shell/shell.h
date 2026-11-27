@@ -71,6 +71,8 @@ void status_battery(struct status *s);   /* just the battery */
 void panels_init(GtkApplication *app);
 void panels_volume(const char *what);        /* up, down or mute */
 void panels_brightness(const char *what);    /* up or down */
+void panels_lock(void);                      /* start the lock screen */
+gboolean lock_possible(void);                /* the user has a password */
 
 /* launcher.c */
 void launcher_toggle(GtkApplication *app);

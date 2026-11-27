@@ -1807,6 +1807,39 @@ initramfs inside LUKS.
   button.
 - VMware images have an HD Audio device (`sound.virtualDev = "hdaudio"`).
 
+## Lock screen and lid
+
+- `wormos-lock` (`src/shell/lock.c`, in worm-shell): gtk4-session-lock
+  (ext-session-lock-v1), one window per monitor (time, user, password
+  entry), `prctl(PR_SET_DUMPABLE, 0)`. The password goes to
+  `/usr/lib/worm/checkpass` (setuid, `src/worm/checkpass.c`) on stdin with
+  `g_subprocess_communicate_utf8_async`: it checks the real user's own
+  password (`password_ok`, 2 s pause on failure), keeps wrong tries in
+  `/run/worm/checkpass/UID` (root 0600) and refuses to check for 30 s /
+  2 min / 10 min after 5 / 10 / 20 of them (exit 3, seconds on stdout);
+  `--status` says whether the user has a hash libxcrypt can check (`$`...;
+  none, locked or DES: exit 2, and nothing locks). While locked,
+  `$XDG_RUNTIME_DIR/wormos-locked` exists. labwc ignores keybindings while
+  locked (none has `allowWhenLocked`) and keeps the outputs locked when the
+  lock client dies; worm-shell (every 2 s) starts `wormos-lock` again when
+  the mark exists without a running `wormos-lock`, and removes a stale mark
+  at start. Started by Super+L, the power menu's Lock (shown when
+  `checkpass --status` succeeds) and SIGUSR1 to worm-shell.
+- Lid (`src/worm/powerkey.c`, root): watches input devices with SW_LID as
+  well as KEY_POWER. Closed for 10 s (poll timeout; opening cancels):
+  SIGUSR1 to every worm-shell, then up to 5 s for each session user with a
+  password to have both the mark and a running `wormos-lock` of theirs; only
+  then `mem` into `/sys/power/state` (s2idle where that is all there is).
+  Without a confirmed lock it stays awake and logs it. `/etc/worm/lid`:
+  `action = ignore` (WormOS Amnesia).
+- Release images (`WORMOS_RELEASE=1`, exported by `release.sh`): grub.cfg
+  sets `superusers` with no password (entries are `--unrestricted`, snap's
+  generated ones too), so entries cannot be edited and there is no GRUB
+  command line; `etc/worm/rescue-shell` is only made for development and
+  test images, and mkinitramfs adds `/rescue-allowed` from it, without which
+  wormrd never starts its rescue shell (not on failures, not with
+  `wormos.rescue`). BusyBox `passwd`/`chpasswd` hash with yescrypt.
+
 ## Login
 
 - `wormos-login` (`src/login/`): `wormlogin`, the login manager on tty1,

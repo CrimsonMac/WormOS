@@ -11,6 +11,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <glib-unix.h>
+#include <glib/gstdio.h>
+#include <unistd.h>
+#include <signal.h>
+
 #include "shell.h"
 
 static void load_css(void)
@@ -33,12 +38,65 @@ static void load_css(void)
 	}
 }
 
+/* Is a lock screen of ours running? */
+static gboolean lock_running(void)
+{
+	GDir *dir = g_dir_open("/proc", 0, NULL);
+	const char *name;
+	gboolean found = FALSE;
+
+	while (dir && !found && (name = g_dir_read_name(dir))) {
+		char path[64], *comm = NULL;
+		GStatBuf st;
+
+		if (!g_ascii_isdigit(name[0]))
+			continue;
+		snprintf(path, sizeof(path), "/proc/%s", name);
+		if (g_stat(path, &st) < 0 || st.st_uid != getuid())
+			continue;
+		snprintf(path, sizeof(path), "/proc/%s/comm", name);
+		if (g_file_get_contents(path, &comm, NULL, NULL))
+			found = !strcmp(g_strstrip(comm), "wormos-lock");
+		g_free(comm);
+	}
+	if (dir)
+		g_dir_close(dir);
+	return found;
+}
+
+/* The session is marked locked but no lock screen runs (it crashed): labwc
+ * still shows nothing; start a new one, which takes the lock over. */
+static gboolean lock_watch(gpointer data)
+{
+	char *mark = data;
+
+	if (g_file_test(mark, G_FILE_TEST_EXISTS) && !lock_running())
+		panels_lock();
+	return G_SOURCE_CONTINUE;
+}
+
+/* powerkey asks for the lock screen (the lid stayed closed) with SIGUSR1. */
+static gboolean lock_signal(gpointer data)
+{
+	(void)data;
+	panels_lock();
+	return G_SOURCE_CONTINUE;
+}
+
 static void startup(GApplication *gapp, gpointer data)
 {
 	(void)data;
 	load_css();
 	wayland_init();
 	panels_init(GTK_APPLICATION(gapp));
+	g_unix_signal_add(SIGUSR1, lock_signal, NULL);
+	{
+		/* A new session is not locked: a mark left from an earlier one goes. */
+		char *mark = g_build_filename(g_get_user_runtime_dir(), "wormos-locked", NULL);
+
+		g_unlink(mark);
+		g_timeout_add_seconds(2, lock_watch, mark);
+	}
 	notify_init(GTK_APPLICATION(gapp));
 	/* The shell lives as long as the session, with or without windows. */
 	g_application_hold(gapp);

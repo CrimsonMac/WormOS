@@ -19,7 +19,7 @@ SRCS      = main.c wifi.c wayland.c toplevels.c outputs.c status.c panel.c launc
 	    power.c apps.c volume.c brightness.c config.c
 OBJS      = $(SRCS:.c=.o) $(PROTO_SRC:.c=.o) ../common/sound.o
 
-all: worm-shell
+all: worm-shell wormos-lock
 
 %-client-protocol.h: protocol/%.xml
 	$(WAYLAND_SCANNER) client-header $< $@
@@ -33,11 +33,15 @@ $(SRCS:.c=.o): shell.h $(HEADERS) ../common/sound.h
 worm-shell: $(OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS) $(LIBS)
 
-install: worm-shell
+wormos-lock: lock.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ lock.c $(shell $(PKG_CONFIG) --libs gtk4-layer-shell-0 gtk4)
+
+install: worm-shell wormos-lock
 	install -Dm755 worm-shell $(DESTDIR)$(BINDIR)/worm-shell
+	install -Dm755 wormos-lock $(DESTDIR)$(BINDIR)/wormos-lock
 	install -Dm644 shell.css $(DESTDIR)$(DATADIR)/wormos/shell/shell.css
 
 clean:
-	rm -f worm-shell *.o ../common/sound.o $(HEADERS) $(PROTO_SRC)
+	rm -f worm-shell wormos-lock *.o ../common/sound.o $(HEADERS) $(PROTO_SRC)
 
 .PHONY: all install clean

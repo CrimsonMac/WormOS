@@ -79,6 +79,13 @@ if [ "$VARIANT" = barebones ]; then
 	VARIANT="Barebones"
 	EOF
 fi
+# Development and test images may open a rescue shell from the initramfs
+# (on a boot failure, or with wormos.rescue); releases never do: it would be
+# a root shell without any password.
+if [ "${WORMOS_RELEASE:-}" != 1 ]; then
+	printf '# Development image: the initramfs may open a rescue shell.\n' \
+		> "$ROOTFS/etc/worm/rescue-shell"
+fi
 # WORMOS_TEST_SSH_KEY=FILE (test builds for real hardware only, never a
 # release): the SSH server, port 22 open, and root logs in with that public
 # key, so a tester can reach a machine booted from the ISO.

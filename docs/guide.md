@@ -745,6 +745,36 @@ known-good snapshot and starts without network. Snapshots left behind by a
 rewind and those saved by `worm panic` never count as known-good. Restart
 normally to leave safe mode.
 
+## Locking the screen and sleep
+
+**Super+L**, or **Lock** in the panel's power menu, locks the screen; your
+password opens it again. Closing a laptop's lid does nothing for the first
+10 seconds (time to open it again if you closed it by mistake); after that
+WormOS locks the screen and the laptop sleeps. Opening the lid wakes it at
+the lock screen. Users without a password (the live system) are never
+locked out: the laptop just sleeps.
+
+The lock is meant to hold against someone with the computer in hand:
+
+- The lock screen uses the Wayland session lock: the compositor shows
+  nothing else and gives no input to anything else, keyboard shortcuts
+  included. If the lock screen crashed, the screens would stay covered and
+  a new lock screen would appear.
+- Each wrong password costs two seconds; after 5 in a row the next try
+  waits 30 seconds, after 10 two minutes, after 20 ten minutes.
+- The laptop sleeps only once the screen is locked, never before.
+- Release images: GRUB's menu entries boot, but cannot be edited and GRUB's
+  command line cannot be opened, so the kernel cannot be started with a
+  shell instead of the system; the initramfs never opens a rescue shell.
+  The text console (Ctrl+Alt+F2) asks for a password like the login screen.
+
+There is no way around a forgotten password on a release system: no reset,
+no recovery shell. What stays possible with the computer in hand: booting
+other media, or taking the disk out, reads an unencrypted disk; choose the
+encrypted install (and a firmware password, with Secure Boot) to close that
+too. Rewinding the system to an older snapshot from the boot menu also
+brings back that snapshot's passwords.
+
 ## Privacy and hardening
 
 - DNS goes to a local resolver (unbound) that validates DNSSEC and sends
