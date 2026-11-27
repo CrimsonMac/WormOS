@@ -752,6 +752,13 @@ LIVE_INSTALL_CHECKS = [
     ("back to normal", "mount -o remount,bind,rw / && cp /tmp/repo.saved /etc/wh/repo && "
      "rm /etc/wh/live /etc/wh/users-may-install && mount -o remount,bind,ro / && "
      "su tester -c 'wh install cmatrix' 2>&1", r"managed by root"),
+    # On WormOS itself, a change that only adds files is used at once too
+    # (the staged system, with the same files, follows at the next restart).
+    ("new programs work without a restart",
+     "u=$(cut -d. -f1 /proc/uptime); wh --repo {repo} -y install hexedit 2>&1 | tail -1; "
+     "command -v hexedit; [ $(cut -d. -f1 /proc/uptime) -ge $u ] && echo same-boot",
+     r"ready to use now(.|\n)*^/usr/bin/hexedit\n(.|\n)*same-boot"),
+    ("and the running system is read-only again", "touch /usr/y 2>&1", r"Read-only file system"),
 ]
 
 AFTER_UNDO_CHECKS = [

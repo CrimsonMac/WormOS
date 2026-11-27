@@ -46,6 +46,13 @@ on top of this one.
   passwords, as in the disk image below. The live system's snapshots and
   files are not carried over.
 
+  **Encrypt the disk** (an option in the installer) encrypts everything on
+  it, system, home folders and snapshots, with a passphrase (LUKS2). At
+  every start the boot menu asks for it once; the system then opens the
+  disk by itself with a key kept inside the encrypted disk. Without the
+  passphrase nobody can read the disk, and nobody can recover it for you.
+  (`install-system install DISK --encrypt` reads it from standard input.)
+
 - **The disk image for QEMU / virt-manager** (`wormos-1.14.1-x86_64.qcow2`): an
   installed system, ready to start. In virt-manager,
   import an existing disk image and choose a generic recent Linux.
@@ -225,10 +232,12 @@ it, not because you need it:
 - **Software** (`wormos-software`): Explore lists popular programs and
   searches every source (WormOS's own packages, then Debian's and Kali's);
   Installed lists what is there; Updates looks for newer versions and
-  installs them all at once. Installing or removing asks for the root
-  password. Programs from Debian and Kali are ready in moments; WormOS
-  packages are added at the next restart (`wh --later`), so nothing closes
-  under you: the window says so and offers to restart. Administrators
+  installs them all at once. Installing or removing asks for your
+  password. Programs from Debian and Kali are ready in moments, and so are
+  WormOS packages that only add files (new programs); WormOS packages that
+  change what is there (updates, removals) are applied at the next restart
+  (`wh --later`), so nothing closes under you: the window says so and
+  offers to restart. Administrators
   also get a notification when WormOS has updates (a few minutes after
   logging in, then daily; a click opens Software's Updates; `touch
   ~/.config/wormos/no-update-notice` turns it off).
@@ -412,7 +421,13 @@ snap auto on|off                    # snapshots before package changes
 How it works:
 
 - The disk is a single btrfs filesystem with the subvolumes `@` (the system,
-  mounted read-only), `@var` (logs and state), `@home` and `@snapshots`.
+  mounted read-only), `@var` (logs and state), `@home`, `@wormholes` and
+  `@snapshots`.
+- System snapshots include the wormholes (the Debian and Kali systems and
+  the programs installed there), so a rewind brings those back too, and
+  wh takes a snapshot before installing or removing a program from a
+  wormhole, which `wh undo` goes back to. Wormholes have no manifest: they
+  are convenience, not part of the verified system.
 - Snapshots are read-only btrfs snapshots stored in `@snapshots`, which the
   running system never mounts. `snap` mounts it in a private mount namespace
   only for the duration of a command.
@@ -449,6 +464,10 @@ wh upgrade
 wh history                # every change, with its snapshot
 wh undo                   # go back to before the last change
 ```
+
+A change that only adds files (a new program, with no package upgraded or
+removed) is also copied into the running system, so it works at once; the
+staged system, with the same files, takes over at the next restart.
 
 The package index is signed with Ed25519 and checked on every use; packages
 must match the SHA-256 the index lists, and an index older than the one

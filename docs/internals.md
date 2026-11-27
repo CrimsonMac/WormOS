@@ -1533,6 +1533,47 @@ in [building.md](building.md); what each feature does for the user, in the
   key) as `SHA256SUMS.sig`; `scripts/verify-release.sh` checks it with
   `openssl pkeyutl -verify -rawin` against `keys/core.pem` (the same key in
   PEM) and the files with `sha256sum -c`; release-tests.yml uses it.
+- Encrypted installs (`install-system install DISK --encrypt`, passphrase
+  on standard input; the installer's *Encrypt the disk*): partition 2 is
+  LUKS2 (`--pbkdf pbkdf2 --sector-size 512`, which GRUB's luks2 module
+  opens) with a second key slot holding 64 random bytes (a memfd, given
+  to cryptsetup as `/proc/self/fd/N`); the system image is written into
+  `/dev/mapper/wormos-install` and grown, the key stored as
+  `/@/etc/worm/luks.key` (0400) and the target's initramfs rebuilt with
+  it. The disk image's GRUB (both loaders) carries cryptodisk, luks2,
+  pbkdf2 and the ciphers; grub.cfg runs `cryptomount -a` when the system's
+  filesystem UUID is not found. wormrd, not finding root= on a plain
+  device after 0.5 s, opens the first LUKS device as
+  `/dev/mapper/wormos-root` with `/crypto_keyfile`, or lets cryptsetup ask
+  on the console. Kernel: dm-crypt, XTS and AES-NI built in. cryptsetup
+  2.8.9 (OpenSSL, internal Argon2, no blkid/udev), device-mapper from LVM2
+  (no udev: the library makes the nodes), json-c, popt; libuuid from
+  e2fsprogs. `tests/iso-test.py --encrypt` types the passphrase at GRUB.
+- The initramfs is built by `/usr/lib/wormrd/mkinitramfs ROOT` (wormrd's
+  package: newc cpio written directly, zstd through libzstd, libraries
+  found from DT_NEEDED in ROOT, `etc/worm/luks.key` as `/crypto_keyfile`,
+  mode 0600), both at image build (`scripts/build-initramfs.sh` runs it
+  through the root's loader) and on installed systems as the wh hook
+  `initramfs.hook` (paths: wormrd, busybox, snap, zstd, cryptsetup,
+  usr/lib, the key), so upgrades of anything in it rebuild it in the
+  staged root.
+- Pure additions (`live_apply()` in wh.c): when a staged change only
+  installed new packages (`install_plan` records them; any upgrade or
+  removal, a kernel change or `--try` rules it out), none of their files
+  exists in the running system, and the account files are unchanged, wh
+  bind-remounts `/` writable, copies their files (owner, mode, file
+  capabilities) and database records from the staged root, runs the
+  hooks on `/` for those paths, and remounts read-only. The staged system
+  is committed as usual (snapshot, history) and becomes `@` at the next
+  restart; no restart is asked for, also with `--later`.
+- Wormholes in snapshots: `store_create` snapshots each subvolume in
+  `@wormholes` (read-only) into `@snapshots/ID/wormholes/` with every
+  system snapshot (no manifest); `boot_rewind` of the system scope moves
+  the current ones aside, restores the snapshot's writable and deletes the
+  old ones (`wormholes_restore`; snapshots without the folder leave the
+  wormholes as they are); deleting a snapshot deletes them. wh takes a
+  snapshot (`snap now --auto`) before the first wormhole install or
+  removal of a command and records it in the history for `wh undo`.
 - Every setuid helper, `worm` and `snap` start with `umask(022)`: a
   helper hands the caller's umask on to what it runs as root, so a user
   with `umask 000` would otherwise get root's files (Tor's bridges file,
