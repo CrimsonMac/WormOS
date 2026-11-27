@@ -436,6 +436,10 @@ ANON_CHECKS = [
     ("connections reach Tor", "busybox wget -q -T 10 -O- http://198.51.100.1/ 2>&1; echo rc=$?",
      r"\A(?![\s\S]*refused)[\s\S]*rc="),
     ("status shows it", "worm status", r"DNS\s+through Tor(.|\n)*Anonymity\s+on"),
+    ("the system and the users' programs never share a circuit",
+     "nft list chain inet worm anon_nat | grep -c -e 'skuid < 1000.*redirect to :9040' "
+     "-e 'redirect to :9041'; grep -c '^TransPort.*IsolateDestAddr IsolateDestPort' /etc/tor/torrc",
+     r"^2\n2$"),
     ("survives a firewall reload", "worm fw load && nft list chain inet worm anon_nat | grep -c 9040",
      r"^1$"),
     ("bridges through Tor Browser's transports",
