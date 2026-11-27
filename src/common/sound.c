@@ -19,6 +19,8 @@
 #include "sound.h"
 
 static char *route_label(const char *description, const char *name, gboolean output);
+static char *connector_label(const char *type, const char *description, const char *name,
+			     gboolean output);
 
 static const char *str(json_object *o, const char *key)
 {
@@ -66,32 +68,110 @@ static void choice_free(gpointer p)
 }
 
 /* A connector's plain name. */
+/* A route's info is a flat list: [count, key, value, key, value...]. */
+static const char *route_info(json_object *route, const char *key)
+{
+	json_object *info;
+
+	if (!route || !json_object_object_get_ex(route, "info", &info) ||
+	    !json_object_is_type(info, json_type_array))
+		return NULL;
+	for (size_t i = 1; i + 1 < json_object_array_length(info); i += 2) {
+		json_object *k = json_object_array_get_idx(info, i);
+
+		if (json_object_is_type(k, json_type_string) && !strcmp(json_object_get_string(k), key)) {
+			json_object *v = json_object_array_get_idx(info, i + 1);
+
+			return json_object_is_type(v, json_type_string) ? json_object_get_string(v) : NULL;
+		}
+	}
+	return NULL;
+}
+
+/*
+ * The connector's name ("Speakers", "Headphones", "HDMI / DisplayPort 1",
+ * or the monitor's own name when it tells one), from the route's port
+ * type where there is one, else its description.
+ */
 static char *route_label(const char *description, const char *name, gboolean output)
 {
+	return connector_label(NULL, description, name, output);
+}
+
+static char *connector_label(const char *type, const char *description, const char *name,
+			     gboolean output)
+{
 	const char *d = description ? description : name ? name : "";
+	char buf[160];
 
-	if (strstr(d, "Speaker"))
-		return g_strdup("Speakers");
-	if (strstr(d, "Headphone"))
-		return g_strdup("Headphones");
-	if (strstr(d, "Headset"))
-		return g_strdup(output ? "Headset" : "Headset microphone");
-	if (strstr(d, "Digital Microphone") || (name && strstr(name, "Dmic")))
-		return g_strdup("Built-in microphone");
-	if (!output && (strstr(d, "Microphone") || strstr(d, "Mic")))
-		return g_strdup(name && strstr(name, "Mic1") && !strstr(d, "Stereo")
-				? "Built-in microphone" : "Microphone jack");
-	if (strstr(d, "HDMI") || strstr(d, "DisplayPort")) {
-		char *s = g_strdup(strstr(d, "HDMI") ? strstr(d, "HDMI") : strstr(d, "DisplayPort"));
-		char *out = strstr(s, " Output");
+	if (!type)
+		type = "";
+	if (!strcmp(type, "hdmi") || !strcmp(type, "displayport") || strstr(d, "HDMI") ||
+	    strstr(d, "DisplayPort")) {
+		const char *at = strstr(d, "HDMI") ? strstr(d, "HDMI") : strstr(d, "DisplayPort");
+		char *out;
 
-		if (out)
+		/* A screen that reports its name gets it (as the description). */
+		if (!at)
+			return g_strdup(d);
+		snprintf(buf, sizeof(buf), "%s", at);
+		if ((out = strstr(buf, " Output")))
 			*out = '\0';
-		return s;
+		return g_strdup(buf);
 	}
-	if (strstr(d, "Line"))
-		return g_strdup(output ? "Line out" : "Line in");
+	if (!strcmp(type, "speaker") || strstr(d, "Speaker"))
+		return g_strdup("Speakers");
+	if (!strcmp(type, "headphones") || strstr(d, "Headphone"))
+		return g_strdup("Headphones");
+	if (!strcmp(type, "headset") || strstr(d, "Headset"))
+		return g_strdup(output ? "Headset" : "Headset microphone");
+	if (!strcmp(type, "handsfree") || !strcmp(type, "handset") || strstr(d, "Handsfree"))
+		return g_strdup(output ? "Hands-free" : "Hands-free microphone");
+	if (!strcmp(type, "spdif") || strstr(d, "S/PDIF") || strstr(d, "Digital Output"))
+		return g_strdup(output ? "Digital output (S/PDIF)" : "Digital input (S/PDIF)");
+	if (!output && (strstr(d, "Digital Microphone") || (name && strstr(name, "Dmic"))))
+		return g_strdup("Microphone");
+	/* Jacks say so; a USB headset's or a laptop's own microphone does not. */
+	if (!output && (!strcmp(type, "mic") || strstr(d, "Microphone") || strstr(d, "Mic")))
+		return g_strdup(strstr(d, "Front") ? "Front microphone jack"
+				: strstr(d, "Rear") ? "Rear microphone jack"
+				: strstr(d, "Stereo") || strstr(d, "Headset") ? "Microphone jack"
+				: "Microphone");
+	/* A desktop's line out is where its speakers plug in (as Windows says). */
+	if (!strcmp(type, "line") || strstr(d, "Line"))
+		return g_strdup(output ? (strstr(d, "Front") ? "Front speakers" : "Speakers")
+				: "Line in");
+	if (strstr(d, "Analog Output") || !*d)
+		return g_strdup(output ? "Speakers" : "Microphone");
+	if (strstr(d, "Analog Input"))
+		return g_strdup("Microphone");
 	return g_strdup(d);
+}
+
+/* The device's name as people know it: "Built-in audio" for the computer's
+ * own sound chip, "NVIDIA graphics" for a graphics card's HDMI sound, a
+ * Bluetooth or USB device's own name. */
+static char *device_label(json_object *props)
+{
+	const char *bus = str(props, "device.bus"), *api = str(props, "device.api");
+	const char *product = str(props, "device.product.name");
+	const char *vendor = str(props, "device.vendor.name");
+	const char *desc = str(props, "device.description");
+
+	if (!g_strcmp0(api, "bluez5") || !g_strcmp0(bus, "usb") || !g_strcmp0(bus, "bluetooth"))
+		return g_strdup(desc ? desc : product ? product : "Sound device");
+	if (!g_strcmp0(bus, "pci")) {
+		if (vendor && strstr(vendor, "NVIDIA"))
+			return g_strdup("NVIDIA graphics");
+		if (vendor && (strstr(vendor, "AMD") || strstr(vendor, "ATI")) && product &&
+		    (strstr(product, "HDMI") || strstr(product, "Radeon") || strstr(product, "Navi") ||
+		     strstr(product, "Rembrandt") || strstr(product, "Raphael") || strstr(product, "Phoenix")))
+			return g_strdup("AMD graphics");
+		if (product && strstr(product, "HDMI") && vendor && strstr(vendor, "Intel"))
+			return g_strdup("Intel graphics");
+		return g_strdup("Built-in audio");
+	}
+	return g_strdup(desc ? desc : product ? product : "Sound device");
 }
 
 /* The volume PipeWire shows (wpctl's), from a node's linear channel volumes. */
@@ -201,9 +281,9 @@ GPtrArray *sound_choices(char **signature)
 	/* Each device's connectors that may be in use (not unplugged). */
 	for (size_t i = 0; i < count; i++) {
 		json_object *dev = json_object_array_get_idx(all, i), *props, *params, *routes, *active;
-		const char *type = str(dev, "type"), *api, *desc;
-		int id = num(dev, "id", -1), cur_profile = -1, visible[2] = { 0 };
-		gboolean own_name;
+		const char *type = str(dev, "type");
+		int id = num(dev, "id", -1), cur_profile = -1;
+		char *device_name;
 
 		props = path(dev, "info", "props");
 		if (!type || !strstr(type, "Interface:Device") ||
@@ -221,14 +301,7 @@ GPtrArray *sound_choices(char **signature)
 			    json_object_array_length(profiles) > 0)
 				cur_profile = num(json_object_array_get_idx(profiles, 0), "index", -1);
 		}
-		api = str(props, "device.api");
-		desc = str(props, "device.description");
-		/* Bluetooth and USB devices go by their own names. */
-		own_name = !g_strcmp0(api, "bluez5") || !g_strcmp0(str(props, "device.bus"), "usb");
-		for (size_t r = 0; r < json_object_array_length(routes); r++)
-			if (g_strcmp0(str(json_object_array_get_idx(routes, r), "available"), "no"))
-				visible[!g_strcmp0(str(json_object_array_get_idx(routes, r), "direction"),
-						   "Output")]++;
+		device_name = device_label(props);
 		for (size_t r = 0; r < json_object_array_length(routes); r++) {
 			json_object *route = json_object_array_get_idx(routes, r), *devs, *profs;
 			struct sound_choice *c;
@@ -264,12 +337,17 @@ GPtrArray *sound_choices(char **signature)
 			c->profile = profile;
 			c->node = -1;
 			c->volume = -1;
-			plain = route_label(str(route, "description"), str(route, "name"), output);
-			if (own_name && desc)
-				c->label = visible[output] > 1 ? g_strdup_printf("%s: %s", desc, plain)
-							       : g_strdup(desc);
+			/* "Connector (Device)", as Windows names them. */
+			/* A screen's sound goes by the screen's name (from its EDID). */
+			if (!g_strcmp0(route_info(route, "port.type"), "hdmi") &&
+			    route_info(route, "device.product.name") &&
+			    *route_info(route, "device.product.name"))
+				plain = g_strdup(route_info(route, "device.product.name"));
 			else
-				c->label = g_strdup(plain);
+				plain = connector_label(route_info(route, "port.type"),
+							str(route, "description"), str(route, "name"),
+							output);
+			c->label = g_strdup_printf("%s (%s)", plain, device_name);
 			g_free(plain);
 			/* Its node, when its profile is the one in use. */
 			for (size_t n = 0; n < count && profile == cur_profile; n++) {
@@ -297,6 +375,7 @@ GPtrArray *sound_choices(char **signature)
 				}
 			g_ptr_array_add(list, c);
 		}
+		g_free(device_name);
 	}
 
 	/* Sinks and sources of their own (virtual, network...). */
@@ -322,6 +401,25 @@ GPtrArray *sound_choices(char **signature)
 		g_ptr_array_add(list, c);
 	}
 	g_ptr_array_sort(list, outputs_first);
+	/* Two devices of the same make: number them. */
+	for (guint i = 0; i < list->len; i++) {
+		struct sound_choice *a = g_ptr_array_index(list, i);
+		int seen = 1;
+
+		for (guint j = i + 1; j < list->len; j++) {
+			struct sound_choice *b = g_ptr_array_index(list, j);
+
+			if (b->output == a->output && !strcmp(b->label, a->label) && b->device != a->device) {
+				size_t len = strlen(b->label);
+				char *numbered = len && b->label[len - 1] == ')'
+						 ? g_strdup_printf("%.*s %d)", (int)len - 1, b->label, ++seen)
+						 : g_strdup_printf("%s %d", b->label, ++seen);
+
+				g_free(b->label);
+				b->label = numbered;
+			}
+		}
+	}
 	for (guint i = 0; i < list->len; i++) {
 		struct sound_choice *c = g_ptr_array_index(list, i);
 
