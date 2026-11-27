@@ -309,7 +309,10 @@ it, not because you need it:
   Debian or Kali). The speaker button in the panel sets the volume (scroll
   on it, or use the volume keys) and picks the output (speakers,
   headphones, HDMI) and the microphone; so does Settings > Sound
-  (`wpctl status` and `wpctl set-default ID` in a terminal).
+  (`wpctl status` and `wpctl set-default ID` in a terminal). Both list
+  every connector that can be used by a plain name, the speakers and the
+  headphones both while headphones are plugged in, and update by themselves
+  when something is plugged in or out.
 - **Wi-Fi**: the network button in the panel lists the networks in range
   (strongest first); click one, type its passphrase if it has one, and
   WormOS connects and remembers it (it reconnects by itself later). The

@@ -1375,8 +1375,8 @@ initramfs inside LUKS.
   after they rest.
 - Display: the scale list of the panel; each screen's modes from
   `wlr-randr`, a choice runs `wlr-randr --output NAME --mode WxH@RHz`.
-  Sound: `wpctl status` (Audio's Sinks and Sources, `*` the default),
-  `wpctl set-default ID` and `set-volume ID V`. Date & time: zones from
+  Sound: the shared list of `src/common/sound.c` (below, Panel) with a
+  volume (`wpctl set-volume ID V`) for each choice that has a node. Date & time: zones from
   `zone1970.tab` plus UTC in a filtered list.
 - System changes go through `/usr/lib/worm/settings` (`src/worm/
   settings.c`, setuid root, wheel only, like the snapshots helper):
@@ -1599,8 +1599,19 @@ initramfs inside LUKS.
   HSP/HFP backends; `recipes/sbc`). Settings > Bluetooth drives
   `bluetoothctl` (power, a 12-second scan, pair + trust + connect with the
   NoInputNoOutput agent, disconnect, remove).
-- Panel: the sound menu lists `wpctl status`'s audio sinks and sources as
-  radio buttons (`wpctl set-default`) each time it opens. The battery
+- Panel: the sound menu and Settings > Sound list sound choices from
+  `src/common/sound.c` (json-c over `pw-dump`): each Audio/Device's routes
+  (EnumRoute) not marked unavailable, so the speakers and the headphone
+  jack both appear even when they are in different profiles (one node at
+  a time, as on many Intel laptops with UCM), plus sinks and sources of
+  their own (no device). Names: route descriptions made plain (Speaker ->
+  Speakers, Digital Microphone -> Built-in microphone, "... HDMI /
+  DisplayPort 3 Output" -> "HDMI / DisplayPort 3"); Bluetooth and USB
+  devices go by their own description. Choosing one sets the device's
+  Profile and Route (`pw-cli set-param`, saved) and then the default node
+  (`wpctl set-default`, once the profile's node exists), in a thread. While
+  open, both re-read every two seconds and redraw only when the list or
+  what is active changed (a signature string). The battery
   (`status_battery`): every `/sys/class/power_supply/*` with type Battery
   and a scope other than Device, averaged; hidden without one; a critical
   notification once at 10% while discharging. `worm-shell --battery`

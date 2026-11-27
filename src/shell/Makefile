@@ -3,8 +3,8 @@ CFLAGS   ?= -O2
 PKG_CONFIG ?= pkg-config
 WAYLAND_SCANNER ?= wayland-scanner
 # gtk4-layer-shell must come before libwayland-client when linking.
-PKGS      = gtk4-layer-shell-0 gtk4 gtk4-wayland gio-unix-2.0 wayland-client
-override CFLAGS += -std=gnu17 -Wall -Wextra -I. $(shell $(PKG_CONFIG) --cflags $(PKGS))
+PKGS      = gtk4-layer-shell-0 gtk4 gtk4-wayland gio-unix-2.0 wayland-client json-c
+override CFLAGS += -std=gnu17 -Wall -Wextra -I. -I../common $(shell $(PKG_CONFIG) --cflags $(PKGS))
 LDFLAGS  += -Wl,-z,relro,-z,now
 LIBS      = $(shell $(PKG_CONFIG) --libs $(PKGS)) -lm
 
@@ -17,7 +17,7 @@ HEADERS   = $(PROTOCOLS:%=%-client-protocol.h)
 PROTO_SRC = $(PROTOCOLS:%=%-protocol.c)
 SRCS      = main.c wifi.c wayland.c toplevels.c outputs.c status.c panel.c launcher.c notify.c \
 	    power.c apps.c volume.c brightness.c config.c
-OBJS      = $(SRCS:.c=.o) $(PROTO_SRC:.c=.o)
+OBJS      = $(SRCS:.c=.o) $(PROTO_SRC:.c=.o) ../common/sound.o
 
 all: worm-shell
 
@@ -27,7 +27,8 @@ all: worm-shell
 %-protocol.c: protocol/%.xml
 	$(WAYLAND_SCANNER) private-code $< $@
 
-$(SRCS:.c=.o): shell.h $(HEADERS)
+$(SRCS:.c=.o): shell.h $(HEADERS) ../common/sound.h
+../common/sound.o: ../common/sound.c ../common/sound.h
 
 worm-shell: $(OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS) $(LIBS)
@@ -37,6 +38,6 @@ install: worm-shell
 	install -Dm644 shell.css $(DESTDIR)$(DATADIR)/wormos/shell/shell.css
 
 clean:
-	rm -f worm-shell *.o $(HEADERS) $(PROTO_SRC)
+	rm -f worm-shell *.o ../common/sound.o $(HEADERS) $(PROTO_SRC)
 
 .PHONY: all install clean
