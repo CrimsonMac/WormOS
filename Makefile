@@ -23,7 +23,7 @@ PACKAGES := base-files busybox worminit wormrd snap \
 	wireguard-tools sqlite libarchive git openssh rsync python nmap binutils \
 	grep sed gawk findutils diffutils patch coreutils wget zip 7zip iproute2 ethtool \
 	pciutils libusb usbutils dosfstools whois traceroute mtr iperf3 socat \
-	gmp mpfr gdb e2fsprogs exfatprogs mc btop fastfetch lz4 pigz pv yara ssdeep \
+	gmp mpfr gdb e2fsprogs popt json-c device-mapper cryptsetup exfatprogs mc btop fastfetch lz4 pigz pv yara ssdeep \
 	smartmontools hdparm dmidecode bc screen mtools hexedit links aria2 ngrep \
 	macchanger torsocks proxychains-ng cmatrix nethogs ffmpeg sqlmap tool-menus \
 	tor-browser-bundle licenses \
