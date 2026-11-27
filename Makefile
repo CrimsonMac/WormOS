@@ -99,6 +99,9 @@ test-upgrade:
 test-vm:
 	tests/vm-test.py
 
+test-secureboot:
+	tests/secureboot-test.py
+
 # Deltas, unchanged files and the download cache, on out/wormos.img.
 test-delta:
 	tests/delta-test.py
@@ -124,4 +127,4 @@ clean:
 distclean:
 	rm -rf build out
 
-.PHONY: all toolchain kernel packages repo rootfs image iso iso-barebones run run-gui test test-wormholes test-apps test-torbrowser test-upgrade test-delta test-vm test-iso test-qemu-windows release sources publish-repo clean distclean
+.PHONY: all toolchain kernel packages repo rootfs image iso iso-barebones run run-gui test test-wormholes test-apps test-torbrowser test-upgrade test-delta test-vm test-secureboot test-iso test-qemu-windows release sources publish-repo clean distclean

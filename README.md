@@ -39,14 +39,21 @@ traffic through Tor. Four ideas run through all of it: **testing**,
   install either fully happens or does not happen. `wh undo` and
   `wh install --try` come for free, and upgrades download only the files
   that changed.
-- **Easy to use.** A Welcome tour on first login, a Files window, a
-  Software window that searches WormOS, Debian and Kali and installs
-  without closing anything, update notifications, Settings for everything
-  everyday, and every keyboard shortcut on Super+/. The terminal is there
-  when you want it, not because you need it.
+- **Easy to use.** A Welcome tour on first login, a Files window with
+  thumbnails and drag and drop, a viewer for pictures and PDFs, a text
+  editor, a Software window that searches WormOS, Debian and Kali, update
+  notifications, Settings for everything everyday, and every keyboard
+  shortcut on Super+/. New programs work at once, without a restart. The
+  terminal is there when you want it, not because you need it.
+- **Ready for laptops.** Wi-Fi and Bluetooth from the panel, sound output
+  and microphone choice, the battery, an encrypted install (LUKS2, one
+  passphrase at start) and Secure Boot through the same signed shim most
+  distributions use.
 - **Blackholes.** Disposable sandboxes (namespaces, seccomp, Landlock, or a
   virtual machine with its own kernel) for untrusted programs and malware
-  analysis, Windows binaries included.
+  analysis, Windows binaries included; graphical programs open in them
+  without reaching the clipboard or the screen ("Open in a blackhole" in
+  Files).
 - **Private by default.** A firewall that blocks everything inbound,
   encrypted DNS, random MAC addresses, no telemetry, and an anonymous mode
   that sends every connection of the machine through Tor. Tor Browser is
@@ -98,7 +105,7 @@ and check the files against `SHA256SUMS`.
 | **[WormOS Amnesia](https://github.com/CrimsonMac/WormOS-Amnesia)** | its own releases | Live only, forgets everything, all traffic through Tor |
 
 The ISO runs from memory and installs onto a disk of 8 GB or more (UEFI or
-BIOS, Secure Boot off; 2 GB of memory or more). To try the disk image in
+BIOS, Secure Boot on or off; 2 GB of memory or more). To try the disk image in
 QEMU:
 
 ```sh
