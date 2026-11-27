@@ -17,6 +17,8 @@ struct panel {
 	GtkWidget *snap_label, *snap_info;
 	GtkWidget *shield, *shield_info, *circuits;
 	GtkWidget *network, *network_info;
+	GtkWidget *wifi_box, *wifi_switch, *wifi_list, *wifi_pass, *wifi_entry, *wifi_status;
+	char *wifi_target;              /* the network the passphrase is for */
 	GtkWidget *volume, *volume_output, *volume_mute, *volume_scale, *volume_percent;
 	GtkWidget *volume_devices;      /* outputs and inputs to choose from */
 	GtkWidget *battery, *battery_info;
@@ -228,10 +230,19 @@ static gboolean refresh_status(gpointer data)
 		shield_info = g_strdup("Firewall: incoming connections blocked\n"
 				       "Anonymous mode: off (worm anon on)");
 	}
-	network_icon = s.online ? "network-wired-symbolic" : "network-wired-disconnected-symbolic";
-	network_info = s.online ? g_strdup_printf("Connected%s%s", *s.address ? "\n" : "",
-						  s.address)
-				: g_strdup("Not connected");
+	network_icon = s.online ? (s.wireless ? "network-wireless-signal-good-symbolic" :
+				   "network-wired-symbolic") : "network-wired-disconnected-symbolic";
+	if (s.online && s.wireless) {
+		char *ssid = wifi_connected_name();
+
+		network_info = g_strdup_printf("Wi-Fi: %s%s%s", ssid ? ssid : "connected",
+					       *s.address ? "\n" : "", s.address);
+		g_free(ssid);
+	} else {
+		network_info = s.online ? g_strdup_printf("Connected%s%s", *s.address ? "\n" : "",
+							  s.address)
+					: g_strdup("Not connected");
+	}
 
 	for (guint p = 0; p < panels->len; p++) {
 		struct panel *panel = g_ptr_array_index(panels, p);
@@ -938,6 +949,200 @@ static GtkWidget *shield_button(struct panel *panel)
 	return button;
 }
 
+/* ---- the network menu, with Wi-Fi ---- */
+
+static gboolean wifi_updating;
+
+static void wifi_connect_done(const char *error, gpointer data)
+{
+	struct panel *panel = data;
+
+	gtk_label_set_text(GTK_LABEL(panel->wifi_status), error ? error : "Connected.");
+	gtk_widget_set_visible(panel->wifi_pass, error != NULL && panel->wifi_target);
+	refresh_status(NULL);
+}
+
+static void wifi_join(struct panel *panel, const char *path, const char *passphrase)
+{
+	gtk_label_set_text(GTK_LABEL(panel->wifi_status), "Connecting...");
+	wifi_connect(path, passphrase, wifi_connect_done, panel);
+}
+
+static void wifi_pass_entered(GtkWidget *widget, gpointer data)
+{
+	struct panel *panel = data;
+	const char *pass = gtk_editable_get_text(GTK_EDITABLE(panel->wifi_entry));
+
+	(void)widget;
+	if (!panel->wifi_target || strlen(pass) < 8) {
+		gtk_label_set_text(GTK_LABEL(panel->wifi_status), "Wi-Fi passphrases have at least 8 characters.");
+		return;
+	}
+	wifi_join(panel, panel->wifi_target, pass);
+	gtk_editable_set_text(GTK_EDITABLE(panel->wifi_entry), "");
+}
+
+static void wifi_row_activated(GtkListBox *box, GtkListBoxRow *row, gpointer data)
+{
+	struct panel *panel = data;
+	const char *path = g_object_get_data(G_OBJECT(row), "path");
+	const char *type = g_object_get_data(G_OBJECT(row), "type");
+	gboolean known = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), "known"));
+	gboolean connected = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), "connected"));
+
+	(void)box;
+	if (connected) {
+		wifi_disconnect();
+		gtk_label_set_text(GTK_LABEL(panel->wifi_status), "Disconnected.");
+		return;
+	}
+	g_free(panel->wifi_target);
+	panel->wifi_target = g_strdup(path);
+	if (known || !strcmp(type, "open")) {
+		gtk_widget_set_visible(panel->wifi_pass, FALSE);
+		wifi_join(panel, path, NULL);
+	} else if (!strcmp(type, "psk")) {
+		gtk_widget_set_visible(panel->wifi_pass, TRUE);
+		gtk_label_set_text(GTK_LABEL(panel->wifi_status), "Type the network's passphrase.");
+		gtk_widget_grab_focus(panel->wifi_entry);
+	} else {
+		gtk_label_set_text(GTK_LABEL(panel->wifi_status),
+				   "Enterprise networks are set up with iwctl in a terminal.");
+	}
+}
+
+static void wifi_listed(GPtrArray *networks, gpointer data)
+{
+	struct panel *panel = data;
+	GtkWidget *child;
+
+	while ((child = gtk_widget_get_first_child(panel->wifi_list)))
+		gtk_list_box_remove(GTK_LIST_BOX(panel->wifi_list), child);
+	for (guint i = 0; i < networks->len && i < 12; i++) {
+		struct wifi_network *n = g_ptr_array_index(networks, i);
+		GtkWidget *row = gtk_list_box_row_new(), *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+		GtkWidget *name = gtk_label_new(n->name);
+		char icon[64];
+
+		snprintf(icon, sizeof(icon), "network-wireless-signal-%s-symbolic",
+			 n->bars >= 4 ? "excellent" : n->bars == 3 ? "good" : n->bars == 2 ? "ok" : "weak");
+		gtk_box_append(GTK_BOX(box), gtk_image_new_from_icon_name(icon));
+		gtk_label_set_xalign(GTK_LABEL(name), 0);
+		gtk_label_set_ellipsize(GTK_LABEL(name), PANGO_ELLIPSIZE_END);
+		gtk_label_set_max_width_chars(GTK_LABEL(name), 24);
+		gtk_widget_set_hexpand(name, TRUE);
+		if (n->connected)
+			gtk_widget_add_css_class(name, "heading");
+		gtk_box_append(GTK_BOX(box), name);
+		if (strcmp(n->type, "open"))
+			gtk_box_append(GTK_BOX(box), gtk_image_new_from_icon_name("system-lock-screen-symbolic"));
+		if (n->connected)
+			gtk_box_append(GTK_BOX(box), gtk_image_new_from_icon_name("object-select-symbolic"));
+		gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), box);
+		gtk_widget_set_tooltip_text(row, n->connected ? "Connected: click to disconnect" :
+					    n->known ? "Known network: click to connect" :
+					    !strcmp(n->type, "open") ? "Open network (not encrypted)" :
+					    "Click, then type its passphrase");
+		g_object_set_data_full(G_OBJECT(row), "path", g_strdup(n->path), g_free);
+		g_object_set_data_full(G_OBJECT(row), "type", g_strdup(n->type), g_free);
+		g_object_set_data(G_OBJECT(row), "known", GINT_TO_POINTER(n->known));
+		g_object_set_data(G_OBJECT(row), "connected", GINT_TO_POINTER(n->connected));
+		gtk_list_box_append(GTK_LIST_BOX(panel->wifi_list), row);
+	}
+	if (!networks->len && wifi_powered()) {
+		GtkWidget *none = gtk_label_new("Looking for networks...");
+
+		gtk_widget_add_css_class(none, "dim-label");
+		gtk_list_box_append(GTK_LIST_BOX(panel->wifi_list), none);
+	}
+	g_ptr_array_unref(networks);
+}
+
+static void wifi_switched(GObject *sw, GParamSpec *p, gpointer data)
+{
+	struct panel *panel = data;
+	gboolean on = gtk_switch_get_active(GTK_SWITCH(sw));
+
+	(void)p;
+	if (wifi_updating)
+		return;
+	wifi_set_powered(on);
+	gtk_widget_set_visible(panel->wifi_list, on);
+	if (on)
+		wifi_scan(wifi_listed, panel);
+}
+
+static void network_opened(GtkPopover *popover, gpointer data)
+{
+	struct panel *panel = data;
+	gboolean present = wifi_init(), on = present && wifi_powered();
+
+	(void)popover;
+	gtk_widget_set_visible(panel->wifi_box, present);
+	if (!present)
+		return;
+	wifi_updating = TRUE;
+	gtk_switch_set_active(GTK_SWITCH(panel->wifi_switch), on);
+	wifi_updating = FALSE;
+	gtk_widget_set_visible(panel->wifi_list, on);
+	gtk_widget_set_visible(panel->wifi_pass, FALSE);
+	gtk_label_set_text(GTK_LABEL(panel->wifi_status), "");
+	if (on)
+		wifi_scan(wifi_listed, panel);
+}
+
+static GtkWidget *network_button(struct panel *panel)
+{
+	GtkWidget *button = info_button("network-wired-symbolic", "Network", &panel->network_info, NULL);
+	GtkWidget *popover = GTK_WIDGET(gtk_menu_button_get_popover(GTK_MENU_BUTTON(button)));
+	GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8), *row, *label, *connect;
+
+	g_object_ref(panel->network_info);
+	gtk_popover_set_child(GTK_POPOVER(popover), box);
+	gtk_box_append(GTK_BOX(box), panel->network_info);
+	g_object_unref(panel->network_info);
+
+	panel->wifi_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+	gtk_box_append(GTK_BOX(panel->wifi_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+	row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+	label = gtk_label_new("Wi-Fi");
+	gtk_widget_add_css_class(label, "heading");
+	gtk_widget_set_hexpand(label, TRUE);
+	gtk_label_set_xalign(GTK_LABEL(label), 0);
+	gtk_box_append(GTK_BOX(row), label);
+	panel->wifi_switch = gtk_switch_new();
+	g_signal_connect(panel->wifi_switch, "notify::active", G_CALLBACK(wifi_switched), panel);
+	gtk_box_append(GTK_BOX(row), panel->wifi_switch);
+	gtk_box_append(GTK_BOX(panel->wifi_box), row);
+	panel->wifi_list = gtk_list_box_new();
+	gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(panel->wifi_list), TRUE);
+	gtk_widget_add_css_class(panel->wifi_list, "navigation-sidebar");
+	g_signal_connect(panel->wifi_list, "row-activated", G_CALLBACK(wifi_row_activated), panel);
+	gtk_box_append(GTK_BOX(panel->wifi_box), panel->wifi_list);
+	panel->wifi_pass = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+	panel->wifi_entry = gtk_password_entry_new();
+	gtk_password_entry_set_show_peek_icon(GTK_PASSWORD_ENTRY(panel->wifi_entry), TRUE);
+	gtk_widget_set_hexpand(panel->wifi_entry, TRUE);
+	g_signal_connect(panel->wifi_entry, "activate", G_CALLBACK(wifi_pass_entered), panel);
+	connect = gtk_button_new_with_label("Connect");
+	gtk_widget_add_css_class(connect, "suggested-action");
+	g_signal_connect(connect, "clicked", G_CALLBACK(wifi_pass_entered), panel);
+	gtk_box_append(GTK_BOX(panel->wifi_pass), panel->wifi_entry);
+	gtk_box_append(GTK_BOX(panel->wifi_pass), connect);
+	gtk_widget_set_visible(panel->wifi_pass, FALSE);
+	gtk_box_append(GTK_BOX(panel->wifi_box), panel->wifi_pass);
+	panel->wifi_status = gtk_label_new("");
+	gtk_label_set_wrap(GTK_LABEL(panel->wifi_status), TRUE);
+	gtk_label_set_max_width_chars(GTK_LABEL(panel->wifi_status), 36);
+	gtk_label_set_xalign(GTK_LABEL(panel->wifi_status), 0);
+	gtk_widget_add_css_class(panel->wifi_status, "dim-label");
+	gtk_box_append(GTK_BOX(panel->wifi_box), panel->wifi_status);
+	gtk_widget_set_visible(panel->wifi_box, FALSE);
+	gtk_box_append(GTK_BOX(box), panel->wifi_box);
+	g_signal_connect(popover, "show", G_CALLBACK(network_opened), panel);
+	return button;
+}
+
 /* The snapshot menu: the summary and the two things people do most. */
 static GtkWidget *snapshot_button(struct panel *panel)
 {
@@ -1030,8 +1235,7 @@ static void panel_new(GdkMonitor *monitor)
 	gtk_box_append(GTK_BOX(end), snapshot_button(panel));
 	panel->shield = shield_button(panel);
 	gtk_box_append(GTK_BOX(end), panel->shield);
-	panel->network = info_button("network-wired-symbolic", "Network",
-				     &panel->network_info, NULL);
+	panel->network = network_button(panel);
 	gtk_box_append(GTK_BOX(end), panel->network);
 	gtk_box_append(GTK_BOX(end), volume_button(panel));
 	panel->battery = info_button("battery-level-50-symbolic", "Battery", &panel->battery_info, NULL);

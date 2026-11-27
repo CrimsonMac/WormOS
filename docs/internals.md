@@ -1485,6 +1485,29 @@ in [building.md](building.md); what each feature does for the user, in the
   OpenJPEG, LCMS). `wormos-editor` (`src/editor`): GtkTextView with undo,
   GtkSearchBar find, `g_file_replace_contents` (temporary file, rename).
   wormos-desktop ships `/etc/xdg/mimeapps.list` with them as defaults.
+- Wi-Fi: iwd 3.12 (`recipes/iwd`, ell bundled) as the `41-wifi` service
+  (`/usr/lib/worm/wifi`: after the bus, only with the firewall loaded and
+  the network not cut). `/etc/iwd/main.conf`: its own DHCP
+  (`EnableNetworkConfiguration`), `AddressRandomization=once` with the full
+  range (net-privacy leaves Wi-Fi devices to it), `NameResolvingService=none`
+  (unbound stays the resolver). Kernel: cfg80211/mac80211, iwlwifi
+  (dvm, mvm, mld) and mac80211_hwsim as modules, the regulatory database
+  checked against the kernel's built-in keys (`wireless-regdb`), AF_ALG
+  and key types for iwd. `linux-firmware-wireless` ships the newest API
+  version of each iwlwifi firmware (at the top of the firmware folder, as
+  the driver looks for them) and Intel's Bluetooth firmware, zstd. The
+  panel (`src/shell/wifi.c`) uses iwd's D-Bus interface (wheel may):
+  the first Station, `GetOrderedNetworks`, `Network.Connect`, and an agent
+  (`RegisterAgent`) that answers `RequestPassphrase` with the passphrase
+  typed for that network, once. The boot test runs an iwd access point on
+  one hwsim radio and connects the other.
+- Bluetooth: BlueZ 5.88 (`recipes/bluez`: no OBEX, CUPS, mesh, MIDI or udev
+  tools; library and headers for PipeWire) as `42-bluetooth`;
+  `/etc/bluetooth/main.conf` has `AutoEnable=false`; a D-Bus policy lets
+  wheel use it. PipeWire is built with its bluez5 plugin (SBC, native
+  HSP/HFP backends; `recipes/sbc`). Settings > Bluetooth drives
+  `bluetoothctl` (power, a 12-second scan, pair + trust + connect with the
+  NoInputNoOutput agent, disconnect, remove).
 - Panel: the sound menu lists `wpctl status`'s audio sinks and sources as
   radio buttons (`wpctl set-default`) each time it opens. The battery
   (`status_battery`): every `/sys/class/power_supply/*` with type Battery

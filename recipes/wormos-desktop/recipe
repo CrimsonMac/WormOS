@@ -4,7 +4,7 @@ release=39
 description="The WormOS desktop session: labwc, foot and the WormOS look"
 depends=(labwc foot swaybg grim wlr-randr xcompose seatd dbus font-inter font-hack base-files
 	gtk4 gtk4-layer-shell wormos-gtk-theme adwaita-icon-theme dconf worm-shell wormos-snapshots wormos-software
-	wormos-welcome wormos-files wormos-viewer wormos-editor bh-wayland pipewire wireplumber clip libxcb zsh xz bzip2 less libarchive nano licenses wormos-settings)
+	wormos-welcome wormos-files wormos-viewer wormos-editor bh-wayland iwd linux-firmware-wireless bluez pipewire wireplumber clip libxcb zsh xz bzip2 less libarchive nano licenses wormos-settings)
 # The last line replaces busybox applets that the busybox package left out.
 # Here rather than in busybox: wh plans an upgrade in name order, so an older
 # wh upgrades busybox (dropping its links) before it installs these.

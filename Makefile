@@ -15,11 +15,11 @@ PACKAGES := base-files busybox worminit wormrd snap \
 	font-inter font-hack wlroots labwc tllist fcft foot grim swaybg wlr-randr xcompose clip bh-wayland \
 	libjpeg-turbo libtiff shared-mime-info gdk-pixbuf graphene gtk4 \
 	gtk4-layer-shell dconf hicolor-icon-theme adwaita-icon-theme wormos-gtk-theme \
-	alsa-lib libsndfile pipewire lua wireplumber worm-shell wormos-snapshots wormos-settings wormos-software wormos-welcome wormos-files \
+	ncurses readline sbc bluez alsa-lib libsndfile pipewire lua wireplumber worm-shell wormos-snapshots wormos-settings wormos-software wormos-welcome wormos-files \
 	poppler wormos-viewer wormos-editor \
 	atk gtk3 tor-browser-runtime tor-browser \
-	ncurses zsh-autosuggestions zsh-syntax-highlighting zsh \
-	xz bzip2 readline bash less nano vim htop tmux file tree ncdu jq lsof strace \
+	zsh-autosuggestions zsh-syntax-highlighting zsh \
+	xz bzip2 wireless-regdb linux-firmware-wireless iwd bash less nano vim htop tmux file tree ncdu jq lsof strace \
 	wireguard-tools sqlite libarchive git openssh rsync python nmap binutils \
 	grep sed gawk findutils diffutils patch coreutils wget zip 7zip iproute2 ethtool \
 	pciutils libusb usbutils dosfstools whois traceroute mtr iperf3 socat \

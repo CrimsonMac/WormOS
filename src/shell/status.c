@@ -80,6 +80,12 @@ static void read_network(struct status *s)
 		    !device_online(i->ifa_name))
 			continue;
 		s->online = TRUE;
+		{
+			char path[300];
+
+			snprintf(path, sizeof(path), "/sys/class/net/%s/wireless", i->ifa_name);
+			s->wireless = s->wireless || access(path, F_OK) == 0;
+		}
 		if (i->ifa_addr && i->ifa_addr->sa_family == AF_INET && !s->address[0])
 			inet_ntop(AF_INET, &((struct sockaddr_in *)i->ifa_addr)->sin_addr,
 				  s->address, sizeof(s->address));

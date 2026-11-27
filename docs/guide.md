@@ -274,6 +274,22 @@ it, not because you need it:
   on it, or use the volume keys) and picks the output (speakers,
   headphones, HDMI) and the microphone; so does Settings > Sound
   (`wpctl status` and `wpctl set-default ID` in a terminal).
+- **Wi-Fi**: the network button in the panel lists the networks in range
+  (strongest first); click one, type its passphrase if it has one, and
+  WormOS connects and remembers it (it reconnects by itself later). The
+  switch there turns Wi-Fi off and on. Every start uses a new random MAC
+  address for Wi-Fi (scans always use random ones), so networks cannot
+  recognise the computer, and DNS stays with WormOS's encrypted resolver,
+  not the network's. Wi-Fi starts only behind the firewall and follows
+  `worm panic`. In a terminal: `iwctl station wlan0 get-networks`,
+  `iwctl station wlan0 connect NAME` (enterprise networks too). Intel Wi-Fi
+  adapters work out of the box; others need their drivers, which are not
+  built yet.
+- **Bluetooth** (Settings > Bluetooth): switch it on, search for devices,
+  then Connect pairs, trusts and connects one (headphones, speakers,
+  mice and keyboards that pair without a code); Forget removes it.
+  Bluetooth audio goes through PipeWire like any other output. It starts
+  switched off at every start. In a terminal: `bluetoothctl`.
 - On a laptop the panel shows the battery's charge (and whether it is
   charging), and warns once when it falls to 10%.
 - Ctrl+Alt+F2 switches to a second console (for logging in as root);
