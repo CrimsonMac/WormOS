@@ -4,6 +4,7 @@
  * desktop. It runs once per session; "worm-shell --launcher" (bound to the
  * Super key) asks the running shell to open or close the launcher, and
  * "worm-shell --volume up|down|mute" (the volume keys) changes the volume,
+ * "worm-shell --brightness up|down" (the brightness keys) the screen's,
  * "worm-shell --do-not-disturb on|off|toggle" quiets notifications.
  */
 
@@ -46,13 +47,15 @@ static void startup(GApplication *gapp, gpointer data)
 static int command_line(GApplication *gapp, GApplicationCommandLine *cmd, gpointer data)
 {
 	GVariantDict *options = g_application_command_line_get_options_dict(cmd);
-	const char *volume, *quiet;
+	const char *volume, *brightness, *quiet;
 
 	(void)data;
 	if (g_variant_dict_contains(options, "launcher"))
 		launcher_toggle(GTK_APPLICATION(gapp));
 	if (g_variant_dict_lookup(options, "volume", "&s", &volume))
 		panels_volume(volume);
+	if (g_variant_dict_lookup(options, "brightness", "&s", &brightness))
+		panels_brightness(brightness);
 	if (g_variant_dict_lookup(options, "do-not-disturb", "&s", &quiet)) {
 		gboolean on = !strcmp(quiet, "on") ? TRUE : !strcmp(quiet, "off") ? FALSE
 			      : !notify_quiet();
@@ -71,6 +74,8 @@ int main(int argc, char **argv)
 		  "Open or close the application launcher", NULL },
 		{ "volume", 0, 0, G_OPTION_ARG_STRING, NULL,
 		  "Change the volume of the sound output", "up|down|mute" },
+		{ "brightness", 0, 0, G_OPTION_ARG_STRING, NULL,
+		  "Change the screen's brightness", "up|down" },
 		{ "do-not-disturb", 0, 0, G_OPTION_ARG_STRING, NULL,
 		  "Show only urgent notifications", "on|off|toggle" },
 		{ "quit", 0, 0, G_OPTION_ARG_NONE, NULL, "Stop the running shell", NULL },

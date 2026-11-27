@@ -1569,7 +1569,17 @@ initramfs inside LUKS.
   firmware and topologies for IPC3 and IPC4 under
   `/usr/lib/firmware/intel`, uncompressed, without the .ldc debug files)
   and `alsa-ucm-conf` (UCM2, which PipeWire needs for those cards). USB
-  cameras: uvcvideo as a module (WormOS Amnesia blocks it). `openssh-server`
+  cameras: uvcvideo as a module (WormOS Amnesia blocks it). I2C touchpads:
+  Intel LPSS (DesignWare I2C, iDMA64), pinctrl for Tiger Lake to Meteor
+  Lake (the touchpad's interrupt line), i2c-hid-acpi and hid-multitouch;
+  hp-wmi for HP's hotkeys. Backlight: `90-backlight.rules` runs
+  `/usr/lib/worm/backlight add NAME`, which makes `brightness` writable
+  for the group video and sets the level saved in
+  `/var/lib/worm/backlight/NAME` (else at least 40%; never below 5%);
+  the shutdown hook `20-backlight` saves it. worm-shell
+  (`src/shell/brightness.c`) prefers a firmware, then platform, then raw
+  backlight; `--brightness up|down` (the XF86MonBrightness keys) steps by
+  10%, and the quick settings have a slider. `openssh-server`
   (not in any edition) is sshd from the same source as `openssh`:
   `46-sshd` runs `/usr/lib/worm/sshd`, which makes ed25519 and RSA host keys
   in `/var/lib/ssh` the first time; keys-only `sshd_config`, privsep in

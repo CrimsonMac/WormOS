@@ -24,6 +24,7 @@ struct panel {
 	GtkWidget *battery, *battery_info;
 	GtkWidget *confirm;             /* the power action waiting for a second click */
 	GtkWidget *quiet;               /* the do not disturb tile */
+	GtkWidget *brightness_row, *brightness_scale;
 };
 
 /*
@@ -55,6 +56,7 @@ static void menu_direction(GtkWidget *button)
 static GtkApplication *app;
 static GPtrArray *panels;               /* of struct panel */
 static gboolean volume_updating;        /* showing a new reading, not a change */
+static gboolean brightness_updating;    /* likewise for the brightness slider */
 static int built_at_bottom = -1;        /* the edge the panels were built for */
 
 static void keyboard_while_open(GtkWidget *popover);
@@ -628,6 +630,66 @@ static GtkWidget *power_button(struct panel *panel, const char *icon, const char
 	return button;
 }
 
+/* ---- the screen's brightness (laptops) ---- */
+
+static void brightness_show(void)
+{
+	double level = brightness_get();
+
+	brightness_updating = TRUE;
+	for (guint p = 0; p < panels->len; p++) {
+		struct panel *panel = g_ptr_array_index(panels, p);
+
+		if (!panel->brightness_row)
+			continue;
+		gtk_widget_set_visible(panel->brightness_row, level >= 0);
+		if (level >= 0)
+			gtk_range_set_value(GTK_RANGE(panel->brightness_scale), level * 100);
+	}
+	brightness_updating = FALSE;
+}
+
+static void brightness_moved(GtkRange *range, gpointer data)
+{
+	(void)data;
+	if (!brightness_updating)
+		brightness_set(gtk_range_get_value(range) / 100);
+}
+
+void panels_brightness(const char *what)
+{
+	if (!strcmp(what, "up"))
+		brightness_step(1);
+	else if (!strcmp(what, "down"))
+		brightness_step(-1);
+	else
+		return;
+	brightness_show();
+}
+
+static GtkWidget *brightness_row(struct panel *panel)
+{
+	GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+
+	gtk_box_append(GTK_BOX(row), gtk_image_new_from_icon_name("display-brightness-symbolic"));
+	panel->brightness_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 5, 100, 1);
+	gtk_scale_set_draw_value(GTK_SCALE(panel->brightness_scale), FALSE);
+	gtk_widget_set_hexpand(panel->brightness_scale, TRUE);
+	gtk_widget_set_tooltip_text(panel->brightness_scale, "Screen brightness");
+	g_signal_connect(panel->brightness_scale, "value-changed", G_CALLBACK(brightness_moved), NULL);
+	gtk_box_append(GTK_BOX(row), panel->brightness_scale);
+	panel->brightness_row = row;
+	gtk_widget_set_visible(row, brightness_available());
+	return row;
+}
+
+static void power_menu_shown(GtkPopover *popover, gpointer data)
+{
+	(void)popover;
+	(void)data;
+	brightness_show();
+}
+
 static void power_menu_closed(GtkPopover *popover, gpointer data)
 {
 	struct panel *panel = data;
@@ -761,6 +823,7 @@ static GtkWidget *power_menu(struct panel *panel)
 	gtk_box_append(GTK_BOX(box), user);
 	gtk_box_append(GTK_BOX(box), quick_actions(panel));
 	gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+	gtk_box_append(GTK_BOX(box), brightness_row(panel));
 
 	row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
 	gtk_box_append(GTK_BOX(row), gtk_image_new_from_icon_name("video-display-symbolic"));
@@ -788,6 +851,7 @@ static GtkWidget *power_menu(struct panel *panel)
 						  "Shut down", "off"));
 	gtk_popover_set_child(GTK_POPOVER(popover), box);
 	g_signal_connect(popover, "closed", G_CALLBACK(power_menu_closed), panel);
+	g_signal_connect(popover, "show", G_CALLBACK(power_menu_shown), panel);
 	keyboard_while_open(popover);
 	gtk_menu_button_set_popover(GTK_MENU_BUTTON(button), popover);
 	menu_direction(button);

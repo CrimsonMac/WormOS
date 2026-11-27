@@ -333,6 +333,10 @@ it, not because you need it:
 - To reach the computer from another one over SSH, `wh install
   openssh-server`, put your public key in `~/.ssh/authorized_keys` and open
   the port with `worm fw allow 22`. Logins take keys only, never passwords.
+- On a laptop the brightness keys and the slider in the quick settings
+  (the power button in the panel) set the screen's brightness; it comes
+  back at the next start. Touchpads and touchscreens on I2C (most laptops'
+  built-in ones) work like a mouse.
 - On a laptop the panel shows the battery's charge (and whether it is
   charging), and warns once when it falls to 10%.
 - Ctrl+Alt+F2 switches to a second console (for logging in as root);
