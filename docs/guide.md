@@ -10,8 +10,12 @@ inside, [internals.md](internals.md).
 
 Download a release from the
 [release page](https://github.com/CrimsonMac/WormOS/releases/latest) and
-check it against `SHA256SUMS`. All of them start with UEFI or BIOS firmware (Secure Boot
-off).
+check it: from 1.17, `SHA256SUMS` is signed with the WormOS key, and
+[`scripts/verify-release.sh`](../scripts/verify-release.sh) checks the
+signature and the files with OpenSSL alone
+(`sh verify-release.sh DIR core.pem`, with
+[`keys/core.pem`](../keys/core.pem)). All of them start with UEFI or BIOS
+firmware (Secure Boot off).
 
 ### Editions
 
@@ -258,9 +262,11 @@ it, not because you need it:
   input (`wpctl status` and `wpctl set-default ID` in a terminal).
 - Ctrl+Alt+F2 switches to a second console (for logging in as root);
   Ctrl+Alt+F1 returns to the desktop.
-- Administration is done as root: `su -` in a terminal, the menu's root
-  terminal, or `sudo COMMAND` (it asks for the root password, as there is
-  no sudoers file: the root account is the administrator). Graphical
+- Administration: administrators (members of the group `wheel`, as the
+  user made at setup is) confirm with **their own password**: in the root
+  terminal, for `sudo COMMAND`, in Settings, Snapshots, Software and the
+  other programs that change the system. `su -` still asks for root's
+  password, which the setup also sets. Graphical
   programs open from the root terminal and from `sudo` (they keep the
   desktop's display), not from a plain `su -`; programs from wormholes run
   as well from your own terminal or the launcher.
@@ -668,6 +674,7 @@ bh open lab               # again, in another terminal: a second session in it
 bh open lab -- ./x        # run one command inside
 bh open --net test        # with a network, for trying out a program
 bh open --vm lab          # a virtual machine: its own kernel
+bh open --gui lab -- mousepad /inbox/notes.txt   # programs with windows
 bh list                   # your blackholes, running or not, and how
 bh close lab              # stop it and delete everything in it
 ```
@@ -677,7 +684,29 @@ unprivileged user. They see the system's programs read-only, but not
 `/home`, `/root`, `/var`, the disks or the snapshots, nor the host's
 processes. There is no network except loopback unless you ask for one.
 Any number of blackholes can run at once, each with as many sessions as
-you open; a blackhole closes when its first session ends. The layers:
+you open; a blackhole closes when its first session ends.
+
+**Windows from a blackhole.** `bh open --gui` lets the programs inside open
+windows on the desktop, through a display of the blackhole's own that the
+compositor marks as sandboxed (Wayland's security context): those windows
+cannot take screenshots or record the screen, read the clipboard in the
+background or set it as a clipboard manager, list or control other
+windows, or type and move the pointer for you. They always get WormOS's
+own title bar. Copy and paste still work while you use the window, as in
+any program. With `--from debian` the programs come from the Debian
+wormhole's system (install them there first, with Software or
+`wh install`). Programs for Wayland work (GTK, Qt, most modern ones); X11
+programs do not, and there is no GPU inside, so drawing is by the CPU.
+`--gui` does not combine with `--vm`.
+
+**Open in a blackhole.** In Files, right click a file and choose *Open in
+a blackhole*: the file is copied into a new blackhole's `/inbox` and its
+usual program opens it there (from its wormhole when it comes from Debian
+or Kali), with no network and nothing of your files. When the program
+closes, the blackhole and the copy are deleted. Use it for downloads and
+attachments you are not sure about.
+
+The layers:
 
 - **Namespaces:** own users, mounts, processes, network, IPC and host name.
 - **Capabilities:** root inside keeps only those that act on the

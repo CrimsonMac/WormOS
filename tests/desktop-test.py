@@ -604,7 +604,7 @@ def main():
     total = (len(DEVICE_CHECKS) + 1 + len(AFTER_SETUP_CHECKS) + 3 + len(SESSION_CHECKS) +
              len(TYPING_CHECKS) + len(SHORTCUT_CHECKS) + len(BUDGET_CHECKS) +
              len(RESIZES) + len(WELCOME_CHECKS) + len(GTK_CHECKS) + len(SOUND_CHECKS) +
-             len(SHELL_CHECKS) + len(CLIPBOARD_CHECKS) + 51)
+             len(SHELL_CHECKS) + len(CLIPBOARD_CHECKS) + 52)
     if gtk_check is None:
         total -= len(GTK_CHECKS) + 3
 
@@ -1087,6 +1087,11 @@ def main():
             out = con.run(f"echo wrong | su {USER} -c '/usr/lib/worm/software install tree' "
                           "> /dev/null 2>&1; echo rc=$?")
             check("Software's helper wants root's password for changes", out == "rc=3", out)
+            snap_id = con.run("/usr/lib/worm/snapshots list | tail -n 1 | cut -f 1")
+            con.run(f"/usr/lib/worm/snapshots pin {snap_id}")
+            out = con.run(f"echo '{USER_PASSWORD}' | su {USER} -c '/usr/lib/worm/snapshots unpin {snap_id}' "
+                          "> /dev/null 2>&1; echo rc=$?; /usr/lib/worm/snapshots list | tail -n 1 | cut -f 5")
+            check("administrators confirm with their own password", out == "rc=0\n0", out)
             mon.key("meta_l-slash")
             out = wait_for(con, "pidof wormos-welcome", r"^\d+$", 60)
             check("Super+/ shows the keyboard shortcuts", re.search(r"^\d+$", out, re.M) is not None,

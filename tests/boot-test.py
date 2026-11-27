@@ -448,8 +448,8 @@ SAFE_CHECKS = [
 ]
 
 # The helper behind the Snapshots program (run last: it adds snapshots).
-# Root counts as an administrator; the development image's root password
-# is empty, so an empty line is the right password.
+# Root counts as an administrator and confirms with its own password; the
+# development image's is empty, so an empty line is the right password.
 H = "/usr/lib/worm/snapshots"
 LAST = f"{H} list | tail -n 1"
 I = "/usr/lib/worm/install"
@@ -477,6 +477,10 @@ HELPER_CHECKS = [
      f"{LAST} | cut -f 7", r"wrong password(.|\n)*^Renamed$"),
     ("deletes with the password", f"echo | {H} delete $({LAST} | cut -f 1) && "
      f"{H} list | grep -c Renamed", r"^Deleted snapshot \d+\n0$"),
+    ("elevate is setuid root", "stat -c '%U %a' /usr/lib/worm/elevate", r"^root 4755$"),
+    ("elevate refuses users who are not administrators",
+     "su tester -c '/usr/lib/worm/elevate' < /dev/null 2>&1; echo rc=$?",
+     r"Only administrators(.|\n)*^rc=1$"),
     ("install helper is setuid root", f"stat -c '%U %a' {I}", r"^root 4755$"),
     ("install helper only for administrators",
      f"su tester -c 'echo | {I} tor-browser-runtime'; echo rc=$?",

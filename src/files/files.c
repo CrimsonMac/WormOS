@@ -404,6 +404,105 @@ static void act_open(GSimpleAction *a, GVariant *p, gpointer data)
 	g_list_free_full(files, g_object_unref);
 }
 
+/*
+ * The program a file would open with, as a command for a blackhole: its
+ * name, and the wormhole it comes from ("" for WormOS's own programs).
+ */
+static char *blackhole_program(GFile *file, char *source, size_t len)
+{
+	GFileInfo *info = g_file_query_info(file, G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE, 0, NULL, NULL);
+	const char *type = info ? g_file_info_get_content_type(info) : NULL;
+	GAppInfo *app = type ? g_app_info_get_default_for_type(type, FALSE) : NULL;
+	char **argv = NULL, *prog = NULL, *path;
+	int i = 0;
+
+	source[0] = '\0';
+	if (app && g_shell_parse_argv(g_app_info_get_commandline(app), NULL, &argv, NULL)) {
+		/* "env VAR=value program %f": the program after env's settings. */
+		if (argv[0] && !strcmp(argv[0], "env"))
+			for (i = 1; argv[i] && strchr(argv[i], '=') && argv[i][0] != '/'; i++)
+				;
+		if (argv[i])
+			prog = g_path_get_basename(argv[i]);
+	}
+	g_strfreev(argv);
+	g_clear_object(&app);
+	g_clear_object(&info);
+	if (!prog)
+		return NULL;
+	/* Programs from wormholes are wh's wrappers in /usr/local/bin. */
+	if ((path = g_find_program_in_path(prog)) && g_str_has_prefix(path, "/usr/local/bin/")) {
+		char *text = NULL;
+
+		if (g_file_get_contents(path, &text, NULL, NULL)) {
+			const char *mark = strstr(text, "# Exported by wh from the ");
+
+			if (!mark || sscanf(mark, "# Exported by wh from the %31s wormhole", source) != 1 ||
+			    strspn(source, "abcdefghijklmnopqrstuvwxyz0123456789-") != strlen(source)) {
+				g_clear_pointer(&prog, g_free);
+				source[0] = '\0';
+			}
+		}
+		g_free(text);
+	}
+	(void)len;
+	g_free(path);
+	return prog;
+}
+
+/*
+ * Open in a blackhole: the file goes into a new blackhole's /inbox and its
+ * program opens it there, with windows on the desktop (bh open --gui) but
+ * no network, nothing of home and the system read-only. The blackhole is
+ * closed (and its copy deleted) when the program exits.
+ */
+static void act_blackhole(GSimpleAction *a, GVariant *p, gpointer data)
+{
+	static const char script[] =
+		"bh put \"$1\" \"$2\" > /dev/null || exit 1; "
+		"bh open --gui ${5:+--from \"$5\"} \"$1\" -- \"$4\" \"/inbox/$3\"; "
+		"bh close \"$1\" > /dev/null 2>&1";
+	struct win *w = data;
+	GList *files = selected_files(w);
+	static int count;
+
+	(void)a; (void)p;
+	for (GList *l = files; l; l = l->next) {
+		char source[32], name[40], *prog, *path = g_file_get_path(l->data), *base;
+		GError *error = NULL;
+
+		if (!path || g_file_query_file_type(l->data, 0, NULL) != G_FILE_TYPE_REGULAR) {
+			message(w, "Only files go into a blackhole, not folders.");
+			g_free(path);
+			continue;
+		}
+		if (!(prog = blackhole_program(l->data, source, sizeof(source)))) {
+			message(w, "No program for this kind of file can open it in a blackhole: "
+				"install one with Software.");
+			g_free(path);
+			continue;
+		}
+		snprintf(name, sizeof(name), "file%d-%d", (int)getpid() % 100000, ++count);
+		base = g_path_get_basename(path);
+		if (!g_spawn_async(NULL, (char *[]){ "sh", "-c", (char *)script, "sh", name, path, base,
+						     prog, source, NULL },
+				   NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, &error)) {
+			error_message(w, "Cannot open a blackhole", error);
+			g_error_free(error);
+		} else {
+			char *text = g_strdup_printf("Opening %s with %s in a blackhole: no network, "
+						     "nothing of your files.", base, prog);
+
+			message(w, text);
+			g_free(text);
+		}
+		g_free(base);
+		g_free(prog);
+		g_free(path);
+	}
+	g_list_free_full(files, g_object_unref);
+}
+
 static void act_trash(GSimpleAction *a, GVariant *p, gpointer data)
 {
 	struct win *w = data;
@@ -731,6 +830,7 @@ static void act_search(GSimpleAction *a, GVariant *p, gpointer data)
 
 static const GActionEntry actions[] = {
 	{ .name = "open", .activate = act_open },
+	{ .name = "blackhole", .activate = act_blackhole },
 	{ .name = "trash", .activate = act_trash },
 	{ .name = "copy", .activate = act_copy },
 	{ .name = "cut", .activate = act_cut },
@@ -783,6 +883,7 @@ static void right_click(GtkGestureClick *g, int n, double x, double y, gpointer 
 	section = g_menu_new();
 	if (on_item) {
 		g_menu_append(section, "Open", "win.open");
+		g_menu_append(section, "Open in a blackhole", "win.blackhole");
 		g_menu_append(section, "Rename…", "win.rename");
 		g_menu_append_section(menu, NULL, G_MENU_MODEL(section));
 		g_object_unref(section);

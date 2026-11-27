@@ -1456,6 +1456,38 @@ in [building.md](building.md); what each feature does for the user, in the
   default action (watched with `gdbus monitor` for an hour) runs
   `wormos-software --updates`. Skipped on live systems (`/etc/wh/live`,
   `/run/wormos/live`) and with `~/.config/wormos/no-update-notice`.
+- `bh open --gui` (`opts.gui`): bh starts `/usr/lib/bh/wayland`
+  (package bh-wayland, `src/bh-wayland`, built after Wayland) with
+  `DIR/wayland-0` and the blackhole's name; it creates a listening socket
+  there (mode 0666: root of the blackhole is another user outside; the
+  directory keeps others out) and hands it to the compositor with
+  `wp_security_context_manager_v1.create_listener` (engine
+  `org.wormos.bh`, app ID the name, instance ID bh's PID), prints "ready"
+  and holds the close fd until its standard input closes (bh's end, when
+  the first session exits). box_init binds the socket at `/run/wayland-0`;
+  programs get `WAYLAND_DISPLAY=/run/wayland-0`, `XDG_RUNTIME_DIR=/run/user`
+  and toolkit settings for Wayland without a GPU or session bus
+  (`GSK_RENDERER=cairo`, `GSETTINGS_BACKEND=memory`). labwc offers
+  sandboxed clients only its allow-list of plain protocols; rc.xml forces
+  server-side decorations for `sandboxEngine="org.wormos.bh"`.
+- Files' *Open in a blackhole*: the default application for the file's
+  content type (GIO), the program from its Exec (after `env VAR=value`);
+  a wh wrapper in `/usr/local/bin` names its wormhole ("Exported by wh
+  from the debian wormhole"), which becomes `--from`. It runs
+  `bh put NAME FILE`, `bh open --gui [--from SOURCE] NAME -- PROGRAM
+  /inbox/BASENAME`, then `bh close NAME` (NAME `fileN-M`).
+- Administrators confirm with their own password: `admin_password_ok()`
+  (admin.c) checks the caller's (root's own for root) and replaces the root
+  password in the settings, snapshots, install and software helpers.
+  `/usr/lib/worm/elevate` (setuid, wheel only, refused with
+  `/etc/worm/no-root`) asks for it on `/dev/tty` without echo (three tries;
+  root needs none), logs to authpriv, and runs only
+  `/usr/lib/worm/root-shell ARGS` as root in a login-like environment; the
+  root terminal and `sudo` use it instead of `su -`.
+- Releases: `scripts/release.sh` signs `SHA256SUMS` with wsign (the index
+  key) as `SHA256SUMS.sig`; `scripts/verify-release.sh` checks it with
+  `openssl pkeyutl -verify -rawin` against `keys/core.pem` (the same key in
+  PEM) and the files with `sha256sum -c`; release-tests.yml uses it.
 - Every setuid helper, `worm` and `snap` start with `umask(022)`: a
   helper hands the caller's umask on to what it runs as root, so a user
   with `umask 000` would otherwise get root's files (Tor's bridges file,

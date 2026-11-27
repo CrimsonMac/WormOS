@@ -12,7 +12,7 @@ PACKAGES := base-files busybox worminit wormrd snap \
 	libpng freetype fribidi fontconfig pcre2 glib harfbuzz libxml2 cairo pango \
 	libepoxy xorgproto xcb-proto libxau xtrans libxcb xcb-util-wm libx11 libxext libxfixes \
 	libxrender libxrandr libxkbfile xkbcomp libfontenc libxfont2 libxcvt libxshmfence xwayland \
-	font-inter font-hack wlroots labwc tllist fcft foot grim swaybg wlr-randr xcompose clip \
+	font-inter font-hack wlroots labwc tllist fcft foot grim swaybg wlr-randr xcompose clip bh-wayland \
 	libjpeg-turbo libtiff shared-mime-info gdk-pixbuf graphene gtk4 \
 	gtk4-layer-shell dconf hicolor-icon-theme adwaita-icon-theme wormos-gtk-theme \
 	alsa-lib libsndfile pipewire lua wireplumber worm-shell wormos-snapshots wormos-settings wormos-software wormos-welcome wormos-files \

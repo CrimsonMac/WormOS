@@ -277,7 +277,7 @@ static GtkWidget *button_new(const char *label, GCallback clicked, gpointer data
 	return b;
 }
 
-/* ---- root's password, for system changes ---- */
+/* ---- the administrator's password, for system changes ---- */
 
 typedef void (*admin_done_fn)(gboolean ok, gpointer data);
 
@@ -378,7 +378,7 @@ static void admin_cancel(GtkWidget *w, gpointer data)
 	admin_free(a);
 }
 
-/* Run a helper; with password, ask for root's password first. */
+/* Run a helper; with password, ask for the administrator's password first. */
 static void admin(const char *what, gboolean password, admin_done_fn done, gpointer data,
 		  const char *first, ...)
 {
@@ -424,7 +424,7 @@ static void admin(const char *what, gboolean password, admin_done_fn done, gpoin
 	gtk_label_set_wrap(GTK_LABEL(label), TRUE);
 	gtk_label_set_max_width_chars(GTK_LABEL(label), 40);
 	gtk_box_append(GTK_BOX(box), label);
-	label = gtk_label_new("Enter the root password to change the system.");
+	label = gtk_label_new("Enter your password to change the system.");
 	gtk_widget_add_css_class(label, "dim-label");
 	gtk_box_append(GTK_BOX(box), label);
 	a->entry = gtk_password_entry_new();
