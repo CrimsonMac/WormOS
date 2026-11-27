@@ -18,6 +18,7 @@
 . "$(dirname "$0")/env.sh"
 
 VERSION=${1:?usage: scripts/release.sh VERSION}
+[ -z "${WORMOS_TEST_SSH_KEY:-}" ] || die "WORMOS_TEST_SSH_KEY is for test builds, not releases"
 DISK_MB=${DISK_MB:-20480}
 DEST=$OUT/release
 NAME=wormos-$VERSION-x86_64

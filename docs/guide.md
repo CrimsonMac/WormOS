@@ -318,14 +318,21 @@ it, not because you need it:
   recognise the computer, and DNS stays with WormOS's encrypted resolver,
   not the network's. Wi-Fi starts only behind the firewall and follows
   `worm panic`. In a terminal: `iwctl station wlan0 get-networks`,
-  `iwctl station wlan0 connect NAME` (enterprise networks too). Intel Wi-Fi
-  adapters work out of the box; others need their drivers, which are not
-  built yet.
+  `iwctl station wlan0 connect NAME` (enterprise networks too). Intel,
+  MediaTek (MT7921, MT7922, MT7925) and Realtek (rtw88, rtw89) Wi-Fi and
+  Bluetooth adapters have their drivers and firmware; Realtek wired
+  network cards too.
 - **Bluetooth** (Settings > Bluetooth): switch it on, search for devices,
   then Connect pairs, trusts and connects one (headphones, speakers,
   mice and keyboards that pair without a code); Forget removes it.
   Bluetooth audio goes through PipeWire like any other output. It starts
   switched off at every start. In a terminal: `bluetoothctl`.
+- Laptop sound through Intel's audio DSP (Smart Sound, on most Intel
+  laptops since about 2020) uses Sound Open Firmware, so the speakers and
+  built-in microphones work; USB webcams work as cameras.
+- To reach the computer from another one over SSH, `wh install
+  openssh-server`, put your public key in `~/.ssh/authorized_keys` and open
+  the port with `worm fw allow 22`. Logins take keys only, never passwords.
 - On a laptop the panel shows the battery's charge (and whether it is
   charging), and warns once when it falls to 10%.
 - Ctrl+Alt+F2 switches to a second console (for logging in as root);

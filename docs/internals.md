@@ -1556,11 +1556,27 @@ initramfs inside LUKS.
   (`EnableNetworkConfiguration`), `AddressRandomization=once` with the full
   range (net-privacy leaves Wi-Fi devices to it), `NameResolvingService=none`
   (unbound stays the resolver). Kernel: cfg80211/mac80211, iwlwifi
-  (dvm, mvm, mld) and mac80211_hwsim as modules, the regulatory database
+  (dvm, mvm, mld), mt7921e/mt7925e, rtw88/rtw89 PCIe and mac80211_hwsim
+  as modules (Bluetooth: btusb with MediaTek and Realtek support), the regulatory database
   checked against the kernel's built-in keys (`wireless-regdb`), AF_ALG
   and key types for iwd. `linux-firmware-wireless` ships the newest API
   version of each iwlwifi firmware (at the top of the firmware folder, as
-  the driver looks for them) and Intel's Bluetooth firmware, zstd. The
+  the driver looks for them), Intel's Bluetooth firmware, and MediaTek's,
+  Realtek's (rtw88, rtw89, rtl_bt) and Realtek Ethernet (rtl_nic) folders
+  as they are, zstd. Sound on Intel laptops with an audio DSP: SOF in the
+  kernel (Tiger Lake to Lunar Lake, HDA links and codecs, the generic HDA
+  and SSP machine drivers, DMIC) with `sof-firmware` (sof-bin: Intel-signed
+  firmware and topologies for IPC3 and IPC4 under
+  `/usr/lib/firmware/intel`, uncompressed, without the .ldc debug files)
+  and `alsa-ucm-conf` (UCM2, which PipeWire needs for those cards). USB
+  cameras: uvcvideo as a module (WormOS Amnesia blocks it). `openssh-server`
+  (not in any edition) is sshd from the same source as `openssh`:
+  `46-sshd` runs `/usr/lib/worm/sshd`, which makes ed25519 and RSA host keys
+  in `/var/lib/ssh` the first time; keys-only `sshd_config`, privsep in
+  `/usr/share/empty.sshd`. `WORMOS_TEST_SSH_KEY=FILE make iso` builds a
+  test ISO for real hardware with it installed, `tcp 22` in
+  `/etc/worm/firewall` and the key as root's `authorized_keys`;
+  `release.sh` refuses the variable. The
   panel (`src/shell/wifi.c`) uses iwd's D-Bus interface (wheel may):
   the first Station, `GetOrderedNetworks`, `Network.Connect`, and an agent
   (`RegisterAgent`) that answers `RequestPassphrase` with the passphrase

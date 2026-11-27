@@ -79,6 +79,17 @@ if [ "$VARIANT" = barebones ]; then
 	VARIANT="Barebones"
 	EOF
 fi
+# WORMOS_TEST_SSH_KEY=FILE (test builds for real hardware only, never a
+# release): the SSH server, port 22 open, and root logs in with that public
+# key, so a tester can reach a machine booted from the ISO.
+if [ -n "${WORMOS_TEST_SSH_KEY:-}" ]; then
+	[ -f "$WORMOS_TEST_SSH_KEY" ] || die "no such key: $WORMOS_TEST_SSH_KEY"
+	msg "Test build: SSH server, root logs in with $(basename "$WORMOS_TEST_SSH_KEY")"
+	wh install openssh-server
+	install -d -m 700 "$ROOTFS/var/roothome/.ssh"
+	install -m 600 "$WORMOS_TEST_SSH_KEY" "$ROOTFS/var/roothome/.ssh/authorized_keys"
+	printf '# Test build: SSH.\ntcp 22\n' > "$ROOTFS/etc/worm/firewall"
+fi
 # The image keeps the index (newer ones must be at least as recent) but not
 # the downloaded packages.
 rm -rf "$ROOTFS/var/cache/wh"
