@@ -29,6 +29,9 @@ struct status {
 	gboolean anon;          /* worm anon on */
 	gboolean network_cut;   /* worm panic or safe mode */
 	int tor_percent;        /* how far Tor has connected, -1: unknown or unreadable */
+	int battery;            /* percent charged, -1: no battery */
+	gboolean charging;      /* plugged in and charging (or full) */
+	gboolean full;
 	gboolean online;        /* a network device has a carrier */
 	char address[64];       /* first IPv4 address, if any */
 };
@@ -61,6 +64,7 @@ void outputs_set_scale(double scale);  /* 0: automatic; saved for the user */
 
 /* status.c */
 void status_read(struct status *s);
+void status_battery(struct status *s);   /* just the battery */
 
 /* panel.c */
 void panels_init(GtkApplication *app);

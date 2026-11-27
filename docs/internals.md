@@ -1470,6 +1470,28 @@ in [building.md](building.md); what each feature does for the user, in the
   (`GSK_RENDERER=cairo`, `GSETTINGS_BACKEND=memory`). labwc offers
   sandboxed clients only its allow-list of plain protocols; rc.xml forces
   server-side decorations for `sandboxEngine="org.wormos.bh"`.
+- Files: thumbnails of pictures (up to 40 MB) are loaded in a GTask thread
+  with `gdk_pixbuf_new_from_file_at_scale` (112 px, EXIF orientation
+  applied), turned into a GdkMemoryTexture in the main thread and cached
+  by path and modification time for the program's life. Each item is a
+  GtkDragSource (a GdkFileList of the selection); the grid and each place
+  in the sidebar are GtkDropTargets; a drop moves when the drag allows
+  moving, else copies, through the same cp/mv queue as paste.
+- `wormos-viewer` (`src/viewer`): GdkTexture (downloaded once into a cairo
+  ARGB32 surface) or `poppler_document_new_from_gfile` +
+  `poppler_page_render` into a GtkDrawingArea; never acts on links, forms
+  or JavaScript. Poppler (`recipes/poppler`) is built with only the core,
+  cairo and the GLib interface (no utilities, Qt, curl, NSS, GPGME,
+  OpenJPEG, LCMS). `wormos-editor` (`src/editor`): GtkTextView with undo,
+  GtkSearchBar find, `g_file_replace_contents` (temporary file, rename).
+  wormos-desktop ships `/etc/xdg/mimeapps.list` with them as defaults.
+- Panel: the sound menu lists `wpctl status`'s audio sinks and sources as
+  radio buttons (`wpctl set-default`) each time it opens. The battery
+  (`status_battery`): every `/sys/class/power_supply/*` with type Battery
+  and a scope other than Device, averaged; hidden without one; a critical
+  notification once at 10% while discharging. `worm-shell --battery`
+  prints what it reads (`WORM_SHELL_POWER_SUPPLY` points it at another
+  folder, for tests).
 - Files' *Open in a blackhole*: the default application for the file's
   content type (GIO), the program from its Exec (after `env VAR=value`);
   a wh wrapper in `/usr/local/bin` names its wormhole ("Exported by wh

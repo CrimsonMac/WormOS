@@ -18,6 +18,8 @@ struct panel {
 	GtkWidget *shield, *shield_info, *circuits;
 	GtkWidget *network, *network_info;
 	GtkWidget *volume, *volume_output, *volume_mute, *volume_scale, *volume_percent;
+	GtkWidget *volume_devices;      /* outputs and inputs to choose from */
+	GtkWidget *battery, *battery_info;
 	GtkWidget *confirm;             /* the power action waiting for a second click */
 	GtkWidget *quiet;               /* the do not disturb tile */
 };
@@ -174,6 +176,9 @@ static void set_class(GtkWidget *w, const char *name, gboolean on)
 		gtk_widget_remove_css_class(w, name);
 }
 
+static void battery_show(struct panel *panel, const struct status *s);
+static void battery_warn(const struct status *s);
+
 static gboolean refresh_status(gpointer data)
 {
 	struct status s;
@@ -241,7 +246,9 @@ static gboolean refresh_status(gpointer data)
 		gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(panel->network), network_icon);
 		gtk_widget_set_tooltip_text(panel->network, network_info);
 		gtk_label_set_text(GTK_LABEL(panel->network_info), network_info);
+		battery_show(panel, &s);
 	}
+	battery_warn(&s);
 	g_free(snap_text);
 	g_free(snap_info);
 	g_free(shield_info);
@@ -321,11 +328,158 @@ static gboolean volume_scrolled(GtkEventControllerScroll *scroll, double dx, dou
 	return TRUE;
 }
 
+/* ---- choosing the sound output and input ---- */
+
+static gboolean devices_filling;
+
+static void device_chosen(GtkCheckButton *button, gpointer data)
+{
+	char id[16];
+
+	if (devices_filling || !gtk_check_button_get_active(button))
+		return;
+	snprintf(id, sizeof(id), "%d", GPOINTER_TO_INT(data));
+	g_spawn_async(NULL, (char *[]){ "wpctl", "set-default", id, NULL }, NULL,
+		      G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
+	volume_refresh(TRUE);
+}
+
+/*
+ * The audio sinks and sources of "wpctl status", as radio buttons:
+ * "│  *   46. Built-in Audio Analog Stereo     [vol: 0.40]" (* the default).
+ */
+static void devices_fill(struct panel *panel)
+{
+	char *out = NULL, **lines;
+	GtkWidget *child, *group = NULL, *heading;
+	gboolean audio = FALSE;
+	int section = 0, shown[3] = { 0 };     /* 1 sinks, 2 sources */
+
+	while ((child = gtk_widget_get_first_child(panel->volume_devices)))
+		gtk_box_remove(GTK_BOX(panel->volume_devices), child);
+	if (!g_spawn_sync(NULL, (char *[]){ "wpctl", "status", NULL }, NULL, G_SPAWN_SEARCH_PATH |
+			  G_SPAWN_STDERR_TO_DEV_NULL, NULL, NULL, &out, NULL, NULL, NULL))
+		return;
+	devices_filling = TRUE;
+	lines = g_strsplit(out, "\n", -1);
+	for (int i = 0; lines[i]; i++) {
+		char *s = lines[i], *dot, *vol, *name;
+		gboolean is_default = FALSE;
+		GtkWidget *radio;
+		int id;
+
+		if (!strncmp(s, "Audio", 5))
+			audio = TRUE;
+		else if (!strncmp(s, "Video", 5) || !strncmp(s, "Settings", 8))
+			audio = FALSE;
+		if (!audio)
+			continue;
+		if (strstr(s, "Sinks:") || strstr(s, "Sources:")) {
+			section = strstr(s, "Sinks:") ? 1 : 2;
+			group = NULL;
+			heading = gtk_label_new(section == 1 ? "Output" : "Input");
+			gtk_widget_add_css_class(heading, "dim-label");
+			gtk_widget_set_halign(heading, GTK_ALIGN_START);
+			gtk_box_append(GTK_BOX(panel->volume_devices), heading);
+			continue;
+		}
+		if (strchr(s, ':') && !strstr(s, "[vol:")) {
+			section = 0;    /* Devices:, Filters:, Streams: */
+			continue;
+		}
+		if (!section)
+			continue;
+		while (*s && !g_ascii_isdigit(*s) && *s != '*')
+			s++;
+		if (*s == '*') {
+			is_default = TRUE;
+			s++;
+		}
+		id = atoi(s);
+		dot = strchr(s, '.');
+		vol = strstr(s, "[vol:");
+		if (!id || !dot || !vol)
+			continue;
+		name = g_strstrip(g_strndup(dot + 1, vol - dot - 1));
+		radio = gtk_check_button_new_with_label(name);
+		g_free(name);
+		if (group)
+			gtk_check_button_set_group(GTK_CHECK_BUTTON(radio), GTK_CHECK_BUTTON(group));
+		else
+			group = radio;
+		gtk_check_button_set_active(GTK_CHECK_BUTTON(radio), is_default);
+		g_signal_connect(radio, "toggled", G_CALLBACK(device_chosen), GINT_TO_POINTER(id));
+		gtk_box_append(GTK_BOX(panel->volume_devices), radio);
+		shown[section]++;
+	}
+	g_strfreev(lines);
+	g_free(out);
+	if (!shown[2]) {
+		GtkWidget *none = gtk_label_new("No microphone");
+
+		gtk_widget_add_css_class(none, "dim-label");
+		gtk_widget_set_halign(none, GTK_ALIGN_START);
+		gtk_box_append(GTK_BOX(panel->volume_devices), none);
+	}
+	devices_filling = FALSE;
+}
+
 static void volume_opened(GtkPopover *popover, gpointer data)
 {
 	(void)popover;
-	(void)data;
 	volume_refresh(TRUE);
+	devices_fill(data);
+}
+
+/* ---- the battery ---- */
+
+static void battery_show(struct panel *panel, const struct status *s)
+{
+	char icon[64], *text, *info;
+	int level = s->battery < 0 ? 0 : (s->battery + 5) / 10 * 10;
+
+	gtk_widget_set_visible(panel->battery, s->battery >= 0);
+	if (s->battery < 0)
+		return;
+	if (s->full)
+		snprintf(icon, sizeof(icon), "battery-full-charged-symbolic");
+	else
+		snprintf(icon, sizeof(icon), "battery-level-%d%s-symbolic", MIN(level, 100),
+			 s->charging ? "-charging" : "");
+	gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(panel->battery), icon);
+	text = g_strdup_printf("%d%%", s->battery);
+	info = g_strdup_printf("Battery: %d%%%s", s->battery, s->full ? ", full" :
+			       s->charging ? ", charging" : s->battery <= 10 ?
+			       "\nPlug in soon: the computer turns off when it is empty." : "");
+	gtk_widget_set_tooltip_text(panel->battery, info);
+	gtk_label_set_text(GTK_LABEL(panel->battery_info), info);
+	g_free(text);
+	g_free(info);
+}
+
+/* Once, when the battery runs low (again after it was charged). */
+static void battery_warn(const struct status *s)
+{
+	static gboolean warned;
+
+	if (s->battery < 0 || s->charging || s->battery > 15) {
+		warned = FALSE;
+		return;
+	}
+	if (warned || s->battery > 10)
+		return;
+	warned = TRUE;
+	{
+		char *body = g_strdup_printf("%d%% left. Plug the computer in.", s->battery);
+
+		g_spawn_async(NULL, (char *[]){ "gdbus", "call", "--session", "--dest",
+			"org.freedesktop.Notifications", "--object-path", "/org/freedesktop/Notifications",
+			"--method", "org.freedesktop.Notifications.Notify", "Battery", "0",
+			"battery-caution-symbolic", "Battery low", body, "[]", "{'urgency': <byte 2>}",
+			"0", NULL }, NULL, G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL, NULL, NULL,
+			NULL, NULL);
+		g_free(body);
+	}
 }
 
 void panels_volume(const char *what)
@@ -378,9 +532,12 @@ static GtkWidget *volume_button(struct panel *panel)
 	gtk_widget_add_css_class(panel->volume_percent, "numeric");
 	gtk_box_append(GTK_BOX(row), panel->volume_percent);
 	gtk_box_append(GTK_BOX(box), row);
+	gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+	panel->volume_devices = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+	gtk_box_append(GTK_BOX(box), panel->volume_devices);
 
 	gtk_popover_set_child(GTK_POPOVER(popover), box);
-	g_signal_connect(popover, "show", G_CALLBACK(volume_opened), NULL);
+	g_signal_connect(popover, "show", G_CALLBACK(volume_opened), panel);
 	keyboard_while_open(popover);
 	gtk_menu_button_set_popover(GTK_MENU_BUTTON(button), popover);
 	menu_direction(button);
@@ -877,6 +1034,9 @@ static void panel_new(GdkMonitor *monitor)
 				     &panel->network_info, NULL);
 	gtk_box_append(GTK_BOX(end), panel->network);
 	gtk_box_append(GTK_BOX(end), volume_button(panel));
+	panel->battery = info_button("battery-level-50-symbolic", "Battery", &panel->battery_info, NULL);
+	gtk_widget_set_visible(panel->battery, FALSE);
+	gtk_box_append(GTK_BOX(end), panel->battery);
 	gtk_box_append(GTK_BOX(end), power_menu(panel));
 	gtk_center_box_set_end_widget(GTK_CENTER_BOX(bar), end);
 

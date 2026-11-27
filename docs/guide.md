@@ -208,7 +208,20 @@ it, not because you need it:
   copy (Ctrl+C), cut (Ctrl+X), paste (Ctrl+V), move to the trash (Delete;
   in the trash, Delete removes for good), make a folder (Ctrl+Shift+N),
   show hidden files (Ctrl+H) or open a terminal there. Alt+Left goes
-  back, Alt+Up to the parent folder. Other programs open folders in it.
+  back, Alt+Up to the parent folder. Pictures show as thumbnails. Drag
+  files to another folder or onto a place in the sidebar to move them
+  (hold Ctrl to copy), or drop files from other programs into the window.
+  Other programs open folders in it. *Open in a blackhole* (right click)
+  opens a file you are not sure about in a sandbox (see Blackholes).
+- **Viewer** (`wormos-viewer`) shows pictures and PDF documents: + and −
+  zoom, 0 fits the window, Left and Right go through pages or through the
+  other pictures in the folder, R rotates, F11 is full screen. PDFs are only
+  drawn: links, forms and scripts in them do nothing.
+- **Text Editor** (`wormos-editor`) edits text files: Ctrl+S saves,
+  Ctrl+F finds, Ctrl+L goes to a line, undo and redo, word wrap. Closing
+  with unsaved changes asks first. Files, Viewer and Text Editor are the
+  default programs for folders, pictures and PDFs, and text
+  (`/etc/xdg/mimeapps.list`; your own `~/.config/mimeapps.list` wins).
 - **Software** (`wormos-software`): Explore lists popular programs and
   searches every source (WormOS's own packages, then Debian's and Kali's);
   Installed lists what is there; Updates looks for newer versions and
@@ -258,8 +271,11 @@ it, not because you need it:
 - Sound goes through [PipeWire](https://pipewire.org), which also serves
   programs written for PulseAudio or ALSA (including those installed from
   Debian or Kali). The speaker button in the panel sets the volume (scroll
-  on it, or use the volume keys); Settings > Sound picks the output and
-  input (`wpctl status` and `wpctl set-default ID` in a terminal).
+  on it, or use the volume keys) and picks the output (speakers,
+  headphones, HDMI) and the microphone; so does Settings > Sound
+  (`wpctl status` and `wpctl set-default ID` in a terminal).
+- On a laptop the panel shows the battery's charge (and whether it is
+  charging), and warns once when it falls to 10%.
 - Ctrl+Alt+F2 switches to a second console (for logging in as root);
   Ctrl+Alt+F1 returns to the desktop.
 - Administration: administrators (members of the group `wheel`, as the

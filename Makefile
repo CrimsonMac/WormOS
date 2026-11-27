@@ -16,6 +16,7 @@ PACKAGES := base-files busybox worminit wormrd snap \
 	libjpeg-turbo libtiff shared-mime-info gdk-pixbuf graphene gtk4 \
 	gtk4-layer-shell dconf hicolor-icon-theme adwaita-icon-theme wormos-gtk-theme \
 	alsa-lib libsndfile pipewire lua wireplumber worm-shell wormos-snapshots wormos-settings wormos-software wormos-welcome wormos-files \
+	poppler wormos-viewer wormos-editor \
 	atk gtk3 tor-browser-runtime tor-browser \
 	ncurses zsh-autosuggestions zsh-syntax-highlighting zsh \
 	xz bzip2 readline bash less nano vim htop tmux file tree ncdu jq lsof strace \
