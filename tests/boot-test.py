@@ -79,6 +79,9 @@ CHECKS = [
 
 # Kernel security features (kernel/wormos.config), settings and mounts.
 KERNEL_CHECKS = [
+    ("compressed swap in memory", "grep -c '^/dev/zram0 ' /proc/swaps; "
+     "cat /sys/block/zram0/comp_algorithm; cat /proc/sys/vm/swappiness",
+     r"^1\n.*\[zstd\].*\n100$"),
     ("hardening on the command line", "cat /proc/cmdline", r"slab_nomerge debugfs=off .*iommu\.strict=1"),
     ("io_uring off", "cat /proc/sys/kernel/io_uring_disabled", r"^2$"),
     ("kernel pointers hidden", "cat /proc/sys/kernel/kptr_restrict", r"^2$"),

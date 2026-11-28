@@ -17,6 +17,8 @@ package() {
 	install -Dm644 "$recipedir/files/35-time" "$pkgdir/etc/worm/services/35-time"
 	install -Dm755 "$recipedir/files/timesync" "$pkgdir/usr/lib/worm/timesync"
 	install -Dm644 "$recipedir/files/13-vm" "$pkgdir/etc/worm/services/13-vm"
+	install -Dm644 "$recipedir/files/05-zram" "$pkgdir/etc/worm/services/05-zram"
+	install -Dm755 "$recipedir/files/zram" "$pkgdir/usr/lib/worm/zram"
 	install -Dm644 "$recipedir/files/45-guest-agent" "$pkgdir/etc/worm/services/45-guest-agent"
 	install -Dm644 -t "$pkgdir/usr/share/worm/vm" "$recipedir"/files/vm/*
 }

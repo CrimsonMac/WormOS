@@ -449,7 +449,13 @@ initramfs inside LUKS.
   the build machine (without `LD_PRELOAD`, which the root's loader cannot
   satisfy; build-rootfs gives the files their owner afterwards). Hooks:
   `gsettings-schemas` (glib), `mime-database` (shared-mime-info),
-  `desktop-mime` and `keep-accounts` (wh itself, below).
+  `desktop-mime` and `keep-accounts` (wh itself, below), and since 1.20
+  `fontconfig-cache` (`fc-cache -s -f --sysroot ROOT` into
+  `/usr/lib/fontconfig/cache`, which `05-wormos-cache.conf` lists first:
+  read-only at run time, so users read it and never build their own;
+  fontconfig names caches after the font folder without the sysroot) and
+  `icon-cache` (gtk4: `gtk4-update-icon-cache` for hicolor, which many
+  packages add to).
 - `desktop-mime` (since 1.13) runs `/usr/lib/wh/mime-cache
   /usr/share/applications` (`src/wh/mime-cache.c`), which writes
   `mimeinfo.cache` from the entries' `MimeType` lines as
@@ -1192,6 +1198,27 @@ initramfs inside LUKS.
   virtio ones; virtio_balloon selects free page reporting.
 - `worm hostname [NAME]` writes `/etc/hostname` (with `/` writable for
   the moment) and calls sethostname.
+
+## Firmware and zram
+
+- `worm firmware [devices|check|update]` (`src/worm/firmware.c`, root):
+  Debian's fwupd in the Debian wormhole, through `fwupdtool` (fwupd's
+  offline tool: no service, no D-Bus policy, no polkit). The first run
+  installs `fwupd` and, on UEFI machines, `fwupd-amd64-signed` (Debian's
+  signed `fwupdx64.efi`, which the Debian shim in WormOS's boot chain
+  trusts) with `wh install --from debian`, and adds `EspLocation=/boot/efi`
+  to the wormhole's `/etc/fwupd/fwupd.conf`. Each run mounts efivarfs if
+  needed and the EFI system partition (partition 1 of the disk under
+  `/dev/wormos-root`, through the LUKS device's slave when encrypted) at
+  `/run/worm/esp`, then runs `whc --root --bind /run/worm/esp:/boot/efi
+  --bind /run/udev:/run/udev debian fwupdtool get-devices` (`check`:
+  `refresh --force` then `get-updates`; `update`: `refresh --force` then
+  `update`). Capsule updates on real hardware are untested.
+- zram (worm's `05-zram`, `/usr/lib/worm/zram`): the kernel's zram
+  (`CONFIG_ZRAM`, zstd and lz4 back ends, zstd by default) as swap with
+  priority 100: half the memory at most 8 GiB, or `/etc/worm/zram` (a
+  size, or `off`); `vm.swappiness` 100 and `vm.page-cluster` 0, as suits
+  swap in memory. Blackholes' cgroups keep `memory.swap.max` 0.
 
 ## Time and passwords
 

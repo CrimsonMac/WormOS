@@ -21,7 +21,9 @@ if (( CURRENT == 2 )); then
 		'prune:delete all but the newest snapshots' 'pin:protect a snapshot from prune'
 		'unpin:let prune delete a snapshot again' 'comment:set a snapshot comment'
 		'verify:check snapshots have not been tampered with'
-		'auto:snapshots before package changes' 'status:a summary')
+		'auto:snapshots before package changes, timed snapshots, exports'
+		'status:a summary' 'seal:the seal chain and its fingerprint'
+		'export:save a snapshot as one archive' 'import:add a snapshot from an archive')
 	_describe -t commands 'snap command' cmds
 	return
 fi
@@ -37,5 +39,16 @@ delete|verify) _arguments '*:snapshot:_snap_ids' ;;
 pin|unpin) _arguments '1:snapshot:_snap_ids' ;;
 comment) _arguments '1:snapshot:_snap_ids' '2:comment' ;;
 prune) _arguments '--keep[snapshots to keep]:number' ;;
-auto) _arguments '1:setting:(on off)' ;;
+auto)
+	if (( CURRENT == 3 )); then
+		compadd on off timer export
+	elif [[ $words[3] == timer ]] && (( CURRENT == 4 )); then
+		compadd hourly daily off
+	elif [[ $words[3] == export ]] && (( CURRENT == 4 )); then
+		_files -/; compadd off
+	elif [[ $words[3] == export ]] && (( CURRENT == 5 )); then
+		compadd daily weekly
+	fi ;;
+export) _arguments '1:snapshot:_snap_ids' '2:file or folder:_files' ;;
+import) _arguments '-c[comment]:comment' '1:archive:_files -g "*.tar.zst"' ;;
 esac

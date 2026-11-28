@@ -106,6 +106,13 @@ SESSION_CHECKS = [
      r"^DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus$"),
     ("standard folders", f"ls -1 /home/{USER}; grep -c DIR= /home/{USER}/.config/user-dirs.dirs",
      r"Documents(.|\n)*Downloads(.|\n)*Pictures(.|\n)*^8$"),
+    ("fonts and icons come with their caches",
+     f"ls /usr/lib/fontconfig/cache | grep -c 'cache-'; "
+     f"su {USER} -c 'XDG_CACHE_HOME=/tmp/fc-user fc-list > /dev/null'; "
+     "ls /tmp/fc-user/fontconfig 2>/dev/null | wc -l; "
+     "test -f /usr/share/icons/hicolor/icon-theme.cache && "
+     "! test /usr/share/icons/hicolor -nt /usr/share/icons/hicolor/icon-theme.cache && echo icons-cached",
+     r"^[1-9]\d*\n0\nicons-cached$"),
     ("new accounts keep wormhole programs out of their files",
      f"grep '^home' /home/{USER}/.config/wormos/wormholes; stat -c %U /home/{USER}/.config/wormos",
      rf"^home = private\n{USER}$"),

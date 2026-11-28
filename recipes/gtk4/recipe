@@ -1,5 +1,6 @@
 name=gtk4
 version=4.24.1
+release=2
 description="GTK 4 widget toolkit (Wayland backend)"
 depends=(glibc glib pango cairo harfbuzz fribidi fontconfig freetype gdk-pixbuf libpng
 	libjpeg-turbo libtiff libepoxy graphene libxkbcommon wayland libdrm mesa
@@ -24,6 +25,7 @@ package() {
 	meson_package
 	rm -rf "$pkgdir/usr/share/locale" "$pkgdir/usr/share/gettext" \
 		"$pkgdir/usr/share/bash-completion" "$pkgdir/usr/share/gtk-4.0/valgrind"
+	install -Dm644 "$recipedir/files/icon-cache.hook" "$pkgdir/usr/share/wh/hooks/icon-cache.hook"
 	# Tools for developers of GTK programs.
 	rm -f "$pkgdir"/usr/bin/gtk4-{builder,image,path,rendernode}-tool
 }

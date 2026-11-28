@@ -85,6 +85,13 @@ CHECKS = [
      "rm ~/.config/wormos/wormholes'",
      r"No such file(.|\n)*^doc\n1\n(.|\n)*^inside\n/home/tester/Workspace\nkept-out$"),
     ("host network shared", "whc debian cat /etc/resolv.conf | grep -c nameserver", r"^[1-9]"),
+    # Firmware updates: Debian's fwupd, installed on first use, sees the
+    # machine through the EFI variables and partition (QEMU has few devices).
+    ("firmware updates through fwupd",
+     "worm firmware devices > /tmp/fw.log 2>&1; echo status=$?; grep -c -i -e 'Device ID' "
+     "-e 'GUID' -e 'No detected devices' -e 'UEFI' /tmp/fw.log; grep -c EspLocation=/boot/efi "
+     "/var/lib/wormholes/debian/etc/fwupd/fwupd.conf; grep -c ' /run/worm/esp ' /proc/mounts",
+     r"^status=\d+\n[1-9]\d*\n1\n0$"),
     # Wayland programs from wormholes appear on the desktop: here a
     # headless compositor, run by the user, and Debian's event viewer.
     ("wayland program from debian", "wh -y install --from debian wev 2>&1 | tail -3",

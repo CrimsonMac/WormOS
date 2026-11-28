@@ -1,0 +1,4 @@
+# Compressed swap in memory (zram), so a full memory slows down rather than
+# killing programs. /etc/worm/zram: "off", or a size such as 4G.
+type = oneshot
+exec = /usr/lib/worm/zram

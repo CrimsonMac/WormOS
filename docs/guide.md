@@ -836,6 +836,29 @@ encrypted install (and a firmware password, with Secure Boot) to close that
 too. Rewinding the system to an older snapshot from the boot menu also
 brings back that snapshot's passwords.
 
+## Firmware and memory
+
+`worm firmware` (root) updates the firmware of the machine and its
+devices from the Linux Vendor Firmware Service, with Debian's fwupd: the
+first run installs it into the Debian wormhole (this needs the network).
+
+```
+worm firmware             # the devices fwupd knows
+worm firmware check       # updates for them
+worm firmware update      # install them (asks first)
+```
+
+Some updates (the computer's own firmware) are installed at the next
+restart, which the firmware shows on screen. WormOS has not been able to
+test firmware updates on real hardware yet; on a laptop, keep it plugged
+in. `fwupdmgr` from the same package needs fwupd's service, which WormOS
+does not run: use `worm firmware`.
+
+Memory: WormOS swaps to compressed memory (zram, zstd), half the memory at
+most 8 GiB, never to a disk, so a machine that runs out of memory slows
+down instead of closing programs. `/etc/worm/zram` holds `off` or a size
+such as `4G` (after `worm unlock`). Blackholes never swap.
+
 ## Privacy and hardening
 
 - DNS goes to a local resolver (unbound) that validates DNSSEC and sends

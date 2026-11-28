@@ -1,0 +1,5 @@
+# The system's font cache, built into the system itself (read-only, kept in
+# snapshots), so no user builds it again on first use.
+path = usr/share/fonts
+path = etc/fonts
+exec = /usr/bin/fc-cache -s -f --sysroot /

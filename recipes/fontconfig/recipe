@@ -1,5 +1,6 @@
 name=fontconfig
 version=2.18.4
+release=2
 description="Font discovery and configuration"
 depends=(glibc freetype expat)
 # Upstream publishes no signature: checksum pinned from the release download.
@@ -7,8 +8,8 @@ source=(https://gitlab.freedesktop.org/api/v4/projects/fontconfig%2Ffontconfig/p
 sha256=(95013637eff5f81d4871dd16cd098c273264c16d0f9f0b27cc43b81b2794bee3)
 
 build() {
-	# The font cache cannot be built here (it needs the target's fc-cache);
-	# it is created in /var/cache/fontconfig on first use.
+	# The font cache cannot be built here (it needs the target's fc-cache):
+	# wh's fontconfig-cache hook builds it into /usr/lib/fontconfig/cache.
 	meson_build -Ddoc=disabled -Dnls=disabled -Dtests=disabled -Dtools=enabled \
 		-Dcache-build=disabled -Dxml-backend=expat -Diconv=disabled
 }
@@ -17,4 +18,9 @@ package() {
 	meson_package
 	rm -rf "$pkgdir/usr/share/gettext" "$pkgdir/usr/share/locale" \
 		"$pkgdir/var"
+	install -Dm644 "$recipedir/files/fontconfig-cache.hook" \
+		"$pkgdir/usr/share/wh/hooks/fontconfig-cache.hook"
+	install -Dm644 "$recipedir/files/05-wormos-cache.conf" \
+		"$pkgdir/etc/fonts/conf.d/05-wormos-cache.conf"
+	install -dm755 "$pkgdir/usr/lib/fontconfig/cache"
 }

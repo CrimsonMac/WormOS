@@ -8,13 +8,16 @@ if (( CURRENT == 2 )); then
 		'kit:tool kits (forensics, network, reverse engineering...)'
 		'time:the clock and the time zone' 'passwd:change your password'
 		'vm:the virtual machine: what was found, settings, shared folders'
-		'hostname:show or set the computer name')
+		'hostname:show or set the computer name'
+		'restart:finish changes that wait for a restart'
+		'firmware:firmware updates (fwupd)')
 	_describe -t commands 'worm command' cmds
 	return
 fi
 case $words[2] in
 help) (( CURRENT == 3 )) && compadd snap wh worm bh clip tor-browser ;;
 panic) (( CURRENT == 3 )) && compadd off ;;
+firmware) (( CURRENT == 3 )) && compadd devices check update ;;
 anon)
 	if (( CURRENT == 3 )); then
 		compadd on off status bridges new-circuits

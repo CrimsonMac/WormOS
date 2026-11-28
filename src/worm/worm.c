@@ -391,6 +391,7 @@ static void usage(FILE *out)
 	      "       worm vm [setup | set KEY VALUE | reset [KEY] | shares [NAME...]]\n"
 	      "       worm hostname [NAME]\n"
 	      "       worm restart          finish changes that wait for a restart\n"
+	      "       worm firmware [devices | check | update]   firmware updates (fwupd)\n"
 	      "       worm fw status | allow PORT[/tcp|/udp] | deny PORT[/tcp|/udp] | load\n"
 	      "PORT is a number or a range such as 6000-6010; tcp is the default.\n", out);
 }
@@ -420,7 +421,8 @@ static void overview(void)
 	       "  wh upgrade               upgrade everything\n"
 	       "  wh undo                  undo the last package change\n"
 	       "  wh install --try PKG     try it; the next restart goes back unless 'wh keep'\n"
-	       "  worm restart             finish changes that wait for a restart\n\n",
+	       "  worm restart             finish changes that wait for a restart\n"
+	       "  worm firmware check      firmware updates for this machine (fwupd, LVFS)\n\n",
 	       m, r);
 	printf("%sProtection%s (root)\n"
 	       "  worm status              protections at a glance\n"
@@ -563,6 +565,13 @@ int main(int argc, char **argv)
 	}
 	if (!strcmp(argv[1], "hostname") && argc == 3)
 		return cmd_hostname(argv[2]);
+	if (!strcmp(argv[1], "firmware")) {
+		int r = cmd_firmware(argc - 2, argv + 2);
+
+		if (r == 2)
+			usage(stderr);
+		return r;
+	}
 	if (!strcmp(argv[1], "passwd-apply") && argc == 3)
 		return cmd_passwd_apply(argv[2]);
 	if (!strcmp(argv[1], "unlock") && argc == 2)

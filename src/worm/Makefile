@@ -8,7 +8,7 @@ BINDIR  ?= $(PREFIX)/bin
 
 all: worm power snapshots install-helper install-system passwd powerkey guest-agent settings-helper software-helper elevate checkpass
 
-OBJS = worm.o fw.o panic.o status.o anon.o kit.o time.o account.o vm.o
+OBJS = worm.o fw.o panic.o status.o anon.o kit.o time.o account.o vm.o firmware.o
 
 worm: $(OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS)

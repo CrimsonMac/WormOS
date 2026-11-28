@@ -35,6 +35,7 @@ int cmd_kit(int argc, char **argv);
 int cmd_time(int argc, char **argv);
 int cmd_passwd(void);
 int cmd_vm(int argc, char **argv);
+int cmd_firmware(int argc, char **argv);
 int cmd_passwd_apply(const char *user);
 
 /* Anonymous mode (anon.c). */

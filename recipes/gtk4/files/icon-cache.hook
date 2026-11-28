@@ -1,0 +1,4 @@
+# The cache of the hicolor icon theme, which many packages add icons to, so
+# programs do not scan the folders at every start.
+path = usr/share/icons/hicolor
+exec = /usr/bin/gtk4-update-icon-cache -q -f -t /usr/share/icons/hicolor
