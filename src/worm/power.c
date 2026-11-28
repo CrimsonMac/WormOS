@@ -2,12 +2,14 @@
  * power - shut down or restart the machine from the desktop, or panic.
  *
  * Installed setuid root as /usr/lib/worm/power for the shell's power menu.
- * It takes one word, "off", "reboot" or "panic", and nothing else from the
+ * It takes one word, "off", "reboot", "apply" or "panic", and nothing else from the
  * caller:
  * the environment is cleared, and the caller (by real user and groups)
  * must be root or a member of the group wheel. Then it signals worminit
  * (SIGUSR2 powers off, SIGTERM restarts), as busybox poweroff and reboot
- * do for root. "panic" runs 'worm panic' as root: it only protects (cuts
+ * do for root. "apply" finishes package changes that wait for a restart:
+ * a quick restart (SIGHUP, the kernel keeps running) unless the kernel
+ * changed, then a full one. "panic" runs 'worm panic' as root: it only protects (cuts
  * the network, stops blackholes, takes a snapshot), so it asks for no
  * password; bringing the network back ('worm panic off') needs root.
  */
@@ -23,6 +25,20 @@
 
 #include "admin.h"
 
+/* What wh's restart note asks for: 's'ystem, 'k'ernel, or 0 for none. */
+static int restart_kind(void)
+{
+	char buf[16] = "";
+	FILE *f = fopen("/run/wh/restart-needed", "re");
+
+	if (!f)
+		return 0;
+	if (!fgets(buf, sizeof(buf), f))
+		buf[0] = '\0';
+	fclose(f);
+	return buf[0];
+}
+
 int main(int argc, char **argv)
 {
 	int sig;
@@ -32,8 +48,8 @@ int main(int argc, char **argv)
 
 	clearenv();
 	if (argc != 2 || (strcmp(argv[1], "off") && strcmp(argv[1], "reboot") &&
-			  strcmp(argv[1], "panic"))) {
-		fputs("usage: power off|reboot|panic\n", stderr);
+			  strcmp(argv[1], "apply") && strcmp(argv[1], "panic"))) {
+		fputs("usage: power off|reboot|apply|panic\n", stderr);
 		return 2;
 	}
 	if (!caller_is_admin()) {
@@ -51,6 +67,8 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	sig = strcmp(argv[1], "off") == 0 ? SIGUSR2 : SIGTERM;
+	if (!strcmp(argv[1], "apply") && restart_kind() == 's')
+		sig = SIGHUP;
 	sync();
 	if (kill(1, sig) < 0) {
 		perror("power");

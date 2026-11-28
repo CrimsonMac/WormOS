@@ -1,8 +1,8 @@
 # WormOS build entry points. See docs/building.md for details.
 
 # In build order: later packages build against earlier ones.
-PACKAGES := base-files busybox worminit snap \
-	zlib zstd wormrd openssl ca-certificates curl monocypher \
+PACKAGES := base-files busybox worminit \
+	zlib zstd wormrd openssl ca-certificates curl monocypher snap \
 	libgpg-error npth libassuan libksba libgcrypt gnupg wormhole-keyrings \
 	libmnl libnftnl nftables libxcrypt tzdata wh worm passt kvmtool bh expat unbound libevent tor \
 	libpcap tcpdump dbus \

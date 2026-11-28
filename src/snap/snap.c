@@ -52,6 +52,7 @@ static void usage(FILE *out)
 "  pin ID / unpin ID        protect a snapshot from prune\n"
 "  comment ID TEXT          set a snapshot's comment\n"
 "  verify [ID...]           check snapshots have not been tampered with\n"
+"  seal                     the seal chain: its state and first key's fingerprint\n"
 "  auto [on|off]            snapshots before package changes (default on)\n"
 "  status                   a summary (also kept in /run/snap-status)\n"
 "  stage begin|commit|abort|keep|status\n"
@@ -343,7 +344,7 @@ static int cmd_rewind(int argc, char **argv)
 
 	if (stage_pending()) {
 		printf("The package change waiting to be applied is cancelled.\n");
-		stage_discard();
+		stage_drop();
 	}
 	if (pending_write(s.id, o.scope) < 0)
 		die("cannot record the rewind: %s", strerror(errno));
@@ -569,6 +570,16 @@ static int cmd_verify(int argc, char **argv)
 	return ret;
 }
 
+static int cmd_seal(int argc, char **argv)
+{
+	(void)argv;
+	if (argc != 1)
+		die("usage: snap seal");
+	open_store();
+	store_lock();
+	return seal_status();
+}
+
 static int cmd_auto(int argc, char **argv)
 {
 	if (argc == 1) {
@@ -600,7 +611,19 @@ static int cmd_stage(int argc, char **argv)
 	if (strcmp(sub, "begin") == 0 && argc == 2)
 		return stage_begin();
 	if (strcmp(sub, "abort") == 0 && argc == 2) {
-		stage_discard();
+		stage_abort();
+		status_update();
+		return 0;
+	}
+	if (strcmp(sub, "drop") == 0 && argc == 2) {
+		/* Every waiting change, for wh undo before a restart. */
+		stage_drop();
+		status_update();
+		return 0;
+	}
+	if (strcmp(sub, "before") == 0 && argc == 2) {
+		/* The snapshot before the waiting changes, 0 if none wait. */
+		printf("%d\n", stage_pending_before());
 		return 0;
 	}
 	if (strcmp(sub, "status") == 0 && argc == 2) {
@@ -673,6 +696,7 @@ static const struct command {
 	{ "unpin",   cmd_pin },
 	{ "comment", cmd_comment },
 	{ "verify",  cmd_verify },
+	{ "seal",    cmd_seal },
 	{ "auto",    cmd_auto },
 	{ "stage",   cmd_stage },
 	{ "status",  cmd_status },

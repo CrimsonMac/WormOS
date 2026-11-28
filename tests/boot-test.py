@@ -669,6 +669,17 @@ SNAPSHOT_CHECKS = [
     ("snap diff", "snap diff 1", r"^\+ /etc/probe$"),
     ("snap list", "snap list", r"^\s+1\s.*system\s+manual\s+test base$"),
     ("snap verify", "snap verify", r"^snapshot 1 \(system\): ok$"),
+    ("snap verify checks the seal", "snap verify 1", r"^snapshot 1 \(seal\): ok$"),
+    ("the seal chain is intact", "snap seal",
+     r"First key fingerprint: [0-9A-F]{4}(-[0-9A-F]{4}){7}\nSealed snapshots: 1 (.|\n)*Seal: intact"),
+    ("a changed checksum breaks the seal",
+     "d=$(findmnt -no SOURCE / | sed 's/\\[.*//'); mkdir -p /tmp/top && mount -o subvolid=5 $d /tmp/top && "
+     "cp /tmp/top/@snapshots/1/info /tmp/info.saved && "
+     "sed -i 's/^system-sum = /system-sum = 0/' /tmp/top/@snapshots/1/info; "
+     "snap verify 1 | head -1; snap rewind 1 -y 2>&1 | tail -1; "
+     "cp /tmp/info.saved /tmp/top/@snapshots/1/info; lsattr /tmp/top/@snapshots/seal/key; "
+     "stat -c %a /tmp/top/@snapshots/seal; umount /tmp/top; snap verify 1 | head -1",
+     r"^snapshot 1 \(seal\): FAILED, its checksums(.|\n)*failed verification(.|\n)*^\S*C\S* \S+key\n700\nsnapshot 1 \(seal\): ok$"),
     ("store stays hidden after use", "grep -c snapshots /proc/mounts", r"^0$"),
     ("summary readable by everyone",
      "stat -c %a /run/snap-status; grep -E '^(count|last|last_comment) ' /run/snap-status",
@@ -794,6 +805,28 @@ LIVE_INSTALL_CHECKS = [
      "command -v hexedit; [ $(cut -d. -f1 /proc/uptime) -ge $u ] && echo same-boot",
      r"ready to use now(.|\n)*^/usr/bin/hexedit\n(.|\n)*same-boot"),
     ("and the running system is read-only again", "touch /usr/y 2>&1", r"Read-only file system"),
+]
+
+# Changes that touch something running wait for a restart (no automatic
+# restart since 1.20), stack on each other, and can be undone before it.
+DEFERRED_CHECKS = [
+    ("a change to a running program waits for a restart",
+     "wh --repo {repo} -y reinstall dbus 2>&1 | tail -3; cat /run/wh/restart-needed",
+     r"dbus is in use(.|\n)*Restart to finish(.|\n)*^system$"),
+    ("the panel's note is readable by users", "su tester -c 'cat /run/wh/restart-needed'", r"^system$"),
+    ("a second change stacks on the waiting one",
+     "wh --repo {repo} -y install cmatrix 2>&1 | tail -1; command -v cmatrix || echo not-yet; "
+     "snap stage status", r"Restart to finish(.|\n)*^not-yet\npending$"),
+    ("undo before the restart drops what waits",
+     "wh undo 2>&1; cat /run/wh/restart-needed 2>&1; snap stage status",
+     r"not applied yet, so it is dropped(.|\n)*No such file(.|\n)*^none$"),
+    ("stacked again", "wh --repo {repo} -y reinstall dbus >/dev/null 2>&1; "
+     "wh --repo {repo} -y install cmatrix 2>&1 | tail -1", r"Restart to finish"),
+]
+
+AFTER_DEFERRED_CHECKS = [
+    ("both stacked changes applied", "command -v cmatrix; wh list | grep -c '^dbus '; "
+     "cat /run/wh/restart-needed 2>&1", r"^/usr/bin/cmatrix\n1\n.*No such file"),
 ]
 
 AFTER_UNDO_CHECKS = [
@@ -1025,25 +1058,38 @@ def main():
             run_checks(con, MENU_CHECKS)
 
             run_checks(con, worm_checks)
-            restart_with(con, "preinstalled package removed", "wh -y remove tcpdump diffutils",
-                         "applied the package change")
+            # Nothing running uses them: removed from the running system too.
+            run_checks(con, [("preinstalled packages removed without a restart",
+                              "wh -y remove tcpdump diffutils 2>&1 | tail -1",
+                              r"ready to use now")])
             run_checks(con, FIRST_REMOVE_CHECKS)
             # Only new files: applied to the running system, no restart.
             run_checks(con, [("install applied without a restart",
                               f"wh --repo {repo} -y install tcpdump 2>&1 | tail -1",
                               r"ready to use now")])
             run_checks(con, AFTER_INSTALL_CHECKS)
-            restart_with(con, "trial applied", "wh --try -y remove tcpdump",
+            # A trial waits for a restart, which worm restart makes.
+            run_checks(con, [("a trial waits for a restart",
+                              "wh --try -y remove tcpdump 2>&1 | tail -1; tcpdump --version 2>&1 | head -1",
+                              r"Restart to finish(.|\n)*tcpdump version")])
+            restart_with(con, "trial applied by worm restart", "worm restart",
                          "applied the package change (trial)")
             run_checks(con, AFTER_TRIAL_CHECKS)
             restart_with(con, "trial ended", "kill -HUP 1", "the trial was not kept")
             run_checks(con, AFTER_TRIAL_END_CHECKS)
-            restart_with(con, "remove applied", "wh -y remove tcpdump",
-                         "applied the package change")
+            run_checks(con, [("remove applied without a restart",
+                              "wh -y remove tcpdump 2>&1 | tail -1", r"ready to use now")])
             run_checks(con, AFTER_REMOVE_CHECKS)
             restart_with(con, "undo applied", "wh undo", "rewound system to snapshot")
             run_checks(con, AFTER_UNDO_CHECKS)
             run_checks(con, [(n, c.format(repo=repo), p) for n, c, p in LIVE_INSTALL_CHECKS])
+            # Start from nothing waiting (hexedit's change follows at a restart).
+            restart_with(con, "restart after the live install", "kill -HUP 1",
+                         "applied the package change")
+            run_checks(con, [(n, c.format(repo=repo), p) for n, c, p in DEFERRED_CHECKS])
+            restart_with(con, "worm restart applies the stacked changes", "worm restart",
+                         "applied the package change")
+            run_checks(con, AFTER_DEFERRED_CHECKS)
 
             run_checks(con, panic_checks)
             panic_id = re.search(r"^\s*(\d+)\*.*Panic at", con.run("snap list"), re.MULTILINE)

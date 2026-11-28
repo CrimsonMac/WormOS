@@ -18,7 +18,7 @@ _wh_sources() {
 
 local -a opts=(
 	'--try[a trial: the restart after the next one goes back unless kept]'
-	'--later[apply the change at the next restart]'
+	'--now[restart right away when the change needs it]'
 	'(-y --yes)'{-y,--yes}'[do not ask]'
 	'--from[the source to install from]:source:_wh_sources'
 	'--help[show the commands]')

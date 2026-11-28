@@ -256,7 +256,7 @@ static void restart_now(GtkButton *button, gpointer data)
 {
 	(void)button;
 	(void)data;
-	g_spawn_async(NULL, (char *[]){ POWER, "reboot", NULL }, NULL, 0, NULL, NULL, NULL, NULL);
+	g_spawn_async(NULL, (char *[]){ POWER, "apply", NULL }, NULL, 0, NULL, NULL, NULL, NULL);
 }
 
 static void dialog_close(GtkButton *button, gpointer data)
@@ -289,7 +289,8 @@ static void change_done(int status, const char *out, gpointer data)
 	while ((child = gtk_widget_get_first_child(c->buttons)))
 		gtk_box_remove(GTK_BOX(c->buttons), child);
 	if (status == 0) {
-		c->restart = strstr(out, "applied at the next restart") != NULL;
+		c->restart = strstr(out, "Restart to finish") != NULL ||
+			     strstr(out, "applied at the next restart") != NULL;
 		gtk_label_set_text(GTK_LABEL(c->heading), c->restart ? "Ready after a restart" :
 				   "Done");
 		gtk_label_set_text(GTK_LABEL(c->text), c->restart ?

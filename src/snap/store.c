@@ -301,6 +301,9 @@ static int next_id(void)
 }
 
 /* Take a snapshot of the subvolumes in scope. Returns the new ID or -1. */
+/* Another subvolume to take the system part from (a waiting change). */
+const char *store_system_from;
+
 int store_create(int scope, const char *type, const char *comment)
 {
 	char tmpname[32], tmpdir[PATH_MAX], final[PATH_MAX], buf[32];
@@ -319,7 +322,8 @@ int store_create(int scope, const char *type, const char *comment)
 
 		if (!(scope & bit))
 			continue;
-		path_join(src, sizeof(src), top, scope_subvol(bit));
+		path_join(src, sizeof(src), top, bit == SCOPE_SYSTEM && store_system_from ?
+			  store_system_from : scope_subvol(bit));
 		if (subvol_snapshot(src, tmpdir, scope_dir(bit), 1) < 0) {
 			warn("cannot snapshot %s: %s", scope_path(bit), strerror(errno));
 			goto fail;
@@ -374,6 +378,8 @@ int store_create(int scope, const char *type, const char *comment)
 	}
 	snprintf(buf, sizeof(buf), "%d\n", id);
 	write_store_file(STORE_LASTID, buf);
+	/* Signed now, with a key destroyed right after (seal.c). */
+	seal_snapshot(&s);
 	menu_update();
 	sync();
 	return id;
@@ -680,8 +686,14 @@ void pending_clear(void)
 int store_verify(const struct snapshot *s, int scope)
 {
 	char dir[PATH_MAX], root[PATH_MAX], manifest[PATH_MAX];
-	int ret = 0;
+	char why[128];
+	int ret = 0, sealed = seal_check(s, why, sizeof(why));
 
+	store_entry_path(dir, sizeof(dir), s->id, 0);
+	printf("snapshot %d (seal): %s\n", s->id, sealed > 0 ? "ok" : sealed < 0 ?
+	       (snprintf(dir, sizeof(dir), "FAILED, %s", why), dir) : why);
+	if (sealed < 0)
+		ret = -1;
 	store_entry_path(dir, sizeof(dir), s->id, 0);
 	for (int bit = SCOPE_SYSTEM; bit <= SCOPE_HOME; bit <<= 1) {
 		const char *sum = s->sum[scope_index(bit)];

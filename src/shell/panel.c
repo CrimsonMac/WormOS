@@ -23,6 +23,7 @@ struct panel {
 	GtkWidget *volume, *volume_output, *volume_mute, *volume_scale, *volume_percent;
 	GtkWidget *volume_devices;      /* outputs and inputs to choose from */
 	GtkWidget *battery, *battery_info;
+	GtkWidget *restart, *restart_info;    /* a change waits for a restart */
 	GtkWidget *confirm;             /* the power action waiting for a second click */
 	GtkWidget *quiet;               /* the do not disturb tile */
 	GtkWidget *brightness_row, *brightness_scale;
@@ -184,6 +185,26 @@ static void set_class(GtkWidget *w, const char *name, gboolean on)
 static void battery_show(struct panel *panel, const struct status *s);
 static void battery_warn(const struct status *s);
 
+/* Once per change that waits for a restart. */
+static void restart_notify(const struct status *s)
+{
+	static char shown[16];
+
+	if (!strcmp(shown, s->restart))
+		return;
+	g_strlcpy(shown, s->restart, sizeof(shown));
+	if (!*s->restart)
+		return;
+	g_spawn_async(NULL, (char *[]){ "gdbus", "call", "--session", "--dest",
+		"org.freedesktop.Notifications", "--object-path", "/org/freedesktop/Notifications",
+		"--method", "org.freedesktop.Notifications.Notify", "Updates", "0",
+		"system-reboot-symbolic", "Restart to finish updating",
+		"Changes to the system are installed. They take effect at the next restart: "
+		"use Restart in the power menu, or the restart button in the panel.",
+		"[]", "{}", "0", NULL }, NULL, G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL,
+		NULL, NULL, NULL, NULL);
+}
+
 static gboolean refresh_status(gpointer data)
 {
 	struct status s;
@@ -209,7 +230,7 @@ static gboolean refresh_status(gpointer data)
 			*s.last_comment ? "\n\xe2\x80\x9c" : "", s.last_comment,
 			*s.last_comment ? "\xe2\x80\x9d" : "", s.auto_snapshots ? "on" : "off",
 			!strcmp(s.pending, "rewind") ? "\n\nA rewind happens at the next restart." :
-			!strcmp(s.pending, "change") ? "\n\nA package change waits for a restart." :
+			!strcmp(s.pending, "change") && *s.restart ? "\n\nA package change waits for a restart." :
 			!strcmp(s.pending, "trial") ? "\n\nA trial is running (wh keep keeps it)." : "");
 		g_free(when);
 	}
@@ -261,8 +282,15 @@ static gboolean refresh_status(gpointer data)
 		gtk_widget_set_tooltip_text(panel->network, network_info);
 		gtk_label_set_text(GTK_LABEL(panel->network_info), network_info);
 		battery_show(panel, &s);
+		gtk_widget_set_visible(panel->restart, *s.restart != '\0');
+		gtk_label_set_text(GTK_LABEL(panel->restart_info), !strcmp(s.restart, "kernel") ?
+			"Updates are installed and wait for a restart.\n"
+			"The kernel changed, so the computer restarts fully." :
+			"Updates are installed and wait for a restart.\n"
+			"A quick restart applies them (open programs close).");
 	}
 	battery_warn(&s);
+	restart_notify(&s);
 	g_free(snap_text);
 	g_free(snap_info);
 	g_free(shield_info);
@@ -921,6 +949,42 @@ static GtkWidget *power_menu(struct panel *panel)
 	return button;
 }
 
+/* The restart button: shown while a change waits for a restart. */
+static void restart_now(GtkButton *b, gpointer data)
+{
+	struct panel *panel = data;
+
+	(void)b;
+	if (!power_request("apply"))
+		gtk_label_set_text(GTK_LABEL(panel->restart_info),
+				   "Only administrators can restart the computer.");
+}
+
+static GtkWidget *restart_button(struct panel *panel)
+{
+	GtkWidget *button = gtk_menu_button_new(), *popover = gtk_popover_new();
+	GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8), *now;
+
+	gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(button), "system-reboot-symbolic");
+	gtk_widget_add_css_class(button, "warning");
+	gtk_widget_set_tooltip_text(button, "Restart to finish updating");
+	panel->restart_info = gtk_label_new("");
+	gtk_label_set_xalign(GTK_LABEL(panel->restart_info), 0);
+	gtk_widget_add_css_class(panel->restart_info, "info");
+	gtk_box_append(GTK_BOX(box), panel->restart_info);
+	now = gtk_button_new_with_label("Restart now");
+	gtk_widget_add_css_class(now, "suggested-action");
+	g_signal_connect(now, "clicked", G_CALLBACK(restart_now), panel);
+	gtk_box_append(GTK_BOX(box), now);
+	gtk_popover_set_child(GTK_POPOVER(popover), box);
+	gtk_menu_button_set_popover(GTK_MENU_BUTTON(button), popover);
+	menu_direction(button);
+	keyboard_while_open(popover);
+	gtk_widget_set_visible(button, FALSE);
+	panel->restart = button;
+	return button;
+}
+
 /* ---- building a panel ---- */
 
 static void menu_opened(GtkPopover *popover, gpointer data)
@@ -1368,6 +1432,7 @@ static void panel_new(GdkMonitor *monitor)
 	panel->battery = info_button("battery-level-50-symbolic", "Battery", &panel->battery_info, NULL);
 	gtk_widget_set_visible(panel->battery, FALSE);
 	gtk_box_append(GTK_BOX(end), panel->battery);
+	gtk_box_append(GTK_BOX(end), restart_button(panel));
 	gtk_box_append(GTK_BOX(end), power_menu(panel));
 	gtk_center_box_set_end_widget(GTK_CENTER_BOX(bar), end);
 

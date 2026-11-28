@@ -275,8 +275,34 @@ initramfs inside LUKS.
   every process, then runs each executable in `/etc/worm/shutdown.d` in
   name order (30 s each at most, then killed), then syncs and unmounts.
   WormOS Amnesia wipes the session's data there.
-- Staging (`stage.c`): `snap stage begin|commit [--try]|abort|keep|status`
-  works on `@.next`.
+- Staging (`stage.c`): `snap stage begin|commit [--try]|abort|drop|before|keep|status`
+  works on `@.next`. Since 1.20 changes stack: `begin` while a change waits
+  (`activate` and `@.next` exist) moves `@.next` to `@.queued` and
+  snapshots it as the new `@.next`; `abort` puts `@.queued` back; `commit`
+  deletes it and keeps the waiting change's "before" snapshot (a `--try`
+  commit takes a fresh one of `@.queued`, so the trial returns to the
+  waiting state). `drop` discards everything that waits (wh undo before a
+  restart), `before` prints the waiting change's "before" snapshot. A
+  `@.queued` left by a crash is put back by the next `begin` or at boot.
+- Seal (`seal.c`, since 1.20): a forward-secure chain of Ed25519
+  signatures (Monocypher) in `@snapshots/seal` (0700). `store_create`
+  calls `seal_snapshot` once a snapshot is complete: it signs
+  `wormos-snap-seal-1 INDEX ID DATE SCOPE TYPE SYSTEM-SUM HOME-SUM
+  NEXT-KEY` with key INDEX, appends the line (plus the signature) to
+  `chain`, then overwrites `key` with a fresh seed for INDEX+1. The key
+  file has a fixed length and the no-copy-on-write flag, so the old seed
+  is overwritten in place (an SSD may still keep the old block until it
+  reuses it). The first key's public half is `anchor`; `snap seal`
+  prints its fingerprint (the first 16 bytes of its SHA-256). Verifying
+  walks the chain from the anchor; an index may repeat once (a seal cut
+  off between the chain and the key file is signed again by the same
+  key). `store_verify` (verify, rewind, boot rewinds) fails a snapshot
+  whose date, scope or checksums differ from its sealed line, or that
+  comes after a broken line; snapshots without a line (older than 1.20,
+  imported) are reported as not sealed and still verified by their
+  manifests. Comments and pins are not sealed (they can be changed).
+  Deleting snapshots leaves the chain alone. A missing anchor with a
+  chain present stops sealing rather than starting a new chain quietly.
 - `snap list --raw` prints one tab-separated line per snapshot for
   programs: ID, Unix time, scope, type, pinned, suspect, comment.
 - `status.c` keeps a summary readable by everyone in `/run/snap-status`
@@ -293,6 +319,34 @@ initramfs inside LUKS.
   depends, `wh remove` does not check them. Removing a package records it
   in `/usr/lib/wh/declined` (part of the system, so snapshots and undo
   cover it); installing it explicitly takes it off again.
+- Restarts (since 1.20): a change that is not applied live (below) no
+  longer restarts the system: wh commits it, writes `/run/wh/restart-needed`
+  (`system`, or `kernel` when `linux` changed; `/run/wh` is 0711, the file
+  0644) and says how to finish. The panel shows a restart button and sends
+  one notification while the file exists; `worm restart` and the panel's
+  button run `/usr/lib/worm/power apply`, which soft-reboots (SIGHUP to
+  PID 1) for `system` and restarts fully (SIGTERM) for `kernel`. `--now`
+  restarts as before; `--later` is accepted and does nothing. /run starts
+  empty at every restart, so the note goes with the change it was for.
+  `wh undo` of a change that waits (its snapshot is `snap stage before`,
+  nothing was applied live since the last restart: `/run/wh/applied-live`
+  absent) runs `snap stage drop` and marks every stacked change undone,
+  with no restart. Every other undo rewinds, and also marks the changes
+  stacked on the same snapshot.
+- Applying to the running system (since 1.17 for additions, 1.20 for
+  upgrades and removals): `live_apply` runs after the staged change is
+  complete. It refuses when a change already waits for a restart, for
+  `--try`, the kernel, essential packages and base-files, and when the
+  accounts files differ. It reads every mapped file and program of every
+  process (`/proc/PID/maps`, `/proc/PID/exe`) and refuses when an upgraded
+  or removed package owns one of them. Otherwise it remounts `/`
+  writable, copies each changed package's files from the staged root
+  (owner, mode, capabilities; by rename, so running programs keep their
+  copies), removes the paths the old version had and the new one has not
+  (deepest first; a path the staged root still has, such as a BusyBox link
+  given back, is copied instead), copies the database records, BusyBox's
+  file list and the declined list, runs the hooks for the changed paths in
+  the running root and makes `/` read-only again.
 - Live changes (since 1.9): with `/etc/wh/live` (an edition's package
   ships it; WormOS Amnesia does), install, remove and upgrade go straight
   into the running system: `stage_begin` remounts `/` writable (bind

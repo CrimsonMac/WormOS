@@ -105,14 +105,14 @@ int boot_tasks(int rewind_id)
 	/* A rewind wins over a staged change, which is dropped. */
 	if (rewind_id) {
 		pending_clear();
-		stage_discard();
+		stage_drop();
 		return boot_rewind(rewind_id, SCOPE_SYSTEM) < 0 ? 1 : ret;
 	}
 	r = pending_read(&id, &scope);
 	if (r != 0) {
 		/* Clear the request first: a failing rewind must not loop forever. */
 		pending_clear();
-		stage_discard();
+		stage_drop();
 		if (r < 0) {
 			warn("ignoring a malformed rewind request");
 			return 1;

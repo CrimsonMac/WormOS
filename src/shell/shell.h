@@ -26,6 +26,7 @@ struct status {
 	char last_comment[256];
 	gboolean auto_snapshots;
 	char pending[16];       /* rewind, change, trial or empty */
+	char restart[16];       /* a change waits for a restart: system, kernel or empty */
 	gboolean anon;          /* worm anon on */
 	gboolean network_cut;   /* worm panic or safe mode */
 	int tor_percent;        /* how far Tor has connected, -1: unknown or unreadable */

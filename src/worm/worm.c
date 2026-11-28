@@ -358,6 +358,29 @@ static int cmd_hostname(const char *name)
 	return 0;
 }
 
+/* worm restart: a quick restart when only the system changed, a full one
+ * for a new kernel; nothing to do without a waiting change. */
+static int cmd_restart(void)
+{
+	char kind[16] = "";
+	FILE *f = fopen("/run/wh/restart-needed", "re");
+
+	if (f) {
+		if (!fgets(kind, sizeof(kind), f))
+			kind[0] = '\0';
+		fclose(f);
+	}
+	if (!kind[0]) {
+		printf("Nothing waits for a restart.\n");
+		return 0;
+	}
+	printf("%s\n", kind[0] == 'k' ? "Restarting the computer (the kernel changed)..."
+				       : "Restarting the system to finish the change...");
+	fflush(stdout);
+	execl("/usr/lib/worm/power", "power", "apply", (char *)NULL);
+	die("cannot run /usr/lib/worm/power: %s", strerror(errno));
+}
+
 static void usage(FILE *out)
 {
 	fputs("usage: worm help [COMMAND] | status | panic [off] | anon on|off|status|bridges KIND|new-circuits\n"
@@ -367,6 +390,7 @@ static void usage(FILE *out)
 	      "       worm passwd           change your own password\n"
 	      "       worm vm [setup | set KEY VALUE | reset [KEY] | shares [NAME...]]\n"
 	      "       worm hostname [NAME]\n"
+	      "       worm restart          finish changes that wait for a restart\n"
 	      "       worm fw status | allow PORT[/tcp|/udp] | deny PORT[/tcp|/udp] | load\n"
 	      "PORT is a number or a range such as 6000-6010; tcp is the default.\n", out);
 }
@@ -395,7 +419,8 @@ static void overview(void)
 	       "  wh search TERM           find packages\n"
 	       "  wh upgrade               upgrade everything\n"
 	       "  wh undo                  undo the last package change\n"
-	       "  wh install --try PKG     try it; the next restart goes back unless 'wh keep'\n\n",
+	       "  wh install --try PKG     try it; the next restart goes back unless 'wh keep'\n"
+	       "  worm restart             finish changes that wait for a restart\n\n",
 	       m, r);
 	printf("%sProtection%s (root)\n"
 	       "  worm status              protections at a glance\n"
@@ -498,6 +523,9 @@ int main(int argc, char **argv)
 		return cmd_vm(0, argv + 2);
 	if (!strcmp(argv[1], "hostname") && argc == 2)
 		return cmd_hostname(NULL);
+	/* Restarting to finish a change: administrators, via the power helper. */
+	if (!strcmp(argv[1], "restart") && argc == 2)
+		return cmd_restart();
 	/* So does asking whether anonymous mode is on. */
 	if (!strcmp(argv[1], "anon") && argc == 3 && !strcmp(argv[2], "status"))
 		return cmd_anon(1, argv + 2);

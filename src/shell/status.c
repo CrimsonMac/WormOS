@@ -49,6 +49,21 @@ static void read_snap_status(struct status *s)
 	fclose(f);
 }
 
+/* wh's note that a change waits for a restart ("system" or "kernel"). */
+static void read_restart(struct status *s)
+{
+	FILE *f = fopen("/run/wh/restart-needed", "re");
+
+	s->restart[0] = '\0';
+	if (!f)
+		return;
+	if (fgets(s->restart, sizeof(s->restart), f))
+		s->restart[strcspn(s->restart, "\n")] = '\0';
+	else
+		s->restart[0] = '\0';
+	fclose(f);
+}
+
 /* A hardware device (it has a "device" link) with a carrier. */
 static gboolean device_online(const char *name)
 {
@@ -171,6 +186,7 @@ void status_read(struct status *s)
 {
 	memset(s, 0, sizeof(*s));
 	read_snap_status(s);
+	read_restart(s);
 	s->anon = access("/etc/worm/anon", F_OK) == 0;
 	s->network_cut = access("/run/worm/network-cut", F_OK) == 0;
 	s->tor_percent = s->anon ? read_tor_percent() : -1;

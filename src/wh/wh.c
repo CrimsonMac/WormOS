@@ -16,6 +16,7 @@
  */
 
 #define _GNU_SOURCE
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
@@ -48,12 +49,17 @@ const char *key_file;
 
 static const char *repo_override;
 static const char *opt_from;            /* --from SOURCE: core, debian, kali */
-static int opt_try, opt_later, opt_yes, opt_force;
-/* What the change did, for live_apply: packages added, and whether any
- * was upgraded or removed. */
+static int opt_try, opt_now, opt_yes, opt_force;
+/* What the change did, for live_apply: packages added, and packages
+ * upgraded or removed (chg_overflow: more than the lists hold). */
 #define MAX_NEW 128
-static char new_pkgs[MAX_NEW][NAME_MAX_LEN];
-static int n_new, changed_existing;
+static char new_pkgs[MAX_NEW][NAME_MAX_LEN], chg_pkgs[MAX_NEW][NAME_MAX_LEN];
+static int n_new, n_chg, chg_overflow;
+/* A change waits for a restart: "system", or "kernel" (a full restart).
+ * Read by the panel and worm restart; /run starts empty at every restart. */
+#define RESTART_FLAG "/run/wh/restart-needed"
+/* A change was applied to the running system since the last restart. */
+#define LIVE_FLAG    "/run/wh/applied-live"
 static int direct;              /* --root given: no staging */
 static int live;                /* WH_LIVE_FLAG: changes go into the running system */
 static int staging;             /* a staged copy is mounted */
@@ -83,9 +89,10 @@ static void usage(FILE *out)
 "  undo                     undo the last package change\n"
 "  keep                     keep a change made with --try\n"
 "\n"
-"Changes are applied with a quick restart of the system (the kernel keeps\n"
-"running). --later applies them at the next restart instead. --try makes a\n"
-"trial: the restart after the next one goes back, unless 'wh keep' is run.\n"
+"A change that touches nothing running is applied at once. Otherwise it\n"
+"waits for the next restart ('worm restart' applies it now); --now restarts\n"
+"right away. --try makes a trial: the restart after the next one goes back,\n"
+"unless 'wh keep' is run.\n"
 "\n"
 "Packages not in the core repository come from Debian, then Kali, each in\n"
 "its own container (a wormhole); --from picks the source. Those installs\n"
@@ -399,34 +406,162 @@ static int same_file(const char *path)
 	return same;
 }
 
+/* Paths running programs have mapped (their program, libraries, other
+ * mapped files): replacing those under a running program could mix old and
+ * new parts, so such a change waits for a restart. Sorted, for bsearch. */
+static char **in_use;
+static size_t n_in_use;
+
+static int cmp_str(const void *a, const void *b)
+{
+	return strcmp(*(char *const *)a, *(char *const *)b);
+}
+
+static void in_use_add(const char *path)
+{
+	static size_t cap;
+
+	if (path[0] != '/')
+		return;
+	if (n_in_use == cap) {
+		cap = cap ? cap * 2 : 1024;
+		if (!(in_use = realloc(in_use, cap * sizeof(*in_use))))
+			die("out of memory");
+	}
+	if (!(in_use[n_in_use++] = strdup(path)))
+		die("out of memory");
+}
+
+static void in_use_load(void)
+{
+	DIR *proc = opendir("/proc");
+	struct dirent *e;
+
+	if (!proc)
+		return;
+	while ((e = readdir(proc))) {
+		char path[64], line[PATH_MAX + 128], link[PATH_MAX];
+		ssize_t n;
+		FILE *f;
+
+		if (e->d_name[0] < '1' || e->d_name[0] > '9')
+			continue;
+		snprintf(path, sizeof(path), "/proc/%s/exe", e->d_name);
+		if ((n = readlink(path, link, sizeof(link) - 1)) > 0) {
+			link[n] = '\0';
+			in_use_add(link);
+		}
+		snprintf(path, sizeof(path), "/proc/%s/maps", e->d_name);
+		if (!(f = fopen(path, "re")))
+			continue;
+		while (fgets(line, sizeof(line), f)) {
+			char *p = strchr(line, '/');
+			size_t len;
+
+			if (!p)
+				continue;
+			p[strcspn(p, "\n")] = '\0';
+			len = strlen(p);
+			if (len > 10 && !strcmp(p + len - 10, " (deleted)"))
+				p[len - 10] = '\0';
+			in_use_add(p);
+		}
+		fclose(f);
+	}
+	closedir(proc);
+	qsort(in_use, n_in_use, sizeof(*in_use), cmp_str);
+}
+
+static int path_in_use(const char *path)
+{
+	char full[PATH_MAX];
+	const char *key = full;
+
+	snprintf(full, sizeof(full), "/%s", path);
+	return bsearch(&key, in_use, n_in_use, sizeof(*in_use), cmp_str) != NULL;
+}
+
+/* A file of the running system no longer in the changed one. */
+static int live_drop(const char *type, const char *path)
+{
+	char dst[PATH_MAX];
+
+	snprintf(dst, sizeof(dst), "/%s", path);
+	if (*type == 'd')
+		return rmdir(dst) == 0 || errno == ENOENT || errno == ENOTEMPTY ||
+		       errno == EEXIST ? 0 : -1;
+	return unlink(dst) == 0 || errno == ENOENT ? 0 : -1;
+}
+
+/* One package's paths, in the running and the staged system. */
+struct live_pkg {
+	char name[NAME_MAX_LEN];
+	char **old, **new;
+	int n_old, n_new;
+};
+
+static int cmp_depth(const void *a, const void *b)
+{
+	return (int)strlen(*(char *const *)b) - (int)strlen(*(char *const *)a);
+}
+
+/* Is path (without the leading '/') in a package's list? */
+static int listed(char **list, int n, const char *path)
+{
+	for (int i = 0; i < n; i++)
+		if (!strcmp(list[i] + 2, path))
+			return 1;
+	return 0;
+}
+
 /*
- * After a change that only added packages (none upgraded or removed, no
- * kernel, no new accounts) and none of whose files exists in the running
- * system, BusyBox applet links aside (taken over as in the staged system): copy those files into it, so the programs work at once, and run
- * the hooks there. The staged system is still committed as usual and
- * becomes the system at the next restart, holding the same files.
+ * After a change: when it touched nothing a running program uses, make the
+ * running system match the staged one for the changed packages' files, so
+ * the change works at once with no restart. The staged system is still
+ * committed and becomes the system at the next restart, holding the same
+ * files. Not for the kernel, the base system, new accounts, trials, or a
+ * change on top of one that already waits for a restart.
  * Returns whether it applied the change.
  */
 static int live_apply(void)
 {
-	char **paths[MAX_NEW];
-	int counts[MAX_NEW], ok = 1, copied = 0, taken = 0;
+	struct live_pkg *pk;
+	int n = n_new + n_chg, ok = 1, copied = 0, taken = 0;
 
-	if (live || direct || opt_try || kernel_changed || changed_existing || !n_new)
+	if (live || direct || opt_try || kernel_changed || chg_overflow || !n)
+		return 0;
+	if (access(RESTART_FLAG, F_OK) == 0)
 		return 0;
 	if (!same_file("etc/passwd") || !same_file("etc/group") || !same_file("etc/shadow"))
 		return 0;
-	for (int i = 0; i < n_new; i++) {
-		paths[i] = NULL;
-		counts[i] = 0;
-		if (db_files(new_pkgs[i], &paths[i], &counts[i]) < 0)
+	for (int i = 0; i < n_chg; i++)
+		if (is_essential(chg_pkgs[i]) || !strcmp(chg_pkgs[i], "base-files"))
+			return 0;
+	if (!(pk = calloc(n, sizeof(*pk))))
+		die("out of memory");
+	in_use_load();
+	for (int i = 0; i < n && ok; i++) {
+		snprintf(pk[i].name, sizeof(pk[i].name), "%s", i < n_new ? new_pkgs[i] : chg_pkgs[i - n_new]);
+		/* The staged list (none once removed), then the running one. */
+		db_files(pk[i].name, &pk[i].new, &pk[i].n_new);
+		set_root("/");
+		if (i >= n_new && db_files(pk[i].name, &pk[i].old, &pk[i].n_old) < 0)
 			ok = 0;
-		for (int j = 0; ok && j < counts[i]; j++) {
+		set_root(STAGE_MNT);
+		for (int j = 0; ok && j < pk[i].n_old; j++)
+			if (pk[i].old[j][0] != 'd' && path_in_use(pk[i].old[j] + 2)) {
+				info("%s is in use: the change is applied at the next restart.",
+				     pk[i].name);
+				ok = 0;
+			}
+		/* A new path must not be someone else's in the running system. */
+		for (int j = 0; ok && j < pk[i].n_new; j++) {
 			char dst[PATH_MAX];
 			struct stat st;
 
-			snprintf(dst, sizeof(dst), "/%s", paths[i][j] + 2);
-			if (paths[i][j][0] == 'd' || lstat(dst, &st) < 0)
+			snprintf(dst, sizeof(dst), "/%s", pk[i].new[j] + 2);
+			if (pk[i].new[j][0] == 'd' || lstat(dst, &st) < 0 ||
+			    listed(pk[i].old, pk[i].n_old, pk[i].new[j] + 2))
 				continue;
 			if (busybox_link(dst))
 				taken = 1;
@@ -435,51 +570,126 @@ static int live_apply(void)
 		}
 	}
 	if (ok) {
-		info("Only new files: adding them to the running system too.");
+		info("Applying the change to the running system too.");
 		if (mount(NULL, "/", NULL, MS_REMOUNT | MS_BIND, NULL) < 0) {
 			warn("cannot make the running system writable: %s", strerror(errno));
 			ok = 0;
 		}
 	}
-	for (int i = 0; ok && i < n_new; i++) {
+	for (int i = 0; ok && i < n; i++) {
 		char db[PATH_MAX];
+		char **gone = NULL;
+		int n_gone = 0;
 
-		for (int j = 0; ok && j < counts[i]; j++) {
-			if (live_copy(paths[i][j], paths[i][j] + 2) < 0) {
-				warn("cannot add %s: %s", paths[i][j] + 2, strerror(errno));
+		for (int j = 0; ok && j < pk[i].n_new; j++) {
+			if (live_copy(pk[i].new[j], pk[i].new[j] + 2) < 0) {
+				warn("cannot add %s: %s", pk[i].new[j] + 2, strerror(errno));
 				ok = 0;
 			}
 			copied++;
 		}
-		/* And its record, so wh knows it is installed. */
-		snprintf(db, sizeof(db), WH_DB_DIR "/%s", new_pkgs[i]);
-		if (ok && (live_copy("d", db) < 0 ||
-			   live_copy("f", (snprintf(db, sizeof(db), WH_DB_DIR "/%s/files", new_pkgs[i]), db)) < 0 ||
-			   live_copy("f", (snprintf(db, sizeof(db), WH_DB_DIR "/%s/info", new_pkgs[i]), db)) < 0))
+		/* What the old version had and the new one has not, deepest first. */
+		for (int j = 0; j < pk[i].n_old; j++)
+			if (!listed(pk[i].new, pk[i].n_new, pk[i].old[j] + 2)) {
+				if (!(gone = realloc(gone, (n_gone + 1) * sizeof(*gone))))
+					die("out of memory");
+				gone[n_gone++] = pk[i].old[j];
+			}
+		if (n_gone)
+			qsort(gone, n_gone, sizeof(*gone), cmp_depth);
+		for (int j = 0; ok && j < n_gone; j++) {
+			char staged[PATH_MAX];
+			struct stat st;
+
+			/* Still there in the staged system (another package's, or
+			 * a BusyBox link given back): copy that instead. */
+			snprintf(staged, sizeof(staged), STAGE_MNT "/%s", gone[j] + 2);
+			if (lstat(staged, &st) == 0) {
+				if (gone[j][0] != 'd' && live_copy(S_ISLNK(st.st_mode) ? "l" : "f",
+								   gone[j] + 2) < 0)
+					ok = 0;
+			} else if (live_drop(gone[j], gone[j] + 2) < 0) {
+				warn("cannot remove %s: %s", gone[j] + 2, strerror(errno));
+				ok = 0;
+			}
+			copied++;
+		}
+		free(gone);
+		/* And its record. */
+		snprintf(db, sizeof(db), WH_DB_DIR "/%s", pk[i].name);
+		if (ok && pk[i].n_new && (live_copy("d", db) < 0 ||
+			   live_copy("f", (snprintf(db, sizeof(db), WH_DB_DIR "/%s/files", pk[i].name), db)) < 0 ||
+			   live_copy("f", (snprintf(db, sizeof(db), WH_DB_DIR "/%s/info", pk[i].name), db)) < 0))
+			ok = 0;
+		if (ok && !pk[i].n_new) {
+			char path[PATH_MAX];
+
+			snprintf(path, sizeof(path), "/" WH_DB_DIR "/%s/files", pk[i].name);
+			unlink(path);
+			snprintf(path, sizeof(path), "/" WH_DB_DIR "/%s/info", pk[i].name);
+			unlink(path);
+			snprintf(path, sizeof(path), "/" WH_DB_DIR "/%s", pk[i].name);
+			rmdir(path);
+		}
+	}
+	/* BusyBox's record: links taken over or given back; the declined list. */
+	if (ok && (taken || n_chg) && !same_file(WH_DB_DIR "/busybox/files") &&
+	    live_copy("f", WH_DB_DIR "/busybox/files") < 0)
+		ok = 0;
+	if (ok && !same_file(WH_DECLINED)) {
+		struct stat st;
+		char staged[PATH_MAX];
+
+		snprintf(staged, sizeof(staged), STAGE_MNT "/%s", WH_DECLINED);
+		if (lstat(staged, &st) == 0 && live_copy("f", WH_DECLINED) < 0)
 			ok = 0;
 	}
-	/* BusyBox's record no longer lists the links taken over. */
-	if (ok && taken && live_copy("f", WH_DB_DIR "/busybox/files") < 0)
-		ok = 0;
 	if (copied) {
-		/* The caches the new files belong in, in the running system. */
+		/* The caches the changed files belong in, in the running system. */
 		set_root("/");
-		for (int i = 0; i < n_new; i++)
-			for (int j = 0; j < counts[i]; j++)
-				hook_touch(paths[i][j] + 2);
+		for (int i = 0; i < n; i++) {
+			for (int j = 0; j < pk[i].n_new; j++)
+				hook_touch(pk[i].new[j] + 2);
+			for (int j = 0; j < pk[i].n_old; j++)
+				hook_touch(pk[i].old[j] + 2);
+		}
 		hooks_run();
 		sync();
 		if (mount(NULL, "/", NULL, MS_REMOUNT | MS_BIND | MS_RDONLY, NULL) < 0)
 			warn("cannot make the running system read-only again: %s", strerror(errno));
+		set_root(STAGE_MNT);
 	}
-	for (int i = 0; i < n_new; i++) {
-		for (int j = 0; j < counts[i]; j++)
-			free(paths[i][j]);
-		free(paths[i]);
+	for (int i = 0; i < n; i++) {
+		db_free_files(pk[i].new, pk[i].n_new);
+		db_free_files(pk[i].old, pk[i].n_old);
 	}
+	free(pk);
 	if (copied && !ok)
 		warn("the running system has part of the change; the next restart applies all of it");
 	return ok && copied;
+}
+
+/* Note that a change waits for a restart (a kernel change wins). */
+static void restart_needed(int kernel)
+{
+	char cur[16] = "";
+	FILE *f;
+
+	if ((f = fopen(RESTART_FLAG, "re"))) {
+		if (!fgets(cur, sizeof(cur), f))
+			cur[0] = '\0';
+		fclose(f);
+	}
+	if (!kernel && !strncmp(cur, "kernel", 6))
+		kernel = 1;
+	mkdir(STAGE_DIR, 0700);
+	chmod(STAGE_DIR, 0711);
+	if (!(f = fopen(RESTART_FLAG ".tmp", "we")))
+		return;
+	fchmod(fileno(f), 0644);
+	fprintf(f, "%s\n", kernel ? "kernel" : "system");
+	if (fclose(f) == 0)
+		rename(RESTART_FLAG ".tmp", RESTART_FLAG);
 }
 
 /* Finish a change: record it with snap and restart into it. */
@@ -517,12 +727,21 @@ static void stage_commit(const char *action, const char *packages)
 	if (before)
 		info("The previous system is saved as snapshot %d ('wh undo' goes back).", before);
 	if (applied) {
+		/* The running system now differs from the one before the
+		 * waiting change: undoing it needs a restart. */
+		int fd = open(LIVE_FLAG, O_WRONLY | O_CREAT | O_CLOEXEC, 0600);
+
+		if (fd >= 0)
+			close(fd);
 		info("Done: ready to use now, no restart needed (the next restart switches to "
 		     "the recorded system, which holds the same files).");
 		return;
 	}
-	if (opt_later) {
-		info("The change will be applied at the next restart.");
+	restart_needed(kernel_changed);
+	if (!opt_now) {
+		info("Restart to finish the change: run 'worm restart', or choose "
+		     "Restart in the power menu.%s", kernel_changed ?
+		     " The kernel changed, so the machine restarts fully." : "");
 		return;
 	}
 	if (kernel_changed) {
@@ -583,8 +802,8 @@ static void confirm(const char *what)
 		return;
 	if (!isatty(STDIN_FILENO))
 		die("not a terminal, pass -y to confirm");
-	printf("%s\n%s Continue? [Y/n] ", what, opt_later ? "It is applied at the next restart."
-	       : "The system restarts to apply it.");
+	printf("%s\n%s Continue? [Y/n] ", what, opt_now ? "The system restarts to apply it."
+	       : "It is applied now, or at the next restart if something running uses it.");
 	fflush(stdout);
 	if (!fgets(answer, sizeof(answer), stdin) ||
 	    (answer[0] != '\n' && answer[0] != 'y' && answer[0] != 'Y'))
@@ -669,6 +888,14 @@ static char **fetch_plan(struct plan *pl, const char *url)
 	return repo_fetch_all(url, pl->pkgs, pl->count);
 }
 
+static void note_changed(const char *name)
+{
+	if (n_chg == MAX_NEW)
+		chg_overflow = 1;
+	else
+		snprintf(chg_pkgs[n_chg++], NAME_MAX_LEN, "%s", name);
+}
+
 static void install_plan(struct plan *pl, char **files)
 {
 	for (int i = 0; i < pl->count; i++) {
@@ -679,8 +906,10 @@ static void install_plan(struct plan *pl, char **files)
 		     pl->pkgs[i]->name, pl->pkgs[i]->version);
 		if (pkg_install(files[i], pl->pkgs[i]->name) < 0)
 			die("installing %s failed", pl->pkgs[i]->name);
-		if (upgrade || n_new == MAX_NEW)
-			changed_existing = 1;
+		if (upgrade)
+			note_changed(pl->pkgs[i]->name);
+		else if (n_new == MAX_NEW)
+			chg_overflow = 1;
 		else
 			snprintf(new_pkgs[n_new++], NAME_MAX_LEN, "%s", pl->pkgs[i]->name);
 		if (strcmp(pl->pkgs[i]->name, "linux") == 0)
@@ -721,7 +950,7 @@ static int cmd_install(int argc, char **argv, int reinstall)
 	char names[1024], **files;
 
 	if (argc < 2)
-		die("usage: wh install [--try] [--later] [--from SOURCE] PACKAGE...");
+		die("usage: wh install [--try] [--now] [--from SOURCE] PACKAGE...");
 	lock_wh();
 	if (opt_from && strcmp(opt_from, "core") && !foreign_source_known(opt_from))
 		die("unknown source '%s' (see /etc/wh/sources)", opt_from);
@@ -861,9 +1090,9 @@ static int cmd_remove(int argc, char **argv)
 	}
 
 	stage_begin();
-	changed_existing = 1;
 	for (int i = 1; i < argc; i++) {
 		info("Removing %s", argv[i]);
+		note_changed(argv[i]);
 		if (pkg_remove(argv[i]) < 0)
 			die("removing %s failed", argv[i]);
 		/* Removed on purpose: no recommendation brings it back. */
@@ -1059,10 +1288,35 @@ static int cmd_undo(int argc, char **argv)
 		die("change %d has no snapshot to go back to (automatic snapshots were off)",
 		    list[target].id);
 
+	/* Not applied yet (it waits for a restart): drop what waits. */
+	{
+		char out[32] = "";
+
+		if (run((char *[]){ "snap", "stage", "before", NULL }, out, sizeof(out)) == 0 &&
+		    atoi(out) > 0 && atoi(out) == list[target].snapshot &&
+		    access(RESTART_FLAG, F_OK) == 0 && access(LIVE_FLAG, F_OK) != 0) {
+			info("Undoing change %d (%s %s): it was not applied yet, so it is dropped.",
+			     list[target].id, list[target].action, list[target].packages);
+			snap_cmd((char *[]){ "snap", "stage", "drop", NULL }, NULL, 0);
+			/* Every change that waited on top of the same state goes too. */
+			for (int i = target; i >= 0 && list[i].snapshot == list[target].snapshot; i--)
+				if (strcmp(list[i].action, "undo")) {
+					snprintf(label, sizeof(label), "#%d", list[i].id);
+					history_add("undo", label, list[i].snapshot);
+				}
+			unlink(RESTART_FLAG);
+			free(list);
+			return 0;
+		}
+	}
 	info("Undoing change %d (%s %s): going back to snapshot %d.", list[target].id,
 	     list[target].action, list[target].packages, list[target].snapshot);
-	snprintf(label, sizeof(label), "#%d", list[target].id);
-	history_add("undo", label, list[target].snapshot);
+	/* Changes stacked on the same state before a restart go back too. */
+	for (int i = target; i >= 0 && list[i].snapshot == list[target].snapshot; i--)
+		if (strcmp(list[i].action, "undo")) {
+			snprintf(label, sizeof(label), "#%d", list[i].id);
+			history_add("undo", label, list[i].snapshot);
+		}
 	snprintf(id, sizeof(id), "%d", list[target].snapshot);
 	free(list);
 	execvp("snap", (char *[]){ "snap", "rewind", id, "-y", NULL });
@@ -1089,6 +1343,7 @@ int main(int argc, char **argv)
 		{ "key",   required_argument, NULL, 'k' },
 		{ "try",   no_argument,       NULL, 't' },
 		{ "later", no_argument,       NULL, 'l' },
+		{ "now",   no_argument,       NULL, 'N' },
 		{ "yes",   no_argument,       NULL, 'y' },
 		{ "force", no_argument,       NULL, 'f' },
 		{ "from",  required_argument, NULL, 'F' },
@@ -1104,7 +1359,8 @@ int main(int argc, char **argv)
 		case 'R': repo_override = optarg; break;
 		case 'k': key_file = optarg; break;
 		case 't': opt_try = 1; break;
-		case 'l': opt_later = 1; break;
+		case 'l': opt_now = 0; break;   /* the default since 1.20 */
+		case 'N': opt_now = 1; break;
 		case 'y': opt_yes = 1; break;
 		case 'f': opt_force = 1; break;
 		case 'F': opt_from = optarg; break;
@@ -1148,7 +1404,7 @@ int main(int argc, char **argv)
 	}
 	live = !direct && !opt_try && access(WH_LIVE_FLAG, F_OK) == 0;
 	if (live)
-		opt_later = 0;
+		opt_now = 0;
 	if (!strcmp(cmd, "update"))             return cmd_update(argc, argv);
 	if (!strcmp(cmd, "install"))            return cmd_install(argc, argv, 0);
 	if (!strcmp(cmd, "reinstall"))          return cmd_install(argc, argv, 1);

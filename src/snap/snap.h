@@ -15,6 +15,7 @@
 #define SUBVOL_HOME      "@home"
 #define SUBVOL_STORE     "@snapshots"
 #define SUBVOL_NEXT      "@.next"         /* staged system change */
+#define SUBVOL_QUEUED    "@.queued"       /* a waiting change, while another is made */
 #define SUBVOL_WORMHOLES "@wormholes"     /* one subvolume per wormhole inside */
 
 /* Inside each snapshot directory @snapshots/<id>/. */
@@ -123,6 +124,15 @@ int stage_begin(void);
 int stage_commit(int trial, const char *comment);
 int stage_keep(void);
 void stage_discard(void);
+void stage_abort(void);
+
+/* seal.c */
+int seal_snapshot(const struct snapshot *s);
+int seal_check(const struct snapshot *s, char *why, size_t len);  /* 1 sealed, 0 not, -1 bad */
+int seal_status(void);
+extern const char *store_system_from;
+int stage_pending_before(void);
+void stage_drop(void);
 int stage_pending(void);
 int stage_trial(void);
 int stage_boot_trial(void);

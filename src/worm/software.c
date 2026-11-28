@@ -17,7 +17,8 @@
  * read as one line from standard input,
  * except where root is locked and users may install (WormOS Amnesia:
  * /etc/wh/users-may-install), where they go through wh's own user helper
- * and its rules. Core package changes are made with --later: they are
+ * and its rules. Core package changes wait for the next restart (wh's
+ * default since 1.20; --later is kept for older wh): they are
  * applied at the next restart instead of restarting the session under the
  * user's open windows; programs from Debian or Kali are ready at once.
  * Every argument is checked, the environment is cleared, and wh runs as

@@ -261,10 +261,9 @@ it, not because you need it:
   Installed lists what is there; Updates looks for newer versions and
   installs them all at once. Installing or removing asks for your
   password. Programs from Debian and Kali are ready in moments, and so are
-  WormOS packages that only add files (new programs); WormOS packages that
-  change what is there (updates, removals) are applied at the next restart
-  (`wh --later`), so nothing closes under you: the window says so and
-  offers to restart. Administrators
+  WormOS changes that touch nothing running; a change to something in use
+  waits for the next restart, so nothing closes under you: the window says
+  so and offers to restart. Administrators
   also get a notification when WormOS has updates (a few minutes after
   logging in, then daily; a click opens Software's Updates; `touch
   ~/.config/wormos/no-update-notice` turns it off).
@@ -460,6 +459,7 @@ snap browse 3                       # read-only shell inside snapshot 3
 snap rewind                         # go back to the latest snapshot
 snap rewind 3 --home                # rewind /home only (--all for both)
 snap verify                         # check snapshots for tampering
+snap seal                           # the seal chain and its fingerprint
 snap delete 3 / snap prune --keep 10 / snap pin 3 / snap comment 3 "..."
 snap auto on|off                    # snapshots before package changes
 ```
@@ -480,6 +480,15 @@ How it works:
 - Every snapshot has a manifest with the checksum, owner, mode and extended
   attributes of each file. Rewinds verify the target first and refuse a
   snapshot that was modified.
+- Snapshots are sealed (since 1.20): when a snapshot is made, its checksums
+  are signed with a key that is destroyed right after; the signature also
+  vouches for the next key, which is the only one kept. Malware that gets
+  root later holds only keys newer than every existing snapshot, so it
+  cannot change one, its manifest or its checksums without `snap verify`
+  and every rewind noticing. Its only way round is to throw the whole
+  chain away and start a new one, which has another first key: `snap seal`
+  shows the first key's fingerprint, so note it down once and compare now
+  and then. Snapshots made before 1.20 are not sealed (verify says so).
 - A rewind is applied at a soft reboot: the init system stops userland, the
   initramfs init (`wormrd`) swaps the subvolume and the system starts again
   without restarting the kernel. The state being left is snapshotted first,
@@ -495,9 +504,16 @@ isolated sandbox: a blackhole (see below).
 
 The Software program (see The desktop) does all of this in a window. In a
 terminal, `wh` (short for wormhole) installs software from the signed WormOS
-repository. Changes never touch the running system: they are made in a
-staged copy, the current system is snapshotted, and a quick restart (the
-kernel keeps running) switches over.
+repository. Changes are made in a staged copy and the current system is
+snapshotted first. A change that touches nothing running is copied into
+the running system at once (new programs, and updates or removals of
+programs that are not running). Anything else waits for the next restart
+instead of restarting under you: wh says so, the panel shows a restart
+button and a notification, and `worm restart` (or Restart in the power
+menu) applies it, with a quick restart where the kernel keeps running,
+or a full one when the kernel itself changed. Further changes before
+that restart stack on the waiting one, and `wh undo` before it simply
+drops what waits. `wh --now` restarts right away.
 
 ```
 wh update                 # download the package index
@@ -509,11 +525,13 @@ wh remove tcpdump
 wh upgrade
 wh history                # every change, with its snapshot
 wh undo                   # go back to before the last change
+worm restart              # apply what waits for a restart
 ```
 
-A change that only adds files (a new program, with no package upgraded or
-removed) is also copied into the running system, so it works at once; the
-staged system, with the same files, takes over at the next restart.
+Whether something is running is decided by what running programs have
+loaded (their program files and libraries); the base system (the C
+library, init, BusyBox, the kernel...) always waits. The staged system,
+with the same files, takes over at the next restart either way.
 
 The package index is signed with Ed25519 and checked on every use; packages
 must match the SHA-256 the index lists, and an index older than the one

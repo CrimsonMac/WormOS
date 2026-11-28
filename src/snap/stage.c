@@ -10,6 +10,12 @@
  *                        @.next should replace @.
  *   (restart)            the boot tasks swap @.next in place of @.
  *
+ * Changes stack: a change begun while another waits for a restart starts
+ * from the waiting copy (moved aside to @.queued while the new one is
+ * made), so nothing waiting is lost. An aborted change puts the waiting
+ * copy back; a committed one replaces it and keeps its "before" snapshot,
+ * which is still the state before everything that waits.
+ *
  * A commit made with --try is a trial: the boot after the one that
  * activated it rolls the system back to the "before" snapshot, unless
  * "snap stage keep" was run in between.
@@ -104,6 +110,13 @@ int stage_pending(void)
 	return exists(path);
 }
 
+int stage_pending_before(void)
+{
+	int id;
+
+	return stage_pending() && read_pair(STORE_ACTIVATE, NULL, 0, &id) > 0 ? id : 0;
+}
+
 int stage_trial(void)
 {
 	int id;
@@ -122,12 +135,68 @@ void stage_discard(void)
 		warn("cannot delete %s: %s", SUBVOL_NEXT, strerror(errno));
 }
 
+/* A change begun on top of one that waits: is one being made? */
+static int queued(void)
+{
+	char path[PATH_MAX];
+
+	top_path(path, sizeof(path), SUBVOL_QUEUED);
+	return exists(path);
+}
+
+/* Abort the change being made; a change that waited keeps waiting. */
+void stage_abort(void)
+{
+	char path[PATH_MAX], next[PATH_MAX];
+
+	if (!queued()) {
+		stage_discard();
+		return;
+	}
+	top_path(next, sizeof(next), SUBVOL_NEXT);
+	if (exists(next) && subvol_delete(top, SUBVOL_NEXT) < 0)
+		warn("cannot delete %s: %s", SUBVOL_NEXT, strerror(errno));
+	top_path(path, sizeof(path), SUBVOL_QUEUED);
+	if (rename(path, next) < 0)
+		warn("cannot put the waiting change back: %s", strerror(errno));
+	sync();
+}
+
+/* Drop every change that waits, and one being made. */
+void stage_drop(void)
+{
+	char path[PATH_MAX];
+
+	if (queued() && subvol_delete(top, SUBVOL_QUEUED) < 0) {
+		top_path(path, sizeof(path), SUBVOL_QUEUED);
+		warn("cannot delete %s: %s", path, strerror(errno));
+	}
+	stage_discard();
+}
+
 int stage_begin(void)
 {
-	char live[PATH_MAX];
+	char live[PATH_MAX], next[PATH_MAX], q[PATH_MAX];
 
 	if (stage_trial())
 		die("a trial is running; run 'wh keep' or restart to end it first");
+	top_path(next, sizeof(next), SUBVOL_NEXT);
+	top_path(q, sizeof(q), SUBVOL_QUEUED);
+	/* Left over from a change cut off half way: the waiting copy wins. */
+	if (queued())
+		stage_abort();
+	if (stage_pending() && exists(next)) {
+		if (rename(next, q) < 0)
+			die("cannot set the waiting change aside: %s", strerror(errno));
+		if (subvol_snapshot(q, top, SUBVOL_NEXT, 0) < 0) {
+			int e = errno;
+
+			stage_abort();
+			die("cannot create %s: %s", SUBVOL_NEXT, strerror(e));
+		}
+		sync();
+		return 0;
+	}
 	stage_discard();
 	top_path(live, sizeof(live), SUBVOL_SYSTEM);
 	if (subvol_snapshot(live, top, SUBVOL_NEXT, 0) < 0)
@@ -139,12 +208,33 @@ int stage_begin(void)
 /* Returns the ID of the snapshot taken before the change, or 0 if none. */
 int stage_commit(int trial, const char *comment)
 {
-	char next[PATH_MAX];
+	char next[PATH_MAX], mode[16] = "normal";
 	int before = 0;
 
 	top_path(next, sizeof(next), SUBVOL_NEXT);
 	if (!exists(next))
 		die("nothing is staged");
+
+	/* On top of a waiting change: it is replaced, its "before" stays. */
+	if (queued()) {
+		if (read_pair(STORE_ACTIVATE, mode, sizeof(mode), &before) <= 0)
+			before = 0;
+		/* A trial returns to the waiting state, not to the one before it. */
+		if (trial) {
+			snprintf(mode, sizeof(mode), "try");
+			store_system_from = SUBVOL_QUEUED;
+			before = store_create(SCOPE_SYSTEM, "auto", comment);
+			store_system_from = NULL;
+			if (before < 0)
+				die("cannot save the current state, change not applied");
+		}
+		if (subvol_delete(top, SUBVOL_QUEUED) < 0)
+			warn("cannot delete %s: %s", SUBVOL_QUEUED, strerror(errno));
+		if (write_pair(STORE_ACTIVATE, mode, before) < 0)
+			die("cannot record the change: %s", strerror(errno));
+		sync();
+		return before;
+	}
 
 	/* A trial needs a state to return to, whatever "snap auto" says. */
 	if (trial || config_auto()) {
@@ -185,6 +275,9 @@ int stage_boot_activate(void)
 	char mode[16], live[PATH_MAX], old[PATH_MAX], next[PATH_MAX];
 	int before, r;
 
+	/* A change cut off half way leaves the waiting one aside. */
+	if (queued())
+		stage_abort();
 	r = read_pair(STORE_ACTIVATE, mode, sizeof(mode), &before);
 	if (r == 0)
 		return 0;
