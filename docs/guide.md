@@ -355,7 +355,11 @@ it, not because you need it:
   password, which the setup also sets. Graphical
   programs open from the root terminal and from `sudo` (they keep the
   desktop's display), not from a plain `su -`; programs from wormholes run
-  as well from your own terminal or the launcher.
+  as well from your own terminal or the launcher. Root's X11 programs
+  (Ghidra or Burp Suite run as root, for example) open in a window of
+  their own, with an X server only root can reach: on the desktop's
+  Xwayland, any of your programs could read the keys typed into them.
+  The window closes a minute after the last of them.
 - `passwd` (or `worm passwd`) changes your own password, although `/etc`
   is read-only: it asks for the current one first.
 - Time: the first-boot setup asks for your time zone; `worm time` shows the

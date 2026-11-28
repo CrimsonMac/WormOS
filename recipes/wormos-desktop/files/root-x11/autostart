@@ -1,0 +1,2 @@
+# root-x11's nested labwc: tell root-x11 which display its Xwayland got.
+[ -n "${ROOT_X11_DISPLAY_FILE:-}" ] && echo "$DISPLAY" > "$ROOT_X11_DISPLAY_FILE"

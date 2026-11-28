@@ -3,8 +3,8 @@
 # own password (/usr/lib/worm/elevate; su - still takes root's).
 # A login clears the environment, so programs started as root could not find
 # the desktop (Ghidra and other graphical wormhole programs quit at once):
-# the display goes along (the Wayland socket by its full path and
-# Xwayland's display number) to root-shell, which sets it up as root, with
+# the display goes along (the Wayland socket by its full path, and whether
+# there is an X display: root's X11 programs get one of their own) to root-shell, which sets it up as root, with
 # the user's wormhole bridge (wormhole programs run as root still open
 # links and terminals on the desktop).
 # With a command (menu entries of tools that need root, wormhole programs
@@ -38,7 +38,5 @@ if [ -n "${WAYLAND_DISPLAY:-}" ]; then
 fi
 bridge=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/wormhole-bridge
 [ -p "$bridge" ] || bridge=
-# Xwayland admits only its own user: add root (it starts Xwayland if needed).
-[ -n "${DISPLAY:-}" ] && /usr/lib/worm/x11-allow-root 2>/dev/null
 exec /usr/lib/worm/elevate \
 	"$wayland" "${DISPLAY:-}" "${1:-}" "$folder" "$bridge" "$once"

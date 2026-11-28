@@ -117,6 +117,17 @@ SESSION_CHECKS = [
      "grep -c xkb_keymap /tmp/x11.xkb; pidof Xwayland | wc -w; "
      "grep -a -e '(EE)' -e '(II)' -e glamor -e GLX -e EGL /run/user/1000/desktop.log | head -40",
      r"^1\n1$"),
+    # Root's X11 programs get an X server of their own (root-x11), which the
+    # user's programs cannot reach (X11 lets clients of one server watch
+    # each other's keys).
+    ("root's X11 programs get their own X server",
+     f"w=$(ls -d /run/user/1000/wayland-[0-9] | head -1); "
+     f"/usr/lib/worm/root-shell $w :0 'echo $DISPLAY; xkbcomp -xkb $DISPLAY /tmp/root.xkb 2>/dev/null; "
+     f"grep -c xkb_keymap /tmp/root.xkb; for p in $(pidof Xwayland); do stat -c %U /proc/$p; done | sort | tr \"\\n\" \" \"; echo; "
+     f"su {USER} -c \"xkbcomp -xkb $DISPLAY /tmp/u.xkb\" > /dev/null 2>&1 || echo user-refused; "
+     f"echo $DISPLAY > /tmp/rootdisplay' '' '' 1; sleep 2; "
+     "test -e /tmp/.X11-unix/X$(cut -c2- /tmp/rootdisplay) || echo cleaned-up",
+     rf"^:[2-9]\d\n1\nroot {USER} \nuser-refused\ncleaned-up$"),
 ]
 
 TYPING_CHECKS = [

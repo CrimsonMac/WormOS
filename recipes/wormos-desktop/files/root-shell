@@ -1,14 +1,21 @@
 #!/bin/sh
 # Root's side of the root terminal, run by elevate: the desktop's display and a
 # runtime folder of root's own (nothing it writes lands in the user's),
-# then root's login shell. A command given runs first, in FOLDER when
+# then root's login shell. Root's Wayland programs open on the desktop;
+# its X11 programs get an X server of their own (root-x11: a window with
+# them, which no program of the user can watch, as it could on the
+# desktop's Xwayland). A command given runs first, in FOLDER when
 # given; the shell stays, unless ONCE is set (then the command's status
 # is returned).
 # Usage: root-shell WAYLAND_DISPLAY DISPLAY [COMMAND [FOLDER [BRIDGE [ONCE]]]]
 mkdir -p -m 0700 /run/user/0
 export XDG_RUNTIME_DIR=/run/user/0
 [ -n "${1:-}" ] && export WAYLAND_DISPLAY="$1"
-[ -n "${2:-}" ] && export DISPLAY="$2"
+if [ -n "${2:-}" ] && [ -n "${1:-}" ] && d=$(/usr/lib/worm/root-x11 $$); then
+	export DISPLAY=":$d"
+else
+	unset DISPLAY
+fi
 [ -n "${5:-}" ] && export WORMHOLE_BRIDGE="$5"
 [ -n "${4:-}" ] && { cd "$4" 2>/dev/null || true; }
 if [ -n "${6:-}" ]; then

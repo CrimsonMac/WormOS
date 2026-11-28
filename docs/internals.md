@@ -644,11 +644,24 @@ initramfs inside LUKS.
 - The root terminal runs `/usr/lib/worm/root-terminal [--once] [--cd FOLDER] [COMMAND]`: `su - root -c` running `root-shell` with
   the Wayland socket's full path and `DISPLAY` handed over, and
   `XDG_RUNTIME_DIR=/run/user/0`, so graphical programs open from it
-  without root writing into the user's runtime folder. Xwayland admits
-  only the user running it (no cookie file), so the script first runs
-  `/usr/lib/worm/x11-allow-root` as the user, which adds
-  `si:localuser:root` to the server's access list (ChangeHosts, as `xhost`
-  would); Java programs such as Ghidra failed with "Authorization required".
+  without root writing into the user's runtime folder. Root's Wayland
+  programs open on the desktop. Its X11 programs get an X server of their
+  own (since 1.20; before, root was added to the desktop's Xwayland, where
+  any program of the user could read the keys typed into root's windows,
+  as X11 lets every client of a server do): root-shell runs
+  `/usr/lib/worm/root-x11 $$` (`files/root-x11.c`), which takes a free
+  display number from 20, listens on `/tmp/.X11-unix/XN` (0700, root's; no
+  abstract socket, which would have no permissions), prints N for
+  `DISPLAY` and stays in the background until the shell ends (a pidfd).
+  The first connection starts a nested labwc as root
+  (`WLR_BACKENDS=wayland`, pixman, configuration in
+  `/usr/share/worm/root-x11`, whose autostart writes its Xwayland's
+  display to `/run/user/0/root-x11-N`): a window on the desktop holding
+  root's X11 programs, with labwc managing them inside. Each connection is
+  relayed to that Xwayland (which, like every Xwayland, admits only its
+  own user), with the file descriptors it carries (`SCM_RIGHTS`, for
+  MIT-SHM and Present). The window closes a minute after the last
+  connection.
 - Containers live in subvolumes under `/var/lib/wormholes` (`@wormholes`,
   mounted `nosuid,nodev`, mode 0755). Exported commands are wrappers in
   `/usr/local/bin` (a link to `/var/usrlocal`) and never shadow `/usr/bin` or

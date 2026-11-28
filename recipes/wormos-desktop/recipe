@@ -1,6 +1,6 @@
 name=wormos-desktop
 version=1.0
-release=40
+release=41
 description="The WormOS desktop session: labwc, foot and the WormOS look"
 depends=(labwc foot swaybg grim wlr-randr xcompose seatd dbus font-inter font-hack base-files
 	gtk4 gtk4-layer-shell wormos-gtk-theme adwaita-icon-theme dconf worm-shell wormos-snapshots wormos-software
@@ -11,7 +11,7 @@ depends=(labwc foot swaybg grim wlr-randr xcompose seatd dbus font-inter font-ha
 
 build() {
 	python3 "$recipedir/files/wallpaper.py" wormos.png 2560 1440
-	$CC $CFLAGS -o x11-allow-root "$recipedir/files/x11-allow-root.c" $LDFLAGS -lxcb
+	$CC $CFLAGS -o root-x11 "$recipedir/files/root-x11.c" $LDFLAGS
 }
 
 package() {
@@ -47,7 +47,8 @@ package() {
 	install -Dm755 "$f/root-shell" "$pkgdir/usr/lib/worm/root-shell"
 	install -Dm755 "$f/exec-in-shell" "$pkgdir/usr/lib/worm/exec-in-shell"
 	install -Dm755 "$f/sudo" "$pkgdir/usr/bin/sudo"
-	install -Dm755 x11-allow-root "$pkgdir/usr/lib/worm/x11-allow-root"
+	install -Dm755 root-x11 "$pkgdir/usr/lib/worm/root-x11"
+	install -Dm644 -t "$pkgdir/usr/share/worm/root-x11" "$f/root-x11/rc.xml" "$f/root-x11/autostart"
 	install -Dm755 "$f/welcome" "$pkgdir/usr/bin/welcome"
 	install -Dm755 "$f/xdg-terminal-exec" "$pkgdir/usr/bin/xdg-terminal-exec"
 	install -Dm644 "$f/motd.sh" "$pkgdir/etc/profile.d/motd.sh"
