@@ -462,7 +462,23 @@ snap verify                         # check snapshots for tampering
 snap seal                           # the seal chain and its fingerprint
 snap delete 3 / snap prune --keep 10 / snap pin 3 / snap comment 3 "..."
 snap auto on|off                    # snapshots before package changes
+snap auto timer hourly|daily|off    # timed snapshots of the system and /home
+snap export 3 /media/backup         # snapshot 3 as one archive (.tar.zst)
+snap import FILE                    # add a snapshot from such an archive
+snap auto export /media/backup      # export the newest one daily to a drive
 ```
+
+Timed snapshots (also in Settings > Network & privacy) take the system
+and `/home` together; the newest 24 hourly or 14 daily ones are kept
+(`--keep N` changes that; pinned ones always stay, and other snapshots
+are never pruned by the timer). `snap auto export DIR [daily|weekly]`
+exports the newest system snapshot whenever a drive is mounted at DIR,
+keeping the newest three archives there; mount the drive there (for
+example `mount /dev/sdb1 /media/backup`) and the next minute does the
+rest. An archive holds the snapshot's trees with owners, modes and
+extended attributes, its manifests and checksums; `snap import` checks
+the trees against them before adding it, marked "imported". Only import
+archives you made: a rewind to an imported snapshot runs what is in it.
 
 How it works:
 

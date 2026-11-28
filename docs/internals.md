@@ -219,8 +219,14 @@ initramfs inside LUKS.
   FAT or btrfs image would be read as structure), re-reads the partition
   table (`BLKRRPART`) and grows the btrfs to its partition. The copy has
   the live system's fs UUID; the kernel mounts it under a temporary one
-  (btrfs temp-fsid, single-device clones). The installed system starts
-  with the first-boot setup.
+  (btrfs temp-fsid, single-device clones). Since 1.20 it then gets a UUID
+  of its own: `new_fsid` rewrites each superblock copy (64 KiB, 64 MiB,
+  256 GiB) with a random fsid, keeps the old one as the metadata UUID
+  (incompat flag METADATA_UUID, as `btrfstune -m` does; tree blocks keep
+  naming the old one) and recomputes the CRC32C, and the old UUID is
+  replaced by the new one (same length) in the ESP, where `grub.cfg`
+  names it in `search --fs-uuid` and `root=UUID=`. The installed system
+  starts with the first-boot setup.
 
 ## Editions
 
@@ -305,8 +311,32 @@ initramfs inside LUKS.
   chain present stops sealing rather than starting a new chain quietly.
 - `snap list --raw` prints one tab-separated line per snapshot for
   programs: ID, Unix time, scope, type, pinned, suspect, comment.
+- Configuration (`@snapshots/config`, `key = value` since 1.20; before,
+  it held only the `auto` line): `auto`, `timer`, `timer-keep`,
+  `export-to`, `export-every`, `last-export`.
+- Schedule (`schedule.c`, since 1.20): the respawning service
+  `12-snap-timer` runs `/usr/lib/snap/timer`, a loop that calls `snap
+  timer-tick` every minute while `/run/snap-status` says `schedule = on`
+  (a timer or an export is set). The tick takes a snapshot of type
+  `timer` (system and home) when the newest is an interval old (hourly or
+  daily; a clock set back counts as due), deletes the oldest unpinned
+  `timer` snapshots beyond `timer-keep` (24 or 14), and exports the newest
+  system snapshot to `export-to` when that folder is a mount point (its
+  device differs from its parent's), writable, and the last export is an
+  interval old (daily or weekly) and of an older snapshot; the newest three
+  `wormos-snapshot-ID.tar.zst` there are kept.
+- Export and import (`store_export`, `store_import`): `bsdtar --zstd
+  --numeric-owner --xattrs` of the snapshot folder's `info`, manifests and
+  trees, written as FILE.part and renamed. Import extracts `info` first
+  (`-q`), takes the scope from which checksums it has, creates the trees
+  as subvolumes in `.new-ID`, extracts the rest (bsdtar without `-P`
+  refuses absolute paths, `..` and paths through links), verifies each
+  tree against its manifest and the manifest against the checksum, makes
+  the trees read-only, writes `info` with the new ID and type `imported`,
+  renames the folder into place and seals it.
 - `status.c` keeps a summary readable by everyone in `/run/snap-status`
-  (`count`, `last`, `last_date`, `last_comment`, `auto`, `pending`),
+  (`count`, `last`, `last_date`, `last_comment`, `auto`, `pending`,
+  `timer`, `schedule`),
   rewritten whenever the boot menu is and by `snap status`, which the
   service `11-snap-status` runs at boot. It is not written with `--top`.
 

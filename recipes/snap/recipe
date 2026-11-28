@@ -12,4 +12,6 @@ build() {
 package() {
 	make DESTDIR="$pkgdir" install
 	install -Dm644 "$recipedir/files/11-snap-status" "$pkgdir/etc/worm/services/11-snap-status"
+	install -Dm644 "$recipedir/files/12-snap-timer" "$pkgdir/etc/worm/services/12-snap-timer"
+	install -Dm755 "$recipedir/files/timer" "$pkgdir/usr/lib/snap/timer"
 }

@@ -94,6 +94,16 @@ int store_write_info(const struct snapshot *s);
 int store_mark_suspect(int id);
 void store_entry_path(char *out, size_t len, int id, int scope);
 int config_auto(void);
+int config_get(const char *key, char *out, size_t len);
+void config_set(const char *key, const char *value);   /* NULL removes */
+int store_next_id(void);
+int store_export(int id, const char *file);
+int store_import(const char *file, const char *comment);   /* new ID or -1 */
+int subvol_create(const char *dir, const char *name);
+int subvol_set_readonly(const char *path);
+
+/* schedule.c */
+int timer_tick(void);
 void config_set_auto(int on);
 int pending_write(int id, int scope);
 void pending_clear(void);

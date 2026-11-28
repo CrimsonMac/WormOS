@@ -76,6 +76,9 @@ INSTALL_CHECKS = [
 INSTALLED_CHECKS = [
     ("started from the disk", "cat /proc/cmdline", r"root=UUID=(?![\s\S]*wormos\.live)"),
     ("root from the disk", "readlink /dev/wormos-root", r"^/dev/vda2$"),
+    ("a filesystem UUID of its own, which the boot menu names",
+     "u=$(sed 's/.*root=UUID=\\([^ ]*\\).*/\\1/' /proc/cmdline); m=$(cat /sys/fs/btrfs/$u/metadata_uuid); "
+     "[ -n \"$m\" ] && [ \"$m\" != \"$u\" ] && echo own-uuid", r"^own-uuid$"),
     ("filesystem fills the disk", "df -m /var | awk 'NR == 2 { print $2 }'",
      r"^1[0-2]\d\d\d$"),
     ("no live user", "grep -c '^live:' /etc/passwd", r"^0$"),

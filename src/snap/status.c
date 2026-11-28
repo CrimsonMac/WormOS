@@ -51,6 +51,15 @@ static void write_status(FILE *f)
 			list[n - 1].id, (long long)list[n - 1].date, comment);
 	}
 	fprintf(f, "auto = %s\npending = %s\n", config_auto() ? "on" : "off", pending);
+	/* For the timer service: whether there is anything to do. */
+	{
+		char timer[16] = "off", dest[8] = "";
+
+		config_get("timer", timer, sizeof(timer));
+		config_get("export-to", dest, sizeof(dest));
+		fprintf(f, "timer = %s\nschedule = %s\n", timer,
+			strcmp(timer, "off") || dest[0] ? "on" : "off");
+	}
 	free(list);
 }
 

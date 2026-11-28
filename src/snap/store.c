@@ -31,6 +31,7 @@
 #include <string.h>
 #include <sys/file.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "snap.h"
@@ -628,19 +629,70 @@ void store_cleanup(void)
 	subvol_delete_old(SUBVOL_HOME);
 }
 
+/*
+ * The configuration: "key = value" lines (auto, timer, timer-keep,
+ * export-to, export-every). Before 1.20 it held only the auto line.
+ */
+int config_get(const char *key, char *out, size_t len)
+{
+	char path[PATH_MAX], line[PATH_MAX + 64];
+	size_t klen = strlen(key);
+	int found = 0;
+	FILE *f;
+
+	store_path(path, sizeof(path), STORE_CONFIG);
+	if (!(f = fopen(path, "re")))
+		return 0;
+	while (!found && fgets(line, sizeof(line), f))
+		if (!strncmp(line, key, klen) && !strncmp(line + klen, " = ", 3)) {
+			line[strcspn(line, "\n")] = '\0';
+			snprintf(out, len, "%s", line + klen + 3);
+			found = 1;
+		}
+	fclose(f);
+	return found;
+}
+
+void config_set(const char *key, const char *value)
+{
+	char path[PATH_MAX], line[PATH_MAX + 64], *text = NULL;
+	size_t klen = strlen(key), n = 0;
+	FILE *f, *mem = open_memstream(&text, &n);
+
+	if (!mem)
+		die("out of memory");
+	store_path(path, sizeof(path), STORE_CONFIG);
+	if ((f = fopen(path, "re"))) {
+		while (fgets(line, sizeof(line), f))
+			if (strncmp(line, key, klen) || strncmp(line + klen, " = ", 3))
+				fputs(line, mem);
+		fclose(f);
+	}
+	if (value)
+		fprintf(mem, "%s = %s\n", key, value);
+	fclose(mem);
+	if (write_store_file(STORE_CONFIG, text) < 0)
+		die("cannot write the configuration: %s", strerror(errno));
+	free(text);
+}
+
 int config_auto(void)
 {
 	char buf[64];
 
-	if (!read_line(STORE_CONFIG, buf, sizeof(buf)))
+	if (!config_get("auto", buf, sizeof(buf)))
 		return 1;               /* on by default */
-	return strstr(buf, "off") == NULL;
+	return strcmp(buf, "off") != 0;
 }
 
 void config_set_auto(int on)
 {
-	if (write_store_file(STORE_CONFIG, on ? "auto = on\n" : "auto = off\n") < 0)
-		die("cannot write the configuration: %s", strerror(errno));
+	config_set("auto", on ? "on" : "off");
+}
+
+int store_next_id(void)
+{
+	return next_id();
 }
 
 int pending_write(int id, int scope)
@@ -727,4 +779,157 @@ int store_verify(const struct snapshot *s, int scope)
 			ret = -1;
 	}
 	return ret;
+}
+
+/* ---- export and import ---- */
+
+/* Run argv; 0 if it exited with 0. */
+static int run_tool(char *const argv[])
+{
+	pid_t pid = fork();
+	int status;
+
+	if (pid < 0)
+		return -1;
+	if (pid == 0) {
+		execv(argv[0], argv);
+		_exit(127);
+	}
+	while (waitpid(pid, &status, 0) < 0)
+		if (errno != EINTR)
+			return -1;
+	return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : -1;
+}
+
+#define BSDTAR "/usr/bin/bsdtar"
+
+/*
+ * snap export: snapshot id as a zstd-compressed tar archive at file: its
+ * info, its manifests and its trees, with owners, modes, extended
+ * attributes and capabilities. The archive is written under a temporary
+ * name and renamed when complete.
+ */
+int store_export(int id, const char *file)
+{
+	char dir[PATH_MAX], part[PATH_MAX + 8];
+	char *argv[16];
+	struct snapshot s;
+	int n = 0;
+
+	if (store_get(id, &s) < 0)
+		die("no snapshot %d", id);
+	if (access(BSDTAR, X_OK) < 0)
+		die("exporting needs bsdtar: wh install libarchive");
+	store_entry_path(dir, sizeof(dir), id, 0);
+	snprintf(part, sizeof(part), "%s.part", file);
+	unlink(part);
+	argv[n++] = BSDTAR;
+	argv[n++] = "--zstd";
+	argv[n++] = "--numeric-owner";
+	argv[n++] = "--xattrs";
+	argv[n++] = "-cf";
+	argv[n++] = part;
+	argv[n++] = "-C";
+	argv[n++] = dir;
+	argv[n++] = SNAP_INFO;
+	if (s.scope & SCOPE_SYSTEM) {
+		argv[n++] = "system.manifest";
+		argv[n++] = "system";
+	}
+	if (s.scope & SCOPE_HOME) {
+		argv[n++] = "home.manifest";
+		argv[n++] = "home";
+	}
+	argv[n] = NULL;
+	if (run_tool(argv) < 0 || chmod(part, 0600) < 0 || rename(part, file) < 0) {
+		unlink(part);
+		return -1;
+	}
+	return 0;
+}
+
+/*
+ * snap import: an archive made by snap export becomes a new snapshot,
+ * marked "imported", once its trees match its manifests and its manifests
+ * match the checksums in its info. bsdtar refuses absolute paths, ".."
+ * and paths through links (it runs without -P).
+ */
+int store_import(const char *file, const char *comment)
+{
+	char tmpname[32], tmpdir[PATH_MAX], path[PATH_MAX], final[PATH_MAX], buf[32];
+	struct snapshot s;
+	int id = next_id();
+
+	if (access(BSDTAR, X_OK) < 0)
+		die("importing needs bsdtar: wh install libarchive");
+	snprintf(tmpname, sizeof(tmpname), ".new-%d", id);
+	store_path(tmpdir, sizeof(tmpdir), tmpname);
+	if (mkdir(tmpdir, 0700) < 0)
+		die("cannot create %s: %s", tmpdir, strerror(errno));
+	/* The info and manifests come first in the archive. */
+	if (run_tool((char *[]){ BSDTAR, "-xqf", (char *)file, "-C", tmpdir, SNAP_INFO, NULL }) < 0)
+		goto bad;
+	path_join(path, sizeof(path), tmpdir, SNAP_INFO);
+	memset(&s, 0, sizeof(s));
+	if (parse_info(path, &s) < 0)
+		goto bad;
+	/* Its scope: the trees it has checksums for. */
+	s.scope = (strlen(s.sum[0]) == 64 ? SCOPE_SYSTEM : 0) |
+		  (strlen(s.sum[1]) == 64 ? SCOPE_HOME : 0);
+	if (!s.scope)
+		goto bad;
+	unlink(path);
+	for (int bit = SCOPE_SYSTEM; bit <= SCOPE_HOME; bit <<= 1)
+		if ((s.scope & bit) && subvol_create(tmpdir, scope_dir(bit)) < 0) {
+			warn("cannot create a subvolume: %s", strerror(errno));
+			goto fail;
+		}
+	if (run_tool((char *[]){ BSDTAR, "-xpf", (char *)file, "--numeric-owner", "--xattrs",
+				 "-C", tmpdir, NULL }) < 0)
+		goto bad;
+	for (int bit = SCOPE_SYSTEM; bit <= SCOPE_HOME; bit <<= 1) {
+		char root[PATH_MAX], manifest[PATH_MAX];
+
+		if (!(s.scope & bit))
+			continue;
+		path_join(root, sizeof(root), tmpdir, scope_dir(bit));
+		manifest_path(manifest, sizeof(manifest), tmpdir, bit);
+		if (!s.sum[scope_index(bit)][0] ||
+		    manifest_verify(root, manifest, s.sum[scope_index(bit)], stderr) < 0) {
+			warn("the archive's %s tree does not match its checksums", scope_name(bit));
+			goto fail;
+		}
+		if (subvol_set_readonly(root) < 0) {
+			warn("cannot make the snapshot read-only: %s", strerror(errno));
+			goto fail;
+		}
+	}
+	s.id = id;
+	s.pinned = 0;
+	snprintf(s.type, sizeof(s.type), "imported");
+	if (comment && *comment) {
+		memset(s.comment, 0, sizeof(s.comment));
+		for (size_t i = 0; i < sizeof(s.comment) - 1 && comment[i]; i++)
+			s.comment[i] = iscntrl((unsigned char)comment[i]) ? ' ' : comment[i];
+	}
+	if (write_info(tmpdir, &s) < 0)
+		goto fail;
+	store_entry_path(final, sizeof(final), id, 0);
+	if (rename(tmpdir, final) < 0)
+		goto fail;
+	snprintf(buf, sizeof(buf), "%d\n", id);
+	write_store_file(STORE_LASTID, buf);
+	/* Sealed as it was imported: later changes to it show. */
+	seal_snapshot(&s);
+	menu_update();
+	sync();
+	return id;
+
+bad:
+	warn("%s is not a snapshot archive made by snap export", file);
+fail:
+	for (int bit = SCOPE_SYSTEM; bit <= SCOPE_HOME; bit <<= 1)
+		subvol_delete(tmpdir, scope_dir(bit));
+	delete_dir(tmpdir);
+	return -1;
 }

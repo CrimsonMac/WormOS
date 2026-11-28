@@ -9,7 +9,7 @@ BINDIR  ?= $(PREFIX)/bin
 MONO_CFLAGS ?=
 MONO_LIBS   ?= -lmonocypher
 
-OBJS = snap.o store.o btrfs.o diff.o restore.o boot.o stage.o menu.o status.o manifest.o seal.o sha256.o util.o
+OBJS = snap.o store.o btrfs.o diff.o restore.o boot.o stage.o menu.o status.o manifest.o seal.o schedule.o sha256.o util.o
 
 all: snap
 

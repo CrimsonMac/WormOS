@@ -18,6 +18,7 @@
  *     rewind ID SCOPE          (password) go back; the system restarts
  *     restore ID PATH          (password) bring back one file or folder
  *     auto on|off              (password) snapshots before package changes
+ *     timer hourly|daily|off   (password) timed snapshots
  *
  * Every argument is checked, the environment is cleared, and snap runs
  * as root with an argument list built here.
@@ -154,6 +155,13 @@ int main(int argc, char **argv)
 		   (!strcmp(argv[2], "on") || !strcmp(argv[2], "off"))) {
 		need_password();
 		args[n++] = "auto";
+		args[n++] = argv[2];
+	} else if (!strcmp(cmd, "timer") && argc == 3 &&
+		   (!strcmp(argv[2], "hourly") || !strcmp(argv[2], "daily") ||
+		    !strcmp(argv[2], "off"))) {
+		need_password();
+		args[n++] = "auto";
+		args[n++] = "timer";
 		args[n++] = argv[2];
 	} else {
 		fail(2, "usage: see the comment at the top of snapshots.c");

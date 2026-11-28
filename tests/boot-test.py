@@ -728,6 +728,26 @@ MENU_CHECKS = [
     ("firewall after reboot", "worm fw status", r"^Firewall: active(.|\n)*^\s+5353/udp$"),
 ]
 
+# Timed snapshots, exports and imports (after the menu checks, which count
+# on the newest system snapshot being 3).
+SCHEDULE_CHECKS = [
+    ("timed snapshots, one per hour",
+     "snap auto timer hourly; grep -E '^(timer|schedule) ' /run/snap-status; snap timer-tick; "
+     "snap timer-tick; snap list | grep -c 'timer  *Hourly snapshot$'",
+     r"Timed snapshots: hourly(.|\n)*^timer = hourly\nschedule = on\n1$"),
+    ("the timer service runs", "pgrep -f '[u]sr/lib/snap/timer' > /dev/null && echo running",
+     r"^running$"),
+    ("export and import a snapshot",
+     "i=$(snap now --home -c small | sed 's/Snapshot \\([0-9]*\\).*/\\1/'); snap export $i /var/tmp; "
+     "snap import /var/tmp/wormos-snapshot-$i.tar.zst -c back | tail -1; "
+     "j=$(snap list | awk '/imported/ { print $1 }'); snap verify $j; rm /var/tmp/wormos-snapshot-$i.tar.zst",
+     r"Snapshot \d+ exported(.|\n)*Imported as snapshot \d+(.|\n)*\(seal\): ok\n.*\(home\): ok$"),
+    ("exported to a drive when one is there",
+     "mkdir -p /mnt/backup && mount -o subvol=@var $(findmnt -no SOURCE / | sed 's/\\[.*//') /mnt/backup && "
+     "snap auto export /mnt/backup | tail -1 && snap timer-tick && ls /mnt/backup | grep -c '^wormos-snapshot-[0-9]*\\.tar\\.zst$'; "
+     "rm -f /mnt/backup/wormos-snapshot-*; umount /mnt/backup; snap auto export off; snap auto timer off",
+     r"whenever a drive is mounted there\n1\nExports turned off\nTimed snapshots turned off$"),
+]
 
 # Package manager and worm checks. {repo} is the repository URL.
 WORM_CHECKS = [
@@ -1056,6 +1076,7 @@ def main():
             con.expect("# ", 60)
             con.send("exec /bin/sh\n")  # root logs in to zsh; tests drive plain sh
             run_checks(con, MENU_CHECKS)
+            run_checks(con, SCHEDULE_CHECKS)
 
             run_checks(con, worm_checks)
             # Nothing running uses them: removed from the running system too.

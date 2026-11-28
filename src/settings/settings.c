@@ -1534,7 +1534,7 @@ static void build_time(void)
 
 /* ==== Network and privacy ==== */
 
-static GtkWidget *net_group, *fw_label, *anon_switch, *auto_switch;
+static GtkWidget *net_group, *fw_label, *anon_switch, *auto_switch, *timer_dropdown;
 static gboolean privacy_filling;
 
 static void net_fill(void)
@@ -1600,6 +1600,18 @@ static void net_fill(void)
 	g_hash_table_unref(seen);
 }
 
+/* The timed snapshots setting from /run/snap-status: 0 off, 1 hourly, 2 daily. */
+static guint snap_timer(void)
+{
+	char *text = NULL;
+	guint which = 0;
+
+	if (g_file_get_contents("/run/snap-status", &text, NULL, NULL))
+		which = strstr(text, "\ntimer = hourly") ? 1 : strstr(text, "\ntimer = daily") ? 2 : 0;
+	g_free(text);
+	return which;
+}
+
 static gboolean snap_auto_on(void)
 {
 	char *text = NULL;
@@ -1635,6 +1647,7 @@ static void privacy_fill(void)
 	gtk_switch_set_active(GTK_SWITCH(anon_switch), g_file_test("/etc/worm/anon",
 								  G_FILE_TEST_EXISTS));
 	gtk_switch_set_active(GTK_SWITCH(auto_switch), snap_auto_on());
+	gtk_drop_down_set_selected(GTK_DROP_DOWN(timer_dropdown), snap_timer());
 	privacy_filling = FALSE;
 	net_fill();
 	proc = g_subprocess_new(G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_SILENCE,
@@ -1674,6 +1687,19 @@ static void auto_changed(GtkSwitch *s, GParamSpec *p, gpointer data)
 	      privacy_done, NULL, SNAP_HELPER, "auto", on ? "on" : "off", NULL);
 }
 
+static void timer_changed(GtkDropDown *d, GParamSpec *p, gpointer data)
+{
+	static const char *const words[] = { "off", "hourly", "daily" };
+	guint which = gtk_drop_down_get_selected(d);
+
+	(void)p;
+	(void)data;
+	if (privacy_filling || which >= G_N_ELEMENTS(words))
+		return;
+	admin(which ? "Take timed snapshots" : "Turn timed snapshots off", TRUE, privacy_done,
+	      NULL, SNAP_HELPER, "timer", words[which], NULL);
+}
+
 static void privacy_mapped(GtkWidget *w, gpointer data)
 {
 	(void)w;
@@ -1696,6 +1722,13 @@ static void build_privacy(void)
 	row_new(group, "Automatic snapshots", "A snapshot before every package change, so "
 		"wh undo can go back.", auto_switch, NULL);
 	lock_if_no_root(auto_switch);
+	timer_dropdown = gtk_drop_down_new_from_strings((const char *const[]){ "Off", "Every hour",
+										"Every day", NULL });
+	gtk_widget_set_valign(timer_dropdown, GTK_ALIGN_CENTER);
+	g_signal_connect(timer_dropdown, "notify::selected", G_CALLBACK(timer_changed), NULL);
+	row_new(group, "Timed snapshots", "The system and your files, on a schedule; the "
+		"newest 24 hourly or 14 daily ones are kept.", timer_dropdown, NULL);
+	lock_if_no_root(timer_dropdown);
 	group = group_new(page, "Firewall", NULL);
 	fw_label = gtk_label_new("…");
 	gtk_label_set_xalign(GTK_LABEL(fw_label), 0);

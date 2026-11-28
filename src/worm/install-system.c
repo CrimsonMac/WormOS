@@ -33,9 +33,13 @@
  * opened again there without asking. The system image is copied into the
  * opened device, /dev/mapper/wormos-install.
  *
- * The root filesystem has the same UUID as the live system's (the boot
- * menu on the EFI partition names it). The kernel mounts such a copy
- * under a temporary ID for the resize (btrfs temp-fsid).
+ * The root filesystem starts with the same UUID as the live system's.
+ * The kernel mounts such a copy under a temporary ID for the resize
+ * (btrfs temp-fsid); afterwards it gets a UUID of its own (since 1.20), so
+ * two WormOS disks in one machine are never mistaken for each other: the
+ * superblocks get a new fsid and keep the old one as the metadata UUID
+ * (btrfs's METADATA_UUID feature, what btrfstune -m does), and the boot
+ * menu on the EFI partition is changed to name the new one.
  */
 
 #define _GNU_SOURCE
@@ -336,6 +340,109 @@ static uint64_t write_gpt(int fd, uint64_t sectors, const unsigned char *head)
 	header(h, last, 1, 34, last_usable, disk, last - 32, ecrc);
 	pwrite_all(fd, h, SECTOR, last * SECTOR);
 	return root_end - ROOT_START + 1;
+}
+
+/* ---- a filesystem UUID of its own ---- */
+
+#define SB_CSUM       0x00
+#define SB_FSID       0x20
+#define SB_MAGIC      0x40
+#define SB_INCOMPAT   0xbc
+#define SB_CSUM_TYPE  0xc4
+#define SB_META_UUID  0x23b
+#define SB_SIZE       4096
+#define INCOMPAT_METADATA_UUID 0x400ULL
+
+static uint32_t crc32c(const uint8_t *p, size_t n)
+{
+	uint32_t crc = ~0U;
+
+	while (n--) {
+		crc ^= *p++;
+		for (int k = 0; k < 8; k++)
+			crc = crc & 1 ? (crc >> 1) ^ 0x82f63b78U : crc >> 1;
+	}
+	return ~crc;
+}
+
+static void format_uuid(const uint8_t *u, char out[37])
+{
+	snprintf(out, 37, "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+		 u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7], u[8], u[9], u[10], u[11],
+		 u[12], u[13], u[14], u[15]);
+}
+
+/*
+ * Give the btrfs at off (len bytes) of fd a new fsid; old and new get the
+ * UUIDs as text. Every superblock copy within the device is changed.
+ */
+static void new_fsid(int fd, uint64_t off, uint64_t len, char old[37], char new[37])
+{
+	static const uint64_t copies[] = { 64ULL << 10, 64ULL << 20, 256ULL << 30 };
+	uint8_t sb[SB_SIZE], uuid[16];
+	uint64_t incompat;
+	uint32_t crc;
+
+	if (getrandom(uuid, sizeof(uuid), 0) != (ssize_t)sizeof(uuid))
+		fail("cannot make a new filesystem ID: %s", strerror(errno));
+	uuid[6] = (uuid[6] & 0x0f) | 0x40;
+	uuid[8] = (uuid[8] & 0x3f) | 0x80;
+	format_uuid(uuid, new);
+	old[0] = '\0';
+	for (size_t i = 0; i < sizeof(copies) / sizeof(copies[0]); i++) {
+		if (copies[i] + SB_SIZE > len)
+			break;
+		if (pread(fd, sb, SB_SIZE, off + copies[i]) != SB_SIZE)
+			fail("cannot read the new system's filesystem: %s", strerror(errno));
+		if (memcmp(sb + SB_MAGIC, "_BHRfS_M", 8)) {
+			if (i == 0)
+				fail("the new system's filesystem is not btrfs");
+			continue;   /* this copy was never written */
+		}
+		if (sb[SB_CSUM_TYPE] != 0 || sb[SB_CSUM_TYPE + 1] != 0)
+			fail("the new system's filesystem uses an unexpected checksum");
+		memcpy(&incompat, sb + SB_INCOMPAT, 8);
+		if (!(incompat & INCOMPAT_METADATA_UUID)) {
+			memcpy(sb + SB_META_UUID, sb + SB_FSID, 16);
+			incompat |= INCOMPAT_METADATA_UUID;
+			memcpy(sb + SB_INCOMPAT, &incompat, 8);
+		}
+		if (i == 0)
+			format_uuid(sb + SB_FSID, old);
+		memcpy(sb + SB_FSID, uuid, 16);
+		crc = crc32c(sb + SB_FSID, SB_SIZE - SB_FSID);
+		memset(sb + SB_CSUM, 0, 32);
+		memcpy(sb + SB_CSUM, &crc, 4);
+		pwrite_all(fd, sb, SB_SIZE, off + copies[i]);
+	}
+	if (fsync(fd) < 0)
+		fail("cannot write to the disk: %s", strerror(errno));
+}
+
+/* Replace every old with new (same length) in len bytes at off of fd. */
+static int replace_on_disk(int fd, uint64_t off, uint64_t len, const char *old, const char *new)
+{
+	enum { CHUNK = 1 << 20 };
+	size_t n = strlen(old);
+	char *buf = malloc(CHUNK + n);
+	int found = 0;
+
+	if (!buf)
+		fail("out of memory");
+	for (uint64_t pos = 0; pos < len; pos += CHUNK) {
+		size_t want = len - pos < CHUNK + n ? (size_t)(len - pos) : CHUNK + n;
+		ssize_t got = pread(fd, buf, want, off + pos);
+
+		if (got <= 0)
+			break;
+		for (size_t i = 0; i + n <= (size_t)got && i < CHUNK; i++)
+			if (!memcmp(buf + i, old, n)) {
+				pwrite_all(fd, new, n, off + pos + i);
+				found++;
+			}
+	}
+	free(buf);
+	return found;
 }
 
 /* ---- copying ---- */
@@ -662,6 +769,27 @@ static int cmd_install(const char *name, const char *passphrase)
 	close(top);
 	if (umount(TARGET_DIR) < 0)
 		fail("cannot unmount the new system: %s", strerror(errno));
+	/* A filesystem UUID of its own, and the boot menu naming it. */
+	{
+		char old_uuid[37], new_uuid[37];
+		int dev_fd, root_fd;
+		uint64_t root_len;
+
+		if ((root_fd = open(passphrase ? "/dev/mapper/" CRYPT_NAME : part,
+				    O_RDWR | O_CLOEXEC)) < 0 ||
+		    ioctl(root_fd, BLKGETSIZE64, &root_len) < 0)
+			fail("cannot open the new system's filesystem: %s", strerror(errno));
+		new_fsid(root_fd, 0, root_len, old_uuid, new_uuid);
+		close(root_fd);
+		if ((dev_fd = open(dev, O_RDWR | O_CLOEXEC)) < 0)
+			fail("cannot open %s: %s", dev, strerror(errno));
+		if (replace_on_disk(dev_fd, ESP_START * SECTOR, ESP_SIZE * SECTOR, old_uuid,
+				    new_uuid) < 1)
+			fail("the boot menu does not name the system's filesystem");
+		if (fsync(dev_fd) < 0)
+			fail("cannot write to the disk: %s", strerror(errno));
+		close(dev_fd);
+	}
 	if (passphrase) {
 		close(keyfd);
 		run_with_input((char *[]){ CRYPTSETUP, "close", CRYPT_NAME, NULL }, NULL, 0);

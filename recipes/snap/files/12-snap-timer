@@ -1,0 +1,3 @@
+# Timed snapshots and exports (snap auto timer / snap auto export).
+type = respawn
+exec = /usr/lib/snap/timer

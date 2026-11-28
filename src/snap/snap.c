@@ -53,7 +53,13 @@ static void usage(FILE *out)
 "  comment ID TEXT          set a snapshot's comment\n"
 "  verify [ID...]           check snapshots have not been tampered with\n"
 "  seal                     the seal chain: its state and first key's fingerprint\n"
+"  export ID FILE|FOLDER    save a snapshot as one archive (.tar.zst)\n"
+"  import FILE [-c COMMENT] add a snapshot from such an archive\n"
 "  auto [on|off]            snapshots before package changes (default on)\n"
+"  auto timer hourly|daily|off [--keep N]\n"
+"                           timed snapshots of the system and /home\n"
+"  auto export DIR [daily|weekly] | off\n"
+"                           export the newest snapshot to a drive mounted at DIR\n"
 "  status                   a summary (also kept in /run/snap-status)\n"
 "  stage begin|commit|abort|keep|status\n"
 "                           staged system changes, used by wh\n"
@@ -583,8 +589,61 @@ static int cmd_seal(int argc, char **argv)
 static int cmd_auto(int argc, char **argv)
 {
 	if (argc == 1) {
+		char timer[16] = "off", keep[16] = "", dest[PATH_MAX] = "", every[16] = "daily";
+
 		open_store();
+		config_get("timer", timer, sizeof(timer));
+		config_get("timer-keep", keep, sizeof(keep));
+		config_get("export-to", dest, sizeof(dest));
+		config_get("export-every", every, sizeof(every));
 		printf("Automatic snapshots are %s\n", config_auto() ? "on" : "off");
+		printf("Timed snapshots: %s%s%s%s\n", timer, keep[0] ? " (keeping " : "", keep,
+		       keep[0] ? ")" : "");
+		if (dest[0])
+			printf("Exports: %s to %s (while a drive is mounted there)\n", every, dest);
+		else
+			printf("Exports: off\n");
+		return 0;
+	}
+	if (argc >= 3 && strcmp(argv[1], "timer") == 0) {
+		const char *when = argv[2];
+
+		if (strcmp(when, "hourly") && strcmp(when, "daily") && strcmp(when, "off"))
+			die("usage: snap auto timer hourly|daily|off [--keep N]");
+		if (argc != 3 && !(argc == 5 && !strcmp(argv[3], "--keep") && atoi(argv[4]) > 0))
+			die("usage: snap auto timer hourly|daily|off [--keep N]");
+		open_store();
+		store_lock();
+		config_set("timer", when);
+		if (argc == 5)
+			config_set("timer-keep", argv[4]);
+		status_update();
+		if (!strcmp(when, "off"))
+			printf("Timed snapshots turned off\n");
+		else
+			printf("Timed snapshots: %s, of the system and /home\n", when);
+		return 0;
+	}
+	if (argc >= 3 && strcmp(argv[1], "export") == 0) {
+		char real[PATH_MAX];
+
+		open_store();
+		store_lock();
+		if (argc == 3 && !strcmp(argv[2], "off")) {
+			config_set("export-to", NULL);
+			status_update();
+			printf("Exports turned off\n");
+			return 0;
+		}
+		if (argc > 4 || (argc == 4 && strcmp(argv[3], "daily") && strcmp(argv[3], "weekly")))
+			die("usage: snap auto export DIR [daily|weekly] | off");
+		if (argv[2][0] != '/' || !realpath(argv[2], real))
+			die("%s: give an existing folder by its full path", argv[2]);
+		config_set("export-to", real);
+		config_set("export-every", argc == 4 ? argv[3] : "daily");
+		status_update();
+		printf("The newest system snapshot is exported %s to %s, whenever a drive is "
+		       "mounted there\n", argc == 4 ? argv[3] : "daily", real);
 		return 0;
 	}
 	if (argc == 2 && (!strcmp(argv[1], "on") || !strcmp(argv[1], "off"))) {
@@ -595,9 +654,56 @@ static int cmd_auto(int argc, char **argv)
 		printf("Automatic snapshots turned %s\n", argv[1]);
 		return 0;
 	}
-	if (argc >= 2 && strcmp(argv[1], "timer") == 0)
-		die("timed snapshots are not available yet");
-	die("usage: snap auto [on|off]");
+	die("usage: snap auto [on|off | timer hourly|daily|off | export DIR|off]");
+}
+
+static int cmd_export(int argc, char **argv)
+{
+	char file[PATH_MAX + 64];
+	struct stat st;
+	int id;
+
+	if (argc != 3)
+		die("usage: snap export ID FILE|FOLDER");
+	id = parse_id_arg(argv[1]);
+	if (stat(argv[2], &st) == 0 && S_ISDIR(st.st_mode))
+		snprintf(file, sizeof(file), "%s/wormos-snapshot-%d.tar.zst", argv[2], id);
+	else
+		snprintf(file, sizeof(file), "%s", argv[2]);
+	open_store();
+	store_lock();
+	if (store_export(id, file) < 0)
+		die("exporting snapshot %d failed", id);
+	printf("Snapshot %d exported to %s\n", id, file);
+	return 0;
+}
+
+static int cmd_import(int argc, char **argv)
+{
+	const char *comment = NULL;
+	int id;
+
+	if (argc == 4 && !strcmp(argv[2], "-c"))
+		comment = argv[3];
+	else if (argc != 2)
+		die("usage: snap import FILE [-c COMMENT]");
+	open_store();
+	store_lock();
+	if ((id = store_import(argv[1], comment)) < 0)
+		die("importing %s failed", argv[1]);
+	status_update();
+	printf("Imported as snapshot %d\n", id);
+	return 0;
+}
+
+static int cmd_timer_tick(int argc, char **argv)
+{
+	(void)argv;
+	if (argc != 1)
+		die("usage: snap timer-tick");
+	open_store();
+	store_lock();
+	return timer_tick();
 }
 
 static int cmd_stage(int argc, char **argv)
@@ -697,6 +803,9 @@ static const struct command {
 	{ "comment", cmd_comment },
 	{ "verify",  cmd_verify },
 	{ "seal",    cmd_seal },
+	{ "export",  cmd_export },
+	{ "import",  cmd_import },
+	{ "timer-tick", cmd_timer_tick },
 	{ "auto",    cmd_auto },
 	{ "stage",   cmd_stage },
 	{ "status",  cmd_status },
