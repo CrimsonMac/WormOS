@@ -83,7 +83,7 @@ AFTER_CHECKS = [
 
 # After the user removes a program the edition recommends.
 DECLINED_CHECKS = [
-    ("removed program stays removed", "command -v btop || echo gone; "
+    ("removed program stays removed", "hash -r; test -e /usr/bin/btop || echo gone; "
      "wh --repo {repo} upgrade", r"^gone\n(.|\n)*Everything is up to date\.$"),
     ("remembered as declined", "cat /usr/lib/wh/declined", r"^btop$"),
 ]
