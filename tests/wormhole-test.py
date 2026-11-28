@@ -83,7 +83,7 @@ CHECKS = [
      "whc debian sh -c \"ls ~/here 2>&1; ls ~/Documents; ls /home | wc -l; touch ~/inside\"; "
      "ls ~/.local/share/wormholes/debian; ls -d ~/Workspace; test -e ~/inside || echo kept-out; "
      "rm ~/.config/wormos/wormholes'",
-     r"No such file(.|\n)*^doc\n1\n(.|\n)*^inside\n/home/tester/Workspace\nkept-out$"),
+     r"No such file(.|\n)*^doc\n1\n(.|\n)*\binside\b(.|\n)*^/home/tester/Workspace\nkept-out$"),
     ("host network shared", "whc debian cat /etc/resolv.conf | grep -c nameserver", r"^[1-9]"),
     # Firmware updates: Debian's fwupd, installed on first use, sees the
     # machine through the EFI variables and partition (QEMU has few devices).
@@ -102,7 +102,7 @@ CHECKS = [
      "/usr/lib/worm/runtime-dirs; su tester -c 'export XDG_RUNTIME_DIR=/run/user/1000 "
      "WLR_BACKENDS=headless WLR_RENDERER=pixman; labwc > /tmp/labwc.log 2>&1 & "
      # script gives wev a terminal, so its output is not lost in a buffer.
-     "sleep 5; WAYLAND_DISPLAY=wayland-0 timeout 10 whc debian script -qfc wev /tmp/wev.log "
+     "sleep 5; WAYLAND_DISPLAY=wayland-0 timeout --foreground 10 whc debian script -qfc wev /tmp/wev.log "
      "> /dev/null 2>&1; "
      "grep -c xdg_toplevel /tmp/wev.log'; kill $(pidof labwc)", r"^[1-9]"),
     # X11 programs from a wormhole open on the desktop through Xwayland,
@@ -273,7 +273,11 @@ def main():
             con.send("exec /bin/sh\n")
             out += con.run("command -v figlet || echo gone; "
                            "whc debian dpkg -s figlet > /dev/null 2>&1 || echo not-in-wormhole; "
-                           "whc debian true && echo wormhole-works")
+                           "whc debian true && echo wormhole-works; snap list | tail -4; "
+                           "mkdir -p /tmp/top; mount -t btrfs -o subvolid=5 $(readlink -f /dev/wormos-root) /tmp/top; "
+                           "for d in /tmp/top/@snapshots/[0-9]*; do echo \"$d $(ls $d/wormholes 2>/dev/null | tr '\\n' ' ') "
+                           "$(ls $d/wormholes/debian/var/lib/dpkg/info 2>/dev/null | grep -c figlet)\"; done | tail -4; "
+                           "ls -a /tmp/top/@wormholes; umount /tmp/top")
             ok = ("rewound system to snapshot" in out and "gone" in out and
                   "not-in-wormhole" in out and "wormhole-works" in out)
             passed += ok
