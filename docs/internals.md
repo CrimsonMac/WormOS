@@ -941,12 +941,17 @@ initramfs inside LUKS.
   a terminal as input (pipes, or a background job, which may not set raw
   mode or flush without SIGTTOU), input comes from `/dev/null` if it was a
   terminal, and output to a terminal goes through pipes that bh relays.
-  Output is filtered on the way: operating system commands (OSC) pass
+  Output is filtered on the way: operating system commands (OSC, begun
+  by ESC ], or by the 8-bit control raw (0x9d) or as UTF-8 (C2 9D)) pass
   only for titles (0, 1, 2), colours (4, 10, 11, 12, 104, 110 to 112),
   the working directory (7) and prompt marks (133), or without a number;
   the rest (52 clipboard, 8 links that open on the host when clicked, 9,
   99 and 777 desktop notifications, terminal extensions) are dropped up
-  to their terminator. Everything else passes. At the end, input the terminal sent meanwhile
+  to their terminator. Since 1.20 an ESC followed by another escape, and
+  an OSC header followed straight away by an escape, are dropped too:
+  before, they passed and a sequence dropped right after them left them
+  open, so the text after it completed them (`ESC ESC ]9 BEL ]52;c;...`
+  reached the terminal as OSC 52; found by fuzzing). Everything else passes. At the end, input the terminal sent meanwhile
   (answers to queries from inside) is flushed so the host shell never
   reads it.
 - Why no overlay of `/`: overlayfs clones its lower layer, and the kernel

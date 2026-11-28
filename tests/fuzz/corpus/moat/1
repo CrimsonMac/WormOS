@@ -1,0 +1,1 @@
+{"settings":[{"bridges":{"type":"obfs4","source":"bridgedb","bridge_strings":["obfs4 192.0.2.1:443 0123456789ABCDEF0123456789ABCDEF01234567 cert=ab\/cd+ef iat-mode=0"]}},{"bridges":{"type":"snowflake","source":"builtin"}}]}

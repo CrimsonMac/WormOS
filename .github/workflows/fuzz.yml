@@ -1,0 +1,49 @@
+# The parsers that read untrusted or root-only input, fuzzed with libFuzzer
+# (tests/fuzz): one minute per target on every push to main, half an hour
+# per target every week. Inputs that crash a target are uploaded.
+#
+# Actions are pinned to commits (Dependabot keeps them current).
+name: Fuzz
+
+on:
+  push:
+    branches: [main]
+    paths: [src/**, tests/fuzz/**, scripts/ci-fuzz.sh, .github/workflows/fuzz.yml]
+  schedule:
+    - cron: '17 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-24.04
+    container: debian:testing
+    timeout-minutes: 180
+    steps:
+      - name: Install clang
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential clang curl ca-certificates make
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fuzz
+        env:
+          FUZZ_SECONDS: ${{ github.event_name == 'schedule' && 1800 || 60 }}
+        run: scripts/ci-fuzz.sh
+      - name: Keep crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-crashes
+          path: |
+            tests/fuzz/crash-*
+            tests/fuzz/*.log
+          if-no-files-found: ignore

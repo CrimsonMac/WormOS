@@ -151,6 +151,18 @@ GitHub Actions runs, on every push and pull request (`.github/workflows/ci.yml`)
   UndefinedBehaviorSanitizer (`SANITIZE=1`). Neither script needs the
   toolchain: run them before committing.
 
+`fuzz.yml` fuzzes the parsers that read untrusted or root-only input with
+libFuzzer, AddressSanitizer and UndefinedBehaviorSanitizer (`tests/fuzz`,
+`scripts/ci-fuzz.sh`): bh's terminal output filter (with an oracle that
+reads the output as a terminal would, so any refused OSC reaching it is a
+failure), wh's package index and package metadata, snap's seal chain and
+manifests, and the answers of Tor's circumvention service (`worm anon
+bridges auto`). A minute per target on every push to main, half an hour
+per target every week; crashing inputs are uploaded. Locally (clang):
+`scripts/ci-fuzz.sh`, or `make -C tests/fuzz run SECONDS=N` with Monocypher
+installed. Seeds live in `tests/fuzz/corpus/NAME`, including the inputs of
+bugs fuzzing found, as regression tests.
+
 `codeql.yml` runs CodeQL's security queries over the C programs and the
 Python test harness on pushes, pull requests and every week (results under
 Security, Code scanning; `CI_IN_PLACE=1` builds in the checkout so the

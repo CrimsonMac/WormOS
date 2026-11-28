@@ -10,8 +10,9 @@
  * Output is filtered on the way: of the operating system commands (OSC),
  * only harmless ones pass (titles, colours, prompt marks; see
  * osc_allowed): OSC 52 could set (and on some terminals read) the host's
- * clipboard, OSC 777 show desktop notifications. Everything else is
- * passed through unchanged. When the session is gone, input the terminal
+ * clipboard, OSC 777 show desktop notifications. An OSC starts with ESC ]
+ * or with the 8-bit control OSC, raw (0x9d) or as UTF-8 (C2 9D), which
+ * some terminals also act on. Everything else is passed through unchanged. When the session is gone, input the terminal
  * sent meanwhile (answers to queries a program inside made) is
  * discarded, so it cannot reach the host shell as typed commands.
  */
@@ -32,13 +33,15 @@
 /* Longest OSC sequence that is dropped before giving up on it. */
 #define DROP_MAX (1u << 20)
 
-enum { F_TEXT, F_ESC, F_OSC_NUM, F_DROP, F_DROP_ESC };
+enum { F_TEXT, F_ESC, F_C2, F_OSC_NUM, F_DROP, F_DROP_ESC };
 
 struct filter {
 	int state;
 	char num[8];
 	unsigned len;
 	unsigned long dropped;
+	char intro[2];          /* how the OSC began: ESC ], 0x9d or C2 9D */
+	unsigned intro_len;
 };
 
 static int wake[2] = { -1, -1 };
@@ -120,33 +123,71 @@ static void filter_write(int fd, struct filter *f, const char *data, size_t n)
 again:
 		switch (f->state) {
 		case F_TEXT:
-			if (c == 0x1b)
+			if (c == 0x1b) {
 				f->state = F_ESC;
-			else
+			} else if (c == 0xc2) {
+				f->state = F_C2;
+			} else if (c == 0x9d) {
+				f->state = F_OSC_NUM;
+				f->len = 0;
+				f->intro[0] = (char)0x9d;
+				f->intro_len = 1;
+			} else {
 				out[o++] = c;
+			}
 			break;
 		case F_ESC:
 			if (c == ']') {
 				f->state = F_OSC_NUM;
 				f->len = 0;
+				f->intro[0] = 0x1b;
+				f->intro[1] = ']';
+				f->intro_len = 2;
 				break;
 			}
-			out[o++] = 0x1b;
-			if (c != 0x1b) {
-				out[o++] = c;
+			/* ESC then an introducer or another ESC: terminals drop the
+			 * first ESC, and so does this, so it can never join text that
+			 * follows a dropped sequence into a new one (ESC + "]52;..."). */
+			if (c == 0x1b)
+				break;
+			if (c == 0xc2 || c == 0x9d) {
 				f->state = F_TEXT;
+				goto again;
 			}
+			out[o++] = 0x1b;
+			out[o++] = c;
+			f->state = F_TEXT;
 			break;
+		case F_C2:
+			if (c == 0x9d) {
+				f->state = F_OSC_NUM;
+				f->len = 0;
+				f->intro[0] = (char)0xc2;
+				f->intro[1] = (char)0x9d;
+				f->intro_len = 2;
+				break;
+			}
+			out[o++] = (char)0xc2;
+			f->state = F_TEXT;
+			goto again;
 		case F_OSC_NUM:
 			if (c >= '0' && c <= '9' && f->len < sizeof(f->num)) {
 				f->num[f->len++] = c;
 				break;
 			}
+			/* Another escape right after the header: terminals abort
+			 * the header, and so does this, so a sequence dropped next
+			 * can never leave it open for the text after it ("ESC ]" +
+			 * dropped + "52;..." would read as OSC 52). */
+			if (c == 0x1b || c == 0xc2 || c == 0x9d) {
+				f->state = F_TEXT;
+				goto again;
+			}
 			/* No number: not an OSC terminals act on (the console's
 			 * palette sequence has no terminator to drop up to). */
 			if (f->len == 0 || osc_allowed(f->num, f->len)) {
-				out[o++] = 0x1b;
-				out[o++] = ']';
+				memcpy(out + o, f->intro, f->intro_len);
+				o += f->intro_len;
 				memcpy(out + o, f->num, f->len);
 				o += f->len;
 				f->state = F_TEXT;

@@ -224,6 +224,14 @@ BLACKHOLE_CHECKS = [
     ("notification and link sequences dropped",
      "bh open t1 -- printf 'a\\033]777;notify;x;y\\007b\\033]8;;http://x\\033\\\\c\\n' | od -An -c | tr -s ' '",
      r"^\s*a b c \\n\s*$"),
+    # Found by fuzzing (tests/fuzz/relay.c): a dropped sequence must not
+    # leave an ESC or a header behind for the text after it to complete.
+    ("dropped sequences leave nothing open",
+     "bh open t1 -- printf 'a\\033\\033]9\\007]52;c;X\\007b\\033]\\033]9\\007]52;c;X\\007c' | od -An -c | tr -s ' ' | tr -d '\\n'",
+     r"^\s*a \] 5 2 ; c ; X \\a b \] 5 2 ; c ; X \\a c\s*$"),
+    ("8-bit clipboard sequences dropped",
+     "bh open t1 -- printf 'a\\302\\23552;c;X\\007b\\23552;c;X\\007c\\n' | od -An -c | tr -s ' '",
+     r"^\s*a b c \\n\s*$"),
     ("other sequences kept", "bh open t1 -- printf '\\033]0;t\\007' | od -An -c | tr -s ' '",
      r"^\s*033 \] 0 ; t \\a\s*$"),
     ("no inherited descriptors",
