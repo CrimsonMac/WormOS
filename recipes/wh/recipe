@@ -1,6 +1,6 @@
 name=wh
 version=0.1.0
-release=23
+release=24
 description="WormOS package manager"
 depends=(glibc zstd curl snap gnupg wormhole-keyrings)
 # Builds src/wh, which also uses sources from src/snap.
@@ -13,6 +13,7 @@ build() {
 package() {
 	make -C wh DESTDIR="$pkgdir" install
 	install -Dm644 "$WORMOS_ROOT/keys/core.pub" "$pkgdir/usr/share/wh/keys/core.pub"
+	install -Dm644 "$recipedir/files/12-wh-exports" "$pkgdir/etc/worm/services/12-wh-exports"
 	install -Dm644 /dev/stdin "$pkgdir/etc/wh/repo" <<-END
 	# The WormOS core package repository.
 	https://github.com/CrimsonMac/wormos-packages/releases/download/core/

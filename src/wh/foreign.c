@@ -1588,19 +1588,158 @@ static void mime_cache(void)
 	run((char *[]){ "/usr/lib/wh/mime-cache", EXPORT_SHARE "/applications", NULL }, NULL, 0);
 }
 
+/*
+ * Records also live inside the wormhole (WORMHOLE/var/lib/wh-export/PKG),
+ * so they go back with it when a snapshot is rewound; wh sync-exports
+ * then puts the system's records and exports in line (records and
+ * exports are on /var, which snapshots leave out).
+ */
+#define WORMHOLE_RECORDS "var/lib/wh-export"
+
+static void record_copy_path(char *out, size_t len, const char *source, const char *pkg)
+{
+	snprintf(out, len, "%s/%s/%s/%s", WORMHOLES, source, WORMHOLE_RECORDS, pkg);
+}
+
+static void record_copy(const char *source, const char *pkg)
+{
+	char dir[PATH_MAX], from[PATH_MAX], to[PATH_MAX + 64], buf[4096];
+	FILE *in, *out;
+	size_t n;
+
+	snprintf(dir, sizeof(dir), "%s/%s/%s", WORMHOLES, source, WORMHOLE_RECORDS);
+	mkdirs_at(AT_FDCWD, dir, 0755);
+	snprintf(from, sizeof(from), "%s/%s", FOREIGN_DB, pkg);
+	record_copy_path(to, sizeof(to), source, pkg);
+	if (!(in = fopen(from, "re")))
+		return;
+	if ((out = fopen(to, "we"))) {
+		while ((n = fread(buf, 1, sizeof(buf), in)) > 0)
+			fwrite(buf, 1, n, out);
+		fclose(out);
+	}
+	fclose(in);
+}
+
 static void unexport(const char *pkg)
 {
-	char record[PATH_MAX], line[PATH_MAX + 16], path[PATH_MAX];
+	char record[PATH_MAX], line[PATH_MAX + 16], path[PATH_MAX], source[32] = "";
 	FILE *f;
 
 	snprintf(record, sizeof(record), "%s/%s", FOREIGN_DB, pkg);
 	if (!(f = fopen(record, "re")))
 		return;
-	while (fgets(line, sizeof(line), f))
+	while (fgets(line, sizeof(line), f)) {
 		if (sscanf(line, "export = %4095s", path) == 1 && exported_path(path))
 			unlink(path);
+		sscanf(line, "source = %31s", source);
+	}
 	fclose(f);
 	unlink(record);
+	if (source[0] && !strchr(source, '/') && source[0] != '.') {
+		char copy[PATH_MAX + 64];
+
+		record_copy_path(copy, sizeof(copy), source, pkg);
+		unlink(copy);
+	}
+}
+
+/* Is pkg (name, or name:arch) installed in the wormhole, by its dpkg? */
+static int dpkg_has(const char *source, const char *pkg)
+{
+	char path[PATH_MAX], line[512], name[256];
+	int in = 0, found = 0;
+	FILE *f;
+
+	snprintf(name, sizeof(name), "%s", pkg);
+	name[strcspn(name, ":")] = '\0';
+	snprintf(path, sizeof(path), "%s/%s/var/lib/dpkg/status", WORMHOLES, source);
+	if (!(f = fopen(path, "re")))
+		return 0;
+	while (!found && fgets(line, sizeof(line), f)) {
+		line[strcspn(line, "\n")] = '\0';
+		if (!strncmp(line, "Package: ", 9))
+			in = !strcmp(line + 9, name);
+		else if (in && !strncmp(line, "Status: ", 8))
+			found = strstr(line, " installed") != NULL;
+	}
+	fclose(f);
+	return found;
+}
+
+/*
+ * After a rewind: exports of packages the wormholes no longer have go,
+ * packages they have again get theirs back. Cheap when nothing differs.
+ * A wormhole without record copies (set up before 1.20) gets them first.
+ */
+int foreign_sync_exports(void)
+{
+	DIR *d;
+	struct dirent *e;
+	int changed = 0;
+
+	load_sources();
+	for (int i = 0; i < nsources; i++) {
+		const char *src = sources[i].name;
+		char dir[PATH_MAX];
+
+		if (!wormhole_exists(src))
+			continue;
+		snprintf(dir, sizeof(dir), "%s/%s/%s", WORMHOLES, src, WORMHOLE_RECORDS);
+		if (access(dir, F_OK) < 0 && (d = opendir(FOREIGN_DB))) {
+			mkdirs_at(AT_FDCWD, dir, 0755);
+			while ((e = readdir(d))) {
+				char source[32];
+
+				if (e->d_name[0] != '.' && foreign_installed(e->d_name, source, sizeof(source)) &&
+				    !strcmp(source, src))
+					record_copy(src, e->d_name);
+			}
+			closedir(d);
+		}
+	}
+	/* Recorded on the system, but not in its wormhole any more. */
+	if ((d = opendir(FOREIGN_DB))) {
+		while ((e = readdir(d))) {
+			char source[32], copy[PATH_MAX + 64];
+
+			if (e->d_name[0] == '.' || !foreign_installed(e->d_name, source, sizeof(source)) ||
+			    strchr(source, '/') || source[0] == '.')
+				continue;
+			record_copy_path(copy, sizeof(copy), source, e->d_name);
+			if (wormhole_exists(source) && access(copy, F_OK) == 0 &&
+			    dpkg_has(source, e->d_name))
+				continue;
+			info("%s is no longer in the %s wormhole: removing its commands", e->d_name, source);
+			unexport(e->d_name);
+			changed = 1;
+		}
+		closedir(d);
+	}
+	/* In a wormhole again, but not recorded on the system. */
+	for (int i = 0; i < nsources; i++) {
+		const char *src = sources[i].name;
+		char dir[PATH_MAX];
+
+		snprintf(dir, sizeof(dir), "%s/%s/%s", WORMHOLES, src, WORMHOLE_RECORDS);
+		if (!wormhole_exists(src) || !(d = opendir(dir)))
+			continue;
+		while ((e = readdir(d))) {
+			char source[32];
+
+			if (e->d_name[0] == '.' || foreign_installed(e->d_name, source, sizeof(source)) ||
+			    !dpkg_has(src, e->d_name))
+				continue;
+			info("%s is back in the %s wormhole: exporting its commands", e->d_name, src);
+			export_commands(src, e->d_name);
+			record_copy(src, e->d_name);
+			changed = 1;
+		}
+		closedir(d);
+	}
+	if (changed)
+		mime_cache();
+	return 0;
 }
 
 /*
@@ -1660,6 +1799,7 @@ int foreign_install(const char *source, const char *pkg)
 	}
 	runtime_complete(source);
 	export_commands(source, pkg);
+	record_copy(source, pkg);
 	mime_cache();
 	return 0;
 }

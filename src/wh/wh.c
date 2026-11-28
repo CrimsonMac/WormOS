@@ -1417,6 +1417,11 @@ int main(int argc, char **argv)
 	if (!strcmp(cmd, "history"))            return cmd_history(argc, argv);
 	if (!strcmp(cmd, "undo"))               return cmd_undo(argc, argv);
 	if (!strcmp(cmd, "keep"))               return cmd_keep(argc, argv);
+	/* At boot (12-wh-exports): exports in line with the wormholes. */
+	if (!strcmp(cmd, "sync-exports") && argc == 1) {
+		lock_wh();
+		return foreign_sync_exports();
+	}
 	warn("unknown command '%s'", cmd);
 	usage(stderr);
 	return 2;

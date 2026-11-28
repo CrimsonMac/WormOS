@@ -99,6 +99,7 @@ void wormhole_runtime(const char *source);
 void runtime_complete(const char *source);
 int foreign_search(const char *term, const char *only);
 int wormhole_exists(const char *name);
+int foreign_sync_exports(void);
 
 /* db.c */
 int db_installed(const char *name, struct package *p);

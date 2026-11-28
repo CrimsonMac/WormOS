@@ -668,6 +668,15 @@ initramfs inside LUKS.
   own user), with the file descriptors it carries (`SCM_RIGHTS`, for
   MIT-SHM and Present). The window closes a minute after the last
   connection.
+- Records after a rewind (since 1.20): each install's record is also
+  copied into the wormhole (`var/lib/wh-export/PKG` inside it), which
+  goes back with it when a snapshot is rewound, while the record and the
+  exported commands, entries and icons stay on `/var`. The boot service
+  `12-wh-exports` runs `wh sync-exports`: a record whose copy is gone or
+  whose package the wormhole's dpkg no longer lists is unexported, and a
+  copy without a record whose package is installed is exported again. A
+  wormhole without the folder (set up before 1.20) gets copies of its
+  records first, and nothing is removed.
 - Containers live in subvolumes under `/var/lib/wormholes` (`@wormholes`,
   mounted `nosuid,nodev`, mode 0755). Exported commands are wrappers in
   `/usr/local/bin` (a link to `/var/usrlocal`) and never shadow `/usr/bin` or

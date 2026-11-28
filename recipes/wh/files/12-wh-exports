@@ -1,0 +1,4 @@
+# Commands and menu entries of wormhole programs (on /var) in line with the
+# wormholes, which a rewind may have taken back to another state.
+type = oneshot
+exec = /usr/bin/wh sync-exports
