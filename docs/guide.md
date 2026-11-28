@@ -583,7 +583,7 @@ built from source and kept in the core repository:
 | Development | git, Python 3 (with `venv` and pip), sqlite3, jq, strace, gdb, binutils (objdump, readelf, nm, strings) |
 | Analysis | YARA, ssdeep |
 | Archives | tar, cpio and unzip from libarchive (zip, 7z, ISO, xz, zstd...), 7-Zip (`7z`), zip, xz, bzip2, zstd, gzip, lz4, pigz, pv |
-| Network | curl, wget, aria2, links (a terminal web browser), torsocks and proxychains (one program through Tor), ip, ss and tc (iproute2), ethtool, whois, traceroute, OpenSSH client (ssh, scp, sftp), rsync, nmap with ncat and nping, tcpdump, wg (WireGuard) |
+| Network | curl, wget, aria2, links (a terminal web browser), torsocks (one program through Tor, on circuits of its own) and proxychains (one program through Tor), ip, ss and tc (iproute2), ethtool, whois, traceroute, OpenSSH client (ssh, scp, sftp), rsync, nmap with ncat and nping, tcpdump, wg (WireGuard) |
 | Disks and devices | lspci, lsusb, mkfs.fat/fsck.fat, mtools, mkfs.ext4/e2fsck/resize2fs (e2fsprogs), mkfs.exfat/fsck.exfat, smartctl, hdparm, dmidecode |
 | Other | file, lsof, gpg, Tor Browser |
 

@@ -1,5 +1,6 @@
 name=torsocks
 version=2.5.0
+release=2
 description="torsocks: run one program through Tor (SOCKS on 127.0.0.1:9050)"
 depends=(glibc tor)
 # Upstream publishes no signature: checksum pinned from the tagged archive.
@@ -19,5 +20,10 @@ package() {
 		"$pkgdir/usr/share/doc"
 	rm -f "$pkgdir"/usr/lib/*.la
 	rm -rf "$pkgdir/usr/share/torsocks"
+	# Every program run through torsocks gets circuits of its own: a SOCKS
+	# user name per process, which Tor's SocksPort isolates by default.
+	sed -i 's/^#* *IsolatePID .*/IsolatePID 1/' "$pkgdir/etc/tor/torsocks.conf"
+	grep -q '^IsolatePID 1$' "$pkgdir/etc/tor/torsocks.conf" ||
+		echo 'IsolatePID 1' >> "$pkgdir/etc/tor/torsocks.conf"
 	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/torsocks/LICENSE"
 }

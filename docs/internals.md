@@ -746,7 +746,9 @@ initramfs inside LUKS.
   (`IsolateDestAddr`: one circuit per destination address),
   DNSPort 5353 (IPv4 and IPv6 loopback), .onion names automapped into
   10.192.0.0/10. `worm anon status` reads the last "Bootstrapped N%" line
-  of the log.
+  of the log. torsocks (since 1.20) sets `IsolatePID 1`: each process it
+  runs gives Tor a SOCKS user name of its own, which SocksPort's default
+  `IsolateSOCKSAuth` turns into circuits of its own.
 - Tor's controller (`ControlSocket /run/tor-control/control`, cookie in
   `/run/tor-control/cookie`): `tor_start` makes the directory 0700 for
   Tor's user, so only root reaches it (a controller can ask Tor for the

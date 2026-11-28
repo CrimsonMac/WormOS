@@ -671,7 +671,8 @@ TOOL_CHECKS = [
     ("bc, screen, links, aria2", "echo '2^64' | bc; screen -v; links -version | head -1; "
      "aria2c -v | head -1", r"^18446744073709551616\n(.|\n)*Screen version 5(.|\n)*Links 2\.30(.|\n)*aria2 version 1\.37"),
     ("torsocks and proxychains point at Tor", "grep -c '^TorPort 9050' /etc/tor/torsocks.conf; "
-     "grep -c '^socks4[[:space:]]*127.0.0.1 9050' /etc/proxychains.conf", r"^1\n1$"),
+     "grep -c '^socks4[[:space:]]*127.0.0.1 9050' /etc/proxychains.conf; "
+     "grep -c '^IsolatePID 1$' /etc/tor/torsocks.conf", r"^1\n1\n1$"),
     ("busybox links taken over cleanly", "readlink /usr/bin/tar; test -L /usr/bin/less || "
      "echo real; grep -c -e ' usr/bin/less$' -e ' usr/bin/tar$' /usr/lib/wh/db/busybox/files",
      r"^bsdtar\nreal\n0$"),
