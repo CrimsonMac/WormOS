@@ -199,10 +199,15 @@ def main():
                 out = con.run(cmd.format(repo=repo), 120)
                 check(name, re.search(pattern, out, re.M) is not None, out)
 
-            con.send(f"wh --repo {repo} -y remove btop\n")
-            out = con.expect("login:", 600)
-            check("program removed", "applied the package change" in out, out[-1500:])
-            root_login(con)
+            # The new wh: a program nothing runs goes at once (since 1.20);
+            # if it waits for a restart, worm restart applies it.
+            out = con.run(f"wh --repo {repo} -y remove btop 2>&1 | tail -2", 600)
+            if "Restart to finish" in out:
+                con.send("worm restart\n")
+                out += con.expect("login:", 600)
+                root_login(con)
+            check("program removed", "ready to use now" in out or
+                  "applied the package change" in out, out[-1500:])
             for name, cmd, pattern in DECLINED_CHECKS:
                 out = con.run(cmd.format(repo=repo), 120)
                 check(name, re.search(pattern, out, re.M) is not None, out)
