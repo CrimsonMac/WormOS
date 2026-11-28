@@ -30,7 +30,7 @@ jobs:
       - name: Install clang
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends build-essential clang curl ca-certificates make
+          apt-get install -y --no-install-recommends build-essential clang libclang-rt-dev curl ca-certificates make
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
