@@ -1001,6 +1001,18 @@ initramfs inside LUKS.
   `CAP_NET_ADMIN` (tc, nf_tables, routes and interfaces in its namespace),
   `CAP_NET_RAW`, `CAP_SYS_ADMIN` and `CAP_SYS_PTRACE` (init is
   non-dumpable).
+- Disk (since 1.20): `box_create` makes the blackhole's folder a btrfs
+  subvolume (`BTRFS_IOC_SUBVOL_CREATE` works for users; a plain folder
+  where it fails) and `disk_limit` caps it: `quota_limit_fd` turns on
+  simple quotas (squota: only what is written afterwards is counted, so
+  turning them on on a full system costs nothing; once on, every new
+  subvolume gets a qgroup) and sets `max_rfer`/`max_excl` of the
+  subvolume's qgroup to `--disk` (default a quarter of the filesystem, at
+  least 64 MiB). Root does it itself; users through `/usr/lib/bh/limits
+  disk NAME BYTES`, which opens `BH_DIR`, the caller's folder and the box
+  one step at a time with `O_NOFOLLOW`, requires both to be the caller's
+  and the box to be the top of a subvolume. Closing removes the folder's
+  contents and then the empty subvolume with `rmdir`.
 - Limits (`limits.c`): a cgroup `/sys/fs/cgroup/blackholes/UID-NAME` with
   `pids.max` 4096 (`--pids`; tasks, so threads count), `memory.max` half
   of the memory (`--memory`; with `--vm` the guest's memory plus 256 MiB),

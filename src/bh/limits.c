@@ -21,7 +21,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
+#include <linux/btrfs.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -148,6 +151,64 @@ int limits_apply(const struct box *b, const struct opts *o, pid_t child)
 				    NULL }) == 0)
 		return 0;
 	warn("cannot set up the limits of %s; processes are still limited", b->name);
+	return -1;
+}
+
+/*
+ * Disk limits: a blackhole's folder is a subvolume, and btrfs simple quotas
+ * (squota, which only count what is written after they are turned on, so
+ * turning them on costs nothing) cap it. Turned on the first time a limit
+ * is set. The default is a quarter of the filesystem.
+ */
+int quota_limit_fd(int fd, unsigned long long bytes)
+{
+	struct btrfs_ioctl_quota_ctl_args ctl = { .cmd = BTRFS_QUOTA_CTL_ENABLE_SIMPLE_QUOTA };
+	struct btrfs_ioctl_qgroup_limit_args lim = { 0 };
+	struct statvfs fs;
+	struct stat st;
+
+	if (fstat(fd, &st) < 0 || st.st_ino != 256) {
+		errno = ENOTDIR;        /* not the top of a subvolume */
+		return -1;
+	}
+	if (fstatvfs(fd, &fs) == 0) {
+		unsigned long long size = (unsigned long long)fs.f_blocks * fs.f_frsize;
+
+		if (!bytes)
+			bytes = size / 4;
+		if (size && bytes > size)
+			bytes = size;
+	}
+	if (bytes < 64ull << 20)
+		bytes = 64ull << 20;
+	/* Already on: the kernel says so with EEXIST or does nothing. */
+	if (ioctl(fd, BTRFS_IOC_QUOTA_CTL, &ctl) < 0 && errno != EEXIST && errno != EINVAL)
+		return -1;
+	lim.qgroupid = 0;               /* the subvolume fd is in */
+	lim.lim.flags = BTRFS_QGROUP_LIMIT_MAX_RFER | BTRFS_QGROUP_LIMIT_MAX_EXCL;
+	lim.lim.max_rfer = bytes;
+	lim.lim.max_excl = bytes;
+	return ioctl(fd, BTRFS_IOC_QGROUP_LIMIT, &lim);
+}
+
+int disk_limit(const struct box *b, unsigned long long bytes)
+{
+	char size[32];
+	int fd, r;
+
+	if (getuid() == 0) {
+		if ((fd = open(b->dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)) < 0)
+			return -1;
+		r = quota_limit_fd(fd, bytes);
+		close(fd);
+		if (r < 0 && errno != ENOTDIR)
+			warn("no disk limit for %s: %s", b->name, strerror(errno));
+		return r;
+	}
+	snprintf(size, sizeof(size), "%llu", bytes);
+	if (helper((char *const[]){ "limits", "disk", (char *)b->name, size, NULL }) == 0)
+		return 0;
+	warn("no disk limit for %s", b->name);
 	return -1;
 }
 

@@ -18,6 +18,8 @@
  *     --from SOURCE    the system of a wormhole (debian, kali) instead of
  *                      the host's
  *     --memory SIZE    memory limit (K, M, G); with --vm the guest's memory
+ *     --disk SIZE      most its files may take, set when it is created
+ *                      (default: a quarter of the disk)
  *     --pids N         most processes and threads
  *     --cpus N         with --vm, virtual CPUs
  *
@@ -47,6 +49,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/file.h>
+#include <sys/ioctl.h>
+#include <linux/btrfs.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -204,7 +208,7 @@ static void box_protect(const struct box *b)
  * host's /usr and /etc and its own writable directories, all owned by the
  * blackhole: what the host has there is owned by IDs it does not have.
  */
-static void box_create(struct box *b)
+static void box_create(struct box *b, unsigned long long disk)
 {
 	static const struct { const char *path; mode_t mode; } layout[] = {
 		{ "rootfs", 0755 }, { "rootfs/usr", 0755 }, { "rootfs/etc", 0755 },
@@ -226,7 +230,24 @@ static void box_create(struct box *b)
 	/* One creation at a time, so two never take the same ID. */
 	if ((pfd = open(parent, O_RDONLY | O_DIRECTORY | O_CLOEXEC)) < 0 || flock(pfd, LOCK_EX) < 0)
 		die("cannot lock %s: %s", parent, strerror(errno));
-	if (mkdir(b->dir, 0700) < 0) {
+	/* A subvolume of its own, so its files can be limited; a plain
+	 * folder where that is not possible. */
+	{
+		struct btrfs_ioctl_vol_args args = { 0 };
+		int made;
+
+		snprintf(args.name, sizeof(args.name), "%s", b->name);
+		made = ioctl(pfd, BTRFS_IOC_SUBVOL_CREATE, &args) == 0;
+		if (made)
+			chmod(b->dir, 0700);
+		else if (errno == EEXIST)
+			errno = EEXIST;
+		else
+			made = mkdir(b->dir, 0700) == 0;
+		if (made)
+			errno = 0;
+	}
+	if (errno) {
 		if (errno != EEXIST)
 			die("cannot create %s: %s", b->dir, strerror(errno));
 		close(pfd);
@@ -252,6 +273,7 @@ static void box_create(struct box *b)
 	if (fclose(f) != 0)
 		die("cannot write %s: %s", path, strerror(errno));
 	close(pfd);
+	disk_limit(b, disk);
 }
 
 static int box_exists(const struct box *b)
@@ -404,7 +426,7 @@ static int cmd_open(const char *name, const struct opts *o, int given, char *con
 		name = tmp;
 	}
 	box_path(&b, name);
-	box_create(&b);
+	box_create(&b, o->disk);
 	fd = box_lock(&b, 1, &running);
 	if (running) {
 		close(fd);
@@ -464,7 +486,7 @@ static int cmd_put(const char *name, char **files, int n)
 	pid_t pid;
 
 	box_path(&b, name);
-	box_create(&b);
+	box_create(&b, 0);
 	if (!src)
 		die("out of memory");
 	for (int i = 0; i < n; i++) {
@@ -584,7 +606,7 @@ static int cmd_close(const char *name)
 static void usage(FILE *out)
 {
 	fputs("usage: bh open [--net [--lan]] [--vm] [--gui] [--from SOURCE] [--memory SIZE]\n"
-	      "               [--pids N] [--cpus N] [NAME] [-- COMMAND [ARGS...]]\n"
+	      "               [--disk SIZE] [--pids N] [--cpus N] [NAME] [-- COMMAND [ARGS...]]\n"
 	      "       bh put NAME FILE...\n"
 	      "       bh list\n"
 	      "       bh close NAME\n", out);
@@ -703,6 +725,8 @@ int main(int argc, char **argv)
 				snprintf(o.from, sizeof(o.from), "%s", argv[++i]);
 			else if (i + 1 < argc && !strcmp(opt, "memory"))
 				o.memory = parse_size(argv[++i]);
+			else if (i + 1 < argc && !strcmp(opt, "disk"))
+				o.disk = parse_size(argv[++i]);
 			else if (i + 1 < argc && !strcmp(opt, "pids"))
 				o.pids = parse_count(argv[++i], BH_PIDS_MAX);
 			else if (i + 1 < argc && !strcmp(opt, "cpus"))

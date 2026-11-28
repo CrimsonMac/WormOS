@@ -239,6 +239,10 @@ BLACKHOLE_CHECKS = [
      r"^fds=0 1 2 3\s*$"),
     ("files kept between sessions",
      "bh open t1 -- sh -c 'echo kept > /root/note'; bh open t1 -- cat /root/note", r"^kept$"),
+    ("a blackhole's files have a limit",
+     "bh open --disk 64M dq -- sh -c 'dd if=/dev/zero of=/root/big bs=1M count=200 2>&1; "
+     "rm /root/big; echo small > /root/s && cat /root/s'; stat -c %i /var/lib/blackholes/0/dq; bh close dq",
+     r"Disk quota exceeded(.|\n)*^small\n256\nClosed blackhole dq"),
     ("running with limits",
      "bh open t1 -- sleep 60 & sleep 5; cd /sys/fs/cgroup/blackholes/0-t1 && "
      "cat pids.max cpu.weight && echo m=$(( ($(cat memory.max) * 2 / 1024 + 64) * 10 / $(sed -n 's/MemTotal: *//p' /proc/meminfo | cut -d' ' -f1) )); cd; bh list",
@@ -265,6 +269,9 @@ BLACKHOLE_CHECKS = [
      r"^ok$"),
     ("user's blackhole", "su tester -c 'bh open u1 -- cat /proc/self/uid_map'",
      r"^\s*0\s+[1-9]\d*\s+1$"),
+    ("users' blackholes are limited too",
+     "su tester -c \"bh open --disk 64M uq -- sh -c 'dd if=/dev/zero of=/root/big bs=1M count=200 2>&1'; "
+     "bh close uq\"", r"Disk quota exceeded(.|\n)*Closed blackhole uq"),
     ("user's blackhole is private", "ls -ld /var/lib/blackholes/$(id -u tester)",
      r"^drwx------\s+\d+\s+tester\s"),
     ("user's blackhole cannot reach root's",

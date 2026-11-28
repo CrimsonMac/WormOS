@@ -43,6 +43,7 @@ struct opts {
 	unsigned pids;          /* 0 for the default */
 	unsigned cpus;          /* --vm: virtual CPUs */
 	unsigned vm_mb;         /* --vm: the guest's memory in MiB */
+	unsigned long long disk;    /* bytes its files may take; 0 for the default */
 };
 
 void die(const char *fmt, ...) __attribute__((noreturn, format(printf, 1, 2)));
@@ -99,6 +100,10 @@ int sandbox_drop_caps(void);
  */
 unsigned long long memory_total(void);
 int limits_apply(const struct box *b, const struct opts *o, pid_t child);
+/* The most a new blackhole's files may take (its folder is a btrfs
+ * subvolume with a simple-quota limit); 0 bytes for the default. */
+int disk_limit(const struct box *b, unsigned long long bytes);
+int quota_limit_fd(int fd, unsigned long long bytes);
 void limits_remove(const struct box *b);
 int cgroup_create(uid_t uid, const char *name, pid_t pid, unsigned long long memory,
 		  unsigned pids);

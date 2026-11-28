@@ -4,6 +4,9 @@
  *
  *     limits create NAME PID MEMORY PIDS
  *     limits remove NAME
+ *     limits disk NAME BYTES     the most BH_DIR/UID/NAME may take (0:
+ *                                the default); it must be the caller's
+ *                                and a subvolume of its own
  *
  * The cgroup is always BH_CGROUP/UID-NAME with the caller's real UID, so
  * a user can only touch their own. create moves PID into it only if PID
@@ -19,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -123,6 +127,28 @@ int main(int argc, char **argv)
 			die("cannot remove the cgroup: %s", strerror(errno));
 		return 0;
 	}
-	fprintf(stderr, "usage: limits create NAME PID MEMORY PIDS | limits remove NAME\n");
+	if (argc == 4 && !strcmp(argv[1], "disk")) {
+		unsigned long long bytes = number(argv[3]);
+		char dir[64];
+		int top, user, box;
+		struct stat st;
+
+		if (!valid_name(argv[2]))
+			die("invalid blackhole name");
+		/* Folder by folder, never through a link, and the caller's own. */
+		snprintf(dir, sizeof(dir), "%u", (unsigned)uid);
+		if ((top = open(BH_DIR, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)) < 0 ||
+		    (user = openat(top, dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)) < 0 ||
+		    (box = openat(user, argv[2], O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)) < 0)
+			die("no blackhole %s", argv[2]);
+		if (fstat(user, &st) < 0 || st.st_uid != uid || fstat(box, &st) < 0 ||
+		    st.st_uid != uid)
+			die("blackhole %s is not yours", argv[2]);
+		if (quota_limit_fd(box, bytes) < 0)
+			die("cannot limit %s: %s", argv[2], strerror(errno));
+		return 0;
+	}
+	fprintf(stderr, "usage: limits create NAME PID MEMORY PIDS | limits remove NAME | "
+		"limits disk NAME BYTES\n");
 	return 2;
 }

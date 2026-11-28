@@ -919,7 +919,10 @@ The layers:
 - **Limits** (each blackhole, also those of normal users): at most 4096
   processes and threads (`--pids N`), half the memory (`--memory 2G`),
   no swap, and half the CPU weight of everything else, so a busy
-  blackhole cannot make the desktop sluggish.
+  blackhole cannot make the desktop sluggish. Since 1.20 a blackhole's
+  files may take at most a quarter of the disk (`--disk 2G` when it is
+  created); writing more fails with "Disk quota exceeded". Blackholes
+  made before 1.20 have no such limit until closed and opened again.
 - Root's blackholes keep their files where other users cannot reach them.
 
 **Network** (`--net`): for a blackhole used as a throwaway test
