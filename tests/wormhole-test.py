@@ -69,7 +69,7 @@ CHECKS = [
     ("no setuid escape", "mount | grep ' /var/lib/wormholes '", r"nosuid,nodev"),
     ("add a user", "worm unlock >/dev/null && adduser -D tester && worm lock >/dev/null && echo ok",
      r"^ok$"),
-    ("runs as a user", "su tester -c 'zathura --version' 2>&1 | head -1", r"^zathura 0\."),
+    ("runs as a user", "su tester -c 'cd /tmp; zathura --version' 2>&1 | head -1", r"^zathura 0\."),
     ("user keeps their identity", "su tester -c 'whc debian id -un'", r"^tester$"),
     ("user cannot change the container",
      "su tester -c 'whc debian touch /usr/x' 2>&1", r"(Permission denied|Read-only)"),
@@ -260,7 +260,7 @@ def main():
             # it holds the wormholes, and a rewind brings them back as they were.
             out = con.run("wh -y install --from debian figlet > /tmp/figlet.log 2>&1; "
                           "command -v figlet; wh history | tail -1", 900)
-            ok = "/usr/local/bin/figlet" in out and re.search(r"install\s+figlet \[debian\]", out)
+            ok = "/usr/local/bin/figlet" in out and re.search(r"install\s+\d+\s+figlet \[debian\]", out)
             passed += bool(ok)
             failures += not ok
             print(f"{'PASS' if ok else 'FAIL'}  wormhole install recorded with a snapshot")

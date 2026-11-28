@@ -195,6 +195,10 @@ static void setup_private_home(const char *name)
 	const char *home = getenv("HOME");
 	char own[PATH_MAX + 64], dst[PATH_MAX + 64], src[PATH_MAX + 64];
 
+	snprintf(own, sizeof(own), "%s/.local", home);
+	mkdir(own, 0700);
+	snprintf(own, sizeof(own), "%s/.local/share", home);
+	mkdir(own, 0700);
 	snprintf(own, sizeof(own), "%s/.local/share/wormholes", home);
 	mkdir(own, 0700);
 	snprintf(own, sizeof(own), "%s/.local/share/wormholes/%s", home, name);
