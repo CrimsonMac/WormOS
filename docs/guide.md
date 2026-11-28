@@ -631,6 +631,18 @@ own signed archive (checked with `gpgv` against its archive keyring, which
 WormOS ships), and from then on it is managed by its own apt. These
 installs take effect immediately, without a restart.
 
+Programs from wormholes see only part of your files (since 1.20, for
+accounts made since then): each wormhole has a home of its own
+(`~/.local/share/wormholes/debian`, where the programs keep their
+settings), holding your Documents, Downloads, Desktop and Workspace
+folders and nothing else from your home. Settings > Network & privacy
+turns this off or on ("Keep Debian and Kali programs out of your files",
+kept in `~/.config/wormos/wormholes` as `home = private` or `shared`;
+accounts from before 1.20 start with `shared`). This keeps a program from
+reading your other files by accident or by design; it does not make a
+wormhole a sandbox (they share the network and the desktop session), so
+untrusted code still belongs in a blackhole.
+
 Programs from wormholes work like the system's own, whatever they are
 built with (GTK, Qt, Java, Electron, plain X11):
 
@@ -996,8 +1008,10 @@ worm kit remove forensics     # remove it again (several, or all, too)
 | `windows` | Windows programs: pefile, LIEF, YARA, oletools, Detect It Easy, rizin, Wine (run samples with `bh open --vm --from debian`) |
 
 Each tool comes from the first source that has it (Debian, then Kali) and
-runs in that distribution's wormhole, which shares your home folder: your
-files are the kits' workspace, and the base system stays untouched. A tool
+runs in that distribution's wormhole, and the base system stays untouched.
+Put the files you work on in `~/Workspace` (or Documents, Downloads,
+Desktop): wormhole programs see those, but not the rest of your home
+(see Software from Debian and Kali). A tool
 no source has is reported and skipped. Tools that are WormOS packages
 (most of `basic`, a few of `network`) are installed last, all in one
 change with one quick restart (also when several kits are installed at

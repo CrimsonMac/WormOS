@@ -106,6 +106,9 @@ SESSION_CHECKS = [
      r"^DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus$"),
     ("standard folders", f"ls -1 /home/{USER}; grep -c DIR= /home/{USER}/.config/user-dirs.dirs",
      r"Documents(.|\n)*Downloads(.|\n)*Pictures(.|\n)*^8$"),
+    ("new accounts keep wormhole programs out of their files",
+     f"grep '^home' /home/{USER}/.config/wormos/wormholes; stat -c %U /home/{USER}/.config/wormos",
+     rf"^home = private\n{USER}$"),
     # X11 programs: Xwayland starts when the first one connects. xkbcomp
     # is an X client too (it reads the server's keymap).
     ("programs on the desktop know the X display",

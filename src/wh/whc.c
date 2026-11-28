@@ -12,8 +12,16 @@
  * maps only their own IDs: no setuid helper is involved, and the
  * container's root-owned files stay read-only to them.
  *
- * Wormholes are a convenience, not a sandbox: they share the user's home
- * and network. Untrusted programs belong in a blackhole.
+ * Private home (since 1.20; "home = private" in the user's
+ * ~/.config/wormos/wormholes, which new accounts get): instead of the
+ * whole of /home, a program sees a home of the wormhole's own
+ * (~/.local/share/wormholes/NAME, where its settings go) with the user's
+ * Documents, Downloads, Desktop and Workspace folders in it, and nothing
+ * else of the user's files. "home = shared" (or no file) shares /home.
+ *
+ * Wormholes are a convenience, not a sandbox: they share the network, the
+ * session's sockets and, unless private, the user's home. Untrusted
+ * programs belong in a blackhole.
  *
  * Internal options for wh: --dir DIR (use DIR as the root instead of NAME)
  * and --bind SRC:DST (extra bind mount, repeatable).
@@ -37,6 +45,63 @@
 #define MAX_BINDS  16
 
 static char root_dir[PATH_MAX];
+static int private_home;        /* the user's home is not shared whole */
+static const char *private_dirs[4];
+
+/* The folders of the user's home a private home shows. */
+static void read_private_dirs(const char *home)
+{
+	static char names[4][PATH_MAX];
+	static const char *const keys[] = { "XDG_DOCUMENTS_DIR", "XDG_DOWNLOAD_DIR",
+					    "XDG_DESKTOP_DIR" };
+	static const char *const fallback[] = { "Documents", "Downloads", "Desktop" };
+	char path[PATH_MAX], line[PATH_MAX + 64];
+	FILE *f;
+
+	for (int i = 0; i < 3; i++)
+		snprintf(names[i], sizeof(names[i]), "%s", fallback[i]);
+	snprintf(path, sizeof(path), "%s/.config/user-dirs.dirs", home);
+	if ((f = fopen(path, "re"))) {
+		while (fgets(line, sizeof(line), f))
+			for (int i = 0; i < 3; i++) {
+				size_t k = strlen(keys[i]);
+				char *v;
+
+				if (strncmp(line, keys[i], k) || strncmp(line + k, "=\"$HOME/", 8))
+					continue;
+				v = line + k + 8;
+				v[strcspn(v, "\"\n")] = '\0';
+				/* One folder directly in the home, nothing else. */
+				if (*v && !strchr(v, '/') && strcmp(v, ".") && strcmp(v, ".."))
+					snprintf(names[i], sizeof(names[i]), "%s", v);
+			}
+		fclose(f);
+	}
+	snprintf(names[3], sizeof(names[3]), "Workspace");
+	for (int i = 0; i < 4; i++)
+		private_dirs[i] = names[i];
+}
+
+/* "home = private" in ~/.config/wormos/wormholes. */
+static int wants_private_home(const char *home)
+{
+	char path[PATH_MAX], line[128];
+	int priv = 0;
+	FILE *f;
+
+	snprintf(path, sizeof(path), "%s/.config/wormos/wormholes", home);
+	if (!(f = fopen(path, "re")))
+		return 0;
+	while (fgets(line, sizeof(line), f))
+		if (!strncmp(line, "home", 4)) {
+			char *v = strchr(line, '=');
+
+			if (v)
+				priv = strstr(v, "private") != NULL;
+		}
+	fclose(f);
+	return priv;
+}
 
 static void die(const char *fmt, ...)
 {
@@ -65,6 +130,22 @@ static int shared(const char *path)
 
 	if (strcmp(path, "/") == 0)
 		return 1;
+	/* A private home shows only some folders of the real one. */
+	if (private_home) {
+		const char *home = getenv("HOME");
+		size_t h = strlen(home);
+
+		if (!strncmp(path, home, h) && (path[h] == '\0' || path[h] == '/')) {
+			for (int i = 0; i < 4; i++) {
+				size_t n = strlen(private_dirs[i]);
+
+				if (path[h] == '/' && !strncmp(path + h + 1, private_dirs[i], n) &&
+				    (path[h + 1 + n] == '\0' || path[h + 1 + n] == '/'))
+					return 1;
+			}
+			return 0;
+		}
+	}
 	if (geteuid() == 0 && (!strcmp(path, "/root") || !strncmp(path, "/root/", 6)))
 		return 1;
 	for (int i = 0; dirs[i]; i++) {
@@ -102,6 +183,38 @@ static void app_environment(void)
 	fallback("SDL_VIDEODRIVER", "wayland", "wayland,x11");
 	setenv("_JAVA_AWT_WM_NONREPARENTING", "1", 0);
 	setenv("NO_AT_BRIDGE", "1", 0);
+}
+
+/*
+ * A home of the wormhole's own, in place of /home: a tmpfs over the
+ * container's /home holding only the user's home, which is
+ * ~/.local/share/wormholes/NAME, with the shown folders bound into it.
+ */
+static void setup_private_home(const char *name)
+{
+	const char *home = getenv("HOME");
+	char own[PATH_MAX + 64], dst[PATH_MAX + 64], src[PATH_MAX + 64];
+
+	snprintf(own, sizeof(own), "%s/.local/share/wormholes", home);
+	mkdir(own, 0700);
+	snprintf(own, sizeof(own), "%s/.local/share/wormholes/%s", home, name);
+	if (mkdir(own, 0700) < 0 && errno != EEXIST)
+		die("cannot create %s: %s", own, strerror(errno));
+	snprintf(dst, sizeof(dst), "%s/home", root_dir);
+	if (mount("tmpfs", dst, "tmpfs", MS_NOSUID | MS_NODEV, "mode=0755,size=1m") < 0)
+		die("cannot hide the other homes: %s", strerror(errno));
+	bind(own, home, 0, 0);
+	for (int i = 0; i < 4; i++) {
+		struct stat st;
+
+		snprintf(src, sizeof(src), "%s/%s", home, private_dirs[i]);
+		if (i == 3 && stat(src, &st) < 0)
+			mkdir(src, 0700);          /* the kits' workspace */
+		if (stat(src, &st) == 0 && S_ISDIR(st.st_mode)) {
+			snprintf(dst, sizeof(dst), "%s/%s", home, private_dirs[i]);
+			bind(src, dst, 0, 1);
+		}
+	}
 }
 
 int main(int argc, char **argv)
@@ -143,6 +256,16 @@ int main(int argc, char **argv)
 	}
 	if (stat(root_dir, &st) < 0 || !S_ISDIR(st.st_mode))
 		die("there is no '%s' wormhole (wh sets it up when needed)", name);
+	/* Users' own programs; root (the root terminal) keeps its home. */
+	if (!as_root && !dir && geteuid() != 0) {
+		const char *home = getenv("HOME");
+
+		if (home && !strncmp(home, "/home/", 6) && !strstr(home, "/..") &&
+		    wants_private_home(home)) {
+			private_home = 1;
+			read_private_dirs(home);
+		}
+	}
 	if (!getcwd(cwd, sizeof(cwd)))
 		snprintf(cwd, sizeof(cwd), "/");
 
@@ -174,7 +297,10 @@ int main(int argc, char **argv)
 	if (!as_root) {
 		/* The user's own session: home, temporary files, sockets. */
 		bind("/tmp", "/tmp", 0, 0);
-		bind("/home", "/home", 0, 1);
+		if (private_home)
+			setup_private_home(name);
+		else
+			bind("/home", "/home", 0, 1);
 		bind("/run", "/run", 0, 1);
 		/* Disks the user mounted, and root's own home for programs
 		 * started from the root terminal (they would otherwise see the
@@ -208,8 +334,8 @@ int main(int argc, char **argv)
 	snprintf(target, sizeof(target), "%s", cwd);
 	if (!as_root && !dir && !shared(cwd))
 		fprintf(stderr, "whc: %s is not shared with the %s wormhole; "
-			"programs there see its own files (home, /tmp, /mnt and /media are shared)\n",
-			cwd, name);
+			"programs there see its own files (%s, /tmp, /mnt and /media are shared)\n",
+			cwd, name, private_home ? "Documents, Downloads, Desktop, Workspace" : "home");
 	if (chdir(target) < 0 && chdir("/") < 0)
 		die("cannot change directory: %s", strerror(errno));
 

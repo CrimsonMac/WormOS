@@ -22,6 +22,10 @@ passwd -d live > /dev/null
 passwd -d root > /dev/null
 mount -o remount,bind,ro /
 /usr/lib/worm/runtime-dirs
+# Programs from wormholes see only some folders of the home (whc).
+mkdir -p /home/live/.config/wormos
+echo 'home = private' > /home/live/.config/wormos/wormholes
+chown -R live:live /home/live/.config
 
 # The installer, in the live user's launcher.
 entry=/usr/share/applications/org.wormos.Installer.desktop

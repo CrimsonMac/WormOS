@@ -1534,7 +1534,7 @@ static void build_time(void)
 
 /* ==== Network and privacy ==== */
 
-static GtkWidget *net_group, *fw_label, *anon_switch, *auto_switch, *timer_dropdown;
+static GtkWidget *net_group, *fw_label, *anon_switch, *auto_switch, *timer_dropdown, *wormhole_switch;
 static gboolean privacy_filling;
 
 static void net_fill(void)
@@ -1648,6 +1648,7 @@ static void privacy_fill(void)
 								  G_FILE_TEST_EXISTS));
 	gtk_switch_set_active(GTK_SWITCH(auto_switch), snap_auto_on());
 	gtk_drop_down_set_selected(GTK_DROP_DOWN(timer_dropdown), snap_timer());
+	gtk_switch_set_active(GTK_SWITCH(wormhole_switch), wormhole_home_private());
 	privacy_filling = FALSE;
 	net_fill();
 	proc = g_subprocess_new(G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_SILENCE,
@@ -1700,6 +1701,48 @@ static void timer_changed(GtkDropDown *d, GParamSpec *p, gpointer data)
 	      NULL, SNAP_HELPER, "timer", words[which], NULL);
 }
 
+/* ~/.config/wormos/wormholes: whether wormhole programs get a home of
+ * their own (whc). The user's own setting: no password. */
+static char *wormholes_file(void)
+{
+	return g_build_filename(g_get_user_config_dir(), "wormos", "wormholes", NULL);
+}
+
+static gboolean wormhole_home_private(void)
+{
+	char *path = wormholes_file(), *text = NULL;
+	gboolean priv = FALSE;
+
+	if (g_file_get_contents(path, &text, NULL, NULL)) {
+		char **lines = g_strsplit(text, "\n", -1);
+
+		for (int i = 0; lines[i]; i++)
+			if (g_str_has_prefix(lines[i], "home") && strchr(lines[i], '='))
+				priv = strstr(strchr(lines[i], '='), "private") != NULL;
+		g_strfreev(lines);
+	}
+	g_free(text);
+	g_free(path);
+	return priv;
+}
+
+static void wormhole_home_changed(GtkSwitch *s, GParamSpec *p, gpointer data)
+{
+	char *path = wormholes_file(), *dir = g_path_get_dirname(path);
+
+	(void)p;
+	(void)data;
+	if (!privacy_filling) {
+		g_mkdir_with_parents(dir, 0700);
+		g_file_set_contents(path, gtk_switch_get_active(s) ?
+			"# Programs from Debian and Kali: private (a home of their own, with\n"
+			"# Documents, Downloads, Desktop and Workspace) or shared (the whole home).\n"
+			"home = private\n" : "home = shared\n", -1, NULL);
+	}
+	g_free(dir);
+	g_free(path);
+}
+
 static void privacy_mapped(GtkWidget *w, gpointer data)
 {
 	(void)w;
@@ -1729,6 +1772,10 @@ static void build_privacy(void)
 	row_new(group, "Timed snapshots", "The system and your files, on a schedule; the "
 		"newest 24 hourly or 14 daily ones are kept.", timer_dropdown, NULL);
 	lock_if_no_root(timer_dropdown);
+	wormhole_switch = switch_new(FALSE, G_CALLBACK(wormhole_home_changed), NULL);
+	row_new(group, "Keep Debian and Kali programs out of your files", "They get a home of "
+		"their own and see only Documents, Downloads, Desktop and Workspace. Takes effect "
+		"the next time a program starts.", wormhole_switch, NULL);
 	group = group_new(page, "Firewall", NULL);
 	fw_label = gtk_label_new("…");
 	gtk_label_set_xalign(GTK_LABEL(fw_label), 0);

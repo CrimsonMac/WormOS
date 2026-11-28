@@ -46,6 +46,11 @@ create_account() {
 	worm lock -c "First boot: created $1" > /dev/null
 	[ -n "$ok" ] || return 1
 	/usr/lib/worm/runtime-dirs
+	# Programs from wormholes see only some folders of the home (whc).
+	mkdir -p "/home/$1/.config/wormos" &&
+	printf '# Programs from Debian and Kali: private (a home of their own, with\n# Documents, Downloads, Desktop and Workspace) or shared (the whole home).\nhome = private\n' \
+		> "/home/$1/.config/wormos/wormholes" &&
+	chown -R "$1:$1" "/home/$1/.config"
 	# The keyboard layout for the desktop.
 	if [ -n "$3" ] && [ "$3" != us ]; then
 		mkdir -p "/home/$1/.config/labwc" &&

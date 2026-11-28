@@ -676,7 +676,16 @@ initramfs inside LUKS.
   commands. Since 1.13 it also shares `/mnt` and `/media`, and `/root`
   when run by root (programs from the root terminal saw the container's
   `/root` and missed root's files); started from a folder that is not
-  shared, it says so on stderr. Programs get the same environment whatever
+  shared, it says so on stderr. Private home (since 1.20): with `home =
+  private` in `~/.config/wormos/wormholes` (first-boot and live-setup write
+  it for the accounts they make; Settings switches it; no file means
+  shared, so accounts from before keep their behaviour), a user's run
+  mounts a 1 MiB tmpfs over the container's `/home`, binds
+  `~/.local/share/wormholes/NAME` (0700) at `$HOME` and binds the user's
+  Documents, Downloads and Desktop (names from `user-dirs.dirs`, one level
+  under the home only) and `~/Workspace` (made if missing) into it. Root's
+  runs (the root terminal) and wh's `--root` runs keep the old mounts.
+  Programs get the same environment whatever
   their toolkit (`app_environment`): `QT_QPA_PLATFORM=wayland` becomes
   `wayland;xcb`, `GDK_BACKEND` and `SDL_VIDEODRIVER` `wayland,x11` (every
   Qt program from Debian quit: qt6-wayland is only recommended),

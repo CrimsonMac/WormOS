@@ -75,6 +75,15 @@ CHECKS = [
      "su tester -c 'whc debian touch /usr/x' 2>&1", r"(Permission denied|Read-only)"),
     ("user sees their home", "su tester -c 'cd && touch here && whc debian ls ~/here'",
      r"/home/tester/here$"),
+    # A private home (new accounts get it): a home of the wormhole's own
+    # with Documents, Downloads, Desktop and Workspace, nothing else.
+    ("a private home shows only some folders",
+     "su tester -c 'cd /tmp; mkdir -p ~/.config/wormos ~/Documents && "
+     "echo \"home = private\" > ~/.config/wormos/wormholes && touch ~/Documents/doc && "
+     "whc debian sh -c \"ls ~/here 2>&1; ls ~/Documents; ls /home | wc -l; touch ~/inside\"; "
+     "ls ~/.local/share/wormholes/debian; ls -d ~/Workspace; test -e ~/inside || echo kept-out; "
+     "rm ~/.config/wormos/wormholes'",
+     r"No such file(.|\n)*^doc\n1\n(.|\n)*^inside\n/home/tester/Workspace\nkept-out$"),
     ("host network shared", "whc debian cat /etc/resolv.conf | grep -c nameserver", r"^[1-9]"),
     # Wayland programs from wormholes appear on the desktop: here a
     # headless compositor, run by the user, and Debian's event viewer.
