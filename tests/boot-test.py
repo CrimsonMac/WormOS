@@ -243,7 +243,7 @@ BLACKHOLE_CHECKS = [
     ("files kept between sessions",
      "bh open t1 -- sh -c 'echo kept > /root/note'; bh open t1 -- cat /root/note", r"^kept$"),
     ("a blackhole's files have a limit",
-     "bh open --disk 64M dq -- sh -c 'dd if=/dev/zero of=/root/big bs=1M count=200 2>&1; "
+     "bh open --disk 64M dq -- sh -c 'dd if=/dev/urandom of=/root/big bs=1M count=200 2>&1; "
      "rm /root/big; echo small > /root/s && cat /root/s'; stat -c %i /var/lib/blackholes/0/dq; bh close dq",
      r"Disk quota exceeded(.|\n)*^small\n256\nClosed blackhole dq"),
     ("running with limits",
@@ -273,7 +273,7 @@ BLACKHOLE_CHECKS = [
     ("user's blackhole", "su tester -c 'bh open u1 -- cat /proc/self/uid_map'",
      r"^\s*0\s+[1-9]\d*\s+1$"),
     ("users' blackholes are limited too",
-     "su tester -c \"bh open --disk 64M uq -- sh -c 'dd if=/dev/zero of=/root/big bs=1M count=200 2>&1'; "
+     "su tester -c \"bh open --disk 64M uq -- sh -c 'dd if=/dev/urandom of=/root/big bs=1M count=200 2>&1'; "
      "bh close uq\"", r"Disk quota exceeded(.|\n)*Closed blackhole uq"),
     ("user's blackhole is private", "ls -ld /var/lib/blackholes/$(id -u tester)",
      r"^drwx------\s+\d+\s+tester\s"),
@@ -692,7 +692,7 @@ SNAPSHOT_CHECKS = [
     ("the seal chain is intact", "snap seal",
      r"First key fingerprint: [0-9A-F]{4}(-[0-9A-F]{4}){7}\nSealed snapshots: 1 (.|\n)*Seal: intact"),
     ("a changed checksum breaks the seal",
-     "d=$(findmnt -no SOURCE / | sed 's/\\[.*//'); mkdir -p /tmp/top && mount -o subvolid=5 $d /tmp/top && "
+     "d=$(readlink -f /dev/wormos-root); mkdir -p /tmp/top && mount -o subvolid=5 $d /tmp/top && "
      "cp /tmp/top/@snapshots/1/info /tmp/info.saved && "
      "sed -i 's/^system-sum = /system-sum = 0/' /tmp/top/@snapshots/1/info; "
      "snap verify 1 | head -1; snap rewind 1 -y 2>&1 | tail -1; "
@@ -762,7 +762,7 @@ SCHEDULE_CHECKS = [
      "j=$(snap list | awk '/imported/ { print $1 }'); snap verify $j; rm /var/tmp/wormos-snapshot-$i.tar.zst",
      r"Snapshot \d+ exported(.|\n)*Imported as snapshot \d+(.|\n)*\(seal\): ok\n.*\(home\): ok$"),
     ("exported to a drive when one is there",
-     "mkdir -p /mnt/backup && mount -o subvol=@var $(findmnt -no SOURCE / | sed 's/\\[.*//') /mnt/backup && "
+     "mkdir -p /mnt/backup && mount -o subvol=@var $(readlink -f /dev/wormos-root) /mnt/backup && "
      "snap auto export /mnt/backup | tail -1 && snap timer-tick && ls /mnt/backup | grep -c '^wormos-snapshot-[0-9]*\\.tar\\.zst$'; "
      "rm -f /mnt/backup/wormos-snapshot-*; umount /mnt/backup; snap auto export off; snap auto timer off",
      r"whenever a drive is mounted there\n1\nExports turned off\nTimed snapshots turned off$"),

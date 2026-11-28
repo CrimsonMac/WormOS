@@ -362,6 +362,7 @@ int store_create(int scope, const char *type, const char *comment)
 
 	s.id = id;
 	s.date = time(NULL);
+	s.scope = scope;
 	snprintf(s.type, sizeof(s.type), "%s", type);
 	/* Comments are stored on one line. */
 	for (size_t i = 0; comment && i < sizeof(s.comment) - 1 && comment[i]; i++)
