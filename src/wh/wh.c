@@ -708,20 +708,21 @@ static void stage_commit(const char *action, const char *packages)
 		info("Done: changed in the running system, with no restart.");
 		return;
 	}
-	/* Let go of the staged copy (no open directory may keep it busy). */
 	if (syncfs(root_fd) < 0)
 		die("cannot finish the staged system: %s", strerror(errno));
-	applied = live_apply();
-	set_root("/");
-	if (umount(STAGE_MNT) < 0)
-		die("cannot finish the staged system: %s", strerror(errno));
-
+	/* The state before the change is saved first: a change applied to the
+	 * running system below must not end up in its own "before" snapshot. */
 	snprintf(comment, sizeof(comment), "wh %s %s", action, packages);
 	snap_cmd(opt_try ? (char *[]){ "snap", "stage", "commit", "--try", "-c", comment, NULL }
 			 : (char *[]){ "snap", "stage", "commit", "-c", comment, NULL },
 		 out, sizeof(out));
 	staging = 0;
 	before = atoi(out);
+	applied = live_apply();
+	/* Let go of the staged copy (no open directory may keep it busy). */
+	set_root("/");
+	if (umount(STAGE_MNT) < 0)
+		warn("cannot let go of the staged system: %s", strerror(errno));
 	history_add(opt_try ? "try" : action, packages, before);
 
 	if (before)

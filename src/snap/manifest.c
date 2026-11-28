@@ -213,6 +213,7 @@ struct walker {
 	struct table *reuse;    /* previous manifest, for unchanged files */
 	struct table *expect;   /* stored manifest, when verifying */
 	FILE *report;           /* where differences are listed */
+	int loose;              /* compare without inode numbers and change times */
 	int problems;
 	int errors;
 };
@@ -225,6 +226,23 @@ static void problem(struct walker *w, char mark, const char *line)
 	field(line, 0, path, sizeof(path));
 	fprintf(w->report, "    %c %s\n", mark, path);
 	w->problems++;
+}
+
+/* A line without its inode number and change time (fields 5 and 7),
+ * which a copy of the tree (an imported archive) cannot keep. */
+static void strip_identity(const char *line, char *out, size_t len)
+{
+	size_t o = 0;
+	int field = 0;
+
+	for (const char *p = line; *p && o + 1 < len; p++) {
+		if (*p == ' ')
+			field++;
+		if (field == 5 || field == 7)
+			continue;
+		out[o++] = *p;
+	}
+	out[o] = '\0';
 }
 
 static void emit(struct walker *w, const char *line)
@@ -240,8 +258,16 @@ static void emit(struct walker *w, const char *line)
 
 		if (!e)
 			problem(w, '+', line);
-		else if (e->seen++, strcmp(e->line, line) != 0)
+		else if (e->seen++, !w->loose && strcmp(e->line, line) != 0)
 			problem(w, '~', line);
+		else if (w->loose) {
+			char a[LINE_MAX_LEN], b[LINE_MAX_LEN];
+
+			strip_identity(e->line, a, sizeof(a));
+			strip_identity(line, b, sizeof(b));
+			if (strcmp(a, b))
+				problem(w, '~', line);
+		}
 	}
 }
 
@@ -393,6 +419,39 @@ int manifest_create(const char *root, const char *out, const char *prev,
 		return -1;
 	}
 	return 0;
+}
+
+/*
+ * A copy of a snapshot's tree (snap import) against that snapshot's
+ * manifest, which must match expected: every file, its type, mode, owner,
+ * size, modification time, contents and extended attributes, but not its
+ * inode number or change time. Returns 0 if they match.
+ */
+int manifest_match(const char *root, const char *manifest, const char *expected,
+		   FILE *report)
+{
+	struct walker w = { .report = report, .loose = 1 };
+	unsigned char stored[SHA256_LEN];
+	char hex[SHA256_HEX], stored_hex[SHA256_HEX];
+
+	if (!(w.expect = table_load(manifest, stored)))
+		return -1;
+	sha256_hex(stored, stored_hex);
+	if (strcmp(stored_hex, expected) != 0) {
+		fprintf(report, "    the manifest does not match the snapshot's checksum\n");
+		table_free(w.expect);
+		return -1;
+	}
+	if (walk_tree(&w, root, hex) < 0) {
+		table_free(w.expect);
+		return -1;
+	}
+	for (int i = 0; i < TABLE_SIZE; i++)
+		for (struct entry *e = w.expect->bucket[i]; e; e = e->next)
+			if (!e->seen)
+				problem(&w, '-', e->line);
+	table_free(w.expect);
+	return w.problems || w.errors ? -1 : 0;
 }
 
 /*

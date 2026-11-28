@@ -113,6 +113,8 @@ int store_verify(const struct snapshot *s, int scope);
 /* manifest.c */
 int manifest_create(const char *root, const char *out, const char *prev,
 		    char sum[SHA256_HEX]);
+int manifest_match(const char *root, const char *manifest, const char *expected,
+		   FILE *report);
 int manifest_verify(const char *root, const char *manifest, const char *expected,
 		    FILE *report);
 

@@ -692,13 +692,13 @@ SNAPSHOT_CHECKS = [
     ("the seal chain is intact", "snap seal",
      r"First key fingerprint: [0-9A-F]{4}(-[0-9A-F]{4}){7}\nSealed snapshots: 1 (.|\n)*Seal: intact"),
     ("a changed checksum breaks the seal",
-     "d=$(readlink -f /dev/wormos-root); mkdir -p /tmp/top && mount -o subvolid=5 $d /tmp/top && "
+     "d=$(readlink -f /dev/wormos-root); mkdir -p /tmp/top && mount -t btrfs -o subvolid=5 $d /tmp/top && "
      "cp /tmp/top/@snapshots/1/info /tmp/info.saved && "
      "sed -i 's/^system-sum = /system-sum = 0/' /tmp/top/@snapshots/1/info; "
-     "snap verify 1 | head -1; snap rewind 1 -y 2>&1 | tail -1; "
+     "snap verify 1 | head -1; snap rewind 1 -y 2>&1 | grep -c 'failed verification'; "
      "cp /tmp/info.saved /tmp/top/@snapshots/1/info; lsattr /tmp/top/@snapshots/seal/key; "
      "stat -c %a /tmp/top/@snapshots/seal; umount /tmp/top; snap verify 1 | head -1",
-     r"^snapshot 1 \(seal\): FAILED, its checksums(.|\n)*failed verification(.|\n)*^\S*C\S* \S+key\n700\nsnapshot 1 \(seal\): ok$"),
+     r"^snapshot 1 \(seal\): FAILED, its checksums(.|\n)*^1\n\S*C\S* \S+key\n700\nsnapshot 1 \(seal\): ok$"),
     ("store stays hidden after use", "grep -c snapshots /proc/mounts", r"^0$"),
     ("summary readable by everyone",
      "stat -c %a /run/snap-status; grep -E '^(count|last|last_comment) ' /run/snap-status",
@@ -762,9 +762,9 @@ SCHEDULE_CHECKS = [
      "j=$(snap list | awk '/imported/ { print $1 }'); snap verify $j; rm /var/tmp/wormos-snapshot-$i.tar.zst",
      r"Snapshot \d+ exported(.|\n)*Imported as snapshot \d+(.|\n)*\(seal\): ok\n.*\(home\): ok$"),
     ("exported to a drive when one is there",
-     "mkdir -p /mnt/backup && mount -o subvol=@var $(readlink -f /dev/wormos-root) /mnt/backup && "
-     "snap auto export /mnt/backup | tail -1 && snap timer-tick && ls /mnt/backup | grep -c '^wormos-snapshot-[0-9]*\\.tar\\.zst$'; "
-     "rm -f /mnt/backup/wormos-snapshot-*; umount /mnt/backup; snap auto export off; snap auto timer off",
+     "mount -t btrfs -o subvol=@var $(readlink -f /dev/wormos-root) /mnt && "
+     "snap auto export /mnt | tail -1 && snap timer-tick && ls /mnt | grep -c '^wormos-snapshot-[0-9]*\\.tar\\.zst$'; "
+     "rm -f /mnt/wormos-snapshot-*; umount /mnt; snap auto export off; snap auto timer off",
      r"whenever a drive is mounted there\n1\nExports turned off\nTimed snapshots turned off$"),
 ]
 
@@ -797,7 +797,8 @@ FIRST_REMOVE_CHECKS = [
 AFTER_INSTALL_CHECKS = [
     ("tcpdump runs", "tcpdump --version 2>&1", r"^tcpdump version 4\.99\.7"),
     ("install in history", "wh history", r"\sinstall\s+\d+\s+tcpdump$"),
-    ("install snapshot", "snap list", r"auto\s+wh install tcpdump$"),
+    # Stacked on the removal that waits: both share its "before" snapshot.
+    ("snapshot before the waiting changes", "snap list", r"auto\s+wh remove tcpdump diffutils$"),
     ("still read-only after install", "touch /usr/x 2>&1", r"Read-only file system"),
 ]
 

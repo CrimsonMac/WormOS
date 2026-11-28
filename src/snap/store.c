@@ -826,6 +826,8 @@ int store_export(int id, const char *file)
 	unlink(part);
 	argv[n++] = BSDTAR;
 	argv[n++] = "--zstd";
+	argv[n++] = "--format";
+	argv[n++] = "pax";           /* times to the nanosecond */
 	argv[n++] = "--numeric-owner";
 	argv[n++] = "--xattrs";
 	argv[n++] = "-cf";
@@ -896,8 +898,13 @@ int store_import(const char *file, const char *comment)
 		path_join(root, sizeof(root), tmpdir, scope_dir(bit));
 		manifest_path(manifest, sizeof(manifest), tmpdir, bit);
 		if (!s.sum[scope_index(bit)][0] ||
-		    manifest_verify(root, manifest, s.sum[scope_index(bit)], stderr) < 0) {
+		    manifest_match(root, manifest, s.sum[scope_index(bit)], stderr) < 0) {
 			warn("the archive's %s tree does not match its checksums", scope_name(bit));
+			goto fail;
+		}
+		/* Its own manifest from now on (new inodes, change times). */
+		if (manifest_create(root, manifest, NULL, s.sum[scope_index(bit)]) < 0) {
+			warn("cannot checksum the imported %s tree", scope_name(bit));
 			goto fail;
 		}
 		if (subvol_set_readonly(root) < 0) {
