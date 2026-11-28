@@ -765,7 +765,7 @@ SCHEDULE_CHECKS = [
      "mount -t btrfs -o subvol=@var $(readlink -f /dev/wormos-root) /mnt && "
      "snap auto export /mnt | tail -1 && snap timer-tick && ls /mnt | grep -c '^wormos-snapshot-[0-9]*\\.tar\\.zst$'; "
      "rm -f /mnt/wormos-snapshot-*; umount /mnt; snap auto export off; snap auto timer off",
-     r"whenever a drive is mounted there\n1\nExports turned off\nTimed snapshots turned off$"),
+     r"whenever a drive is mounted there\n(snap: exporting snapshot \d+ to /mnt\n)?1\nExports turned off\nTimed snapshots turned off$"),
 ]
 
 # Package manager and worm checks. {repo} is the repository URL.
