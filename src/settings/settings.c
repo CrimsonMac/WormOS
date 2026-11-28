@@ -1639,6 +1639,8 @@ static void fw_finished(GObject *source, GAsyncResult *res, gpointer data)
 	g_object_unref(source);
 }
 
+static gboolean wormhole_home_private(void);
+
 static void privacy_fill(void)
 {
 	GSubprocess *proc;
