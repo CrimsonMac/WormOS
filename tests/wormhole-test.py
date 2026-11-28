@@ -258,9 +258,9 @@ def main():
                     print(f"      output: {out[-400:]!r}")
             # wh undo of a wormhole install: the system snapshot taken before
             # it holds the wormholes, and a rewind brings them back as they were.
-            out = con.run("wh -y install --from debian figlet > /tmp/figlet.log 2>&1; "
-                          "command -v figlet; wh history | tail -1", 900)
-            ok = "/usr/local/bin/figlet" in out and re.search(r"install\s+\d+\s+figlet \[debian\]", out)
+            out = con.run("wh -y install --from debian cowsay > /tmp/cowsay.log 2>&1; "
+                          "command -v cowsay; wh history | tail -1", 900)
+            ok = "/usr/local/bin/cowsay" in out and re.search(r"install\s+\d+\s+cowsay \[debian\]", out)
             passed += bool(ok)
             failures += not ok
             print(f"{'PASS' if ok else 'FAIL'}  wormhole install recorded with a snapshot")
@@ -271,12 +271,12 @@ def main():
             con.send("root\n")
             con.expect("# ", 60)
             con.send("exec /bin/sh\n")
-            out += con.run("command -v figlet || echo gone; "
-                           "whc debian dpkg -s figlet > /dev/null 2>&1 || echo not-in-wormhole; "
+            out += con.run("command -v cowsay || echo gone; "
+                           "whc debian dpkg -s cowsay > /dev/null 2>&1 || echo not-in-wormhole; "
                            "whc debian true && echo wormhole-works; snap list | tail -4; "
                            "mkdir -p /tmp/top; mount -t btrfs -o subvolid=5 $(readlink -f /dev/wormos-root) /tmp/top; "
                            "for d in /tmp/top/@snapshots/[0-9]*; do echo \"$d $(ls $d/wormholes 2>/dev/null | tr '\\n' ' ') "
-                           "$(ls $d/wormholes/debian/var/lib/dpkg/info 2>/dev/null | grep -c figlet)\"; done | tail -4; "
+                           "$(ls $d/wormholes/debian/var/lib/dpkg/info 2>/dev/null | grep -c cowsay)\"; done | tail -4; "
                            "ls -a /tmp/top/@wormholes; umount /tmp/top")
             ok = ("rewound system to snapshot" in out and "gone" in out and
                   "not-in-wormhole" in out and "wormhole-works" in out)
